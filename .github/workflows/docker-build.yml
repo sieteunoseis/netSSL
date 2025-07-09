@@ -1,0 +1,118 @@
+name: Build and Push Docker Images
+
+on:
+  push:
+    branches: [ main, security-stability-improvements ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      matrix:
+        service: [frontend, backend]
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Log in to Container Registry
+      if: github.event_name != 'pull_request'
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.service }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=semver,pattern={{major}}
+          type=raw,value=latest,enable={{is_default_branch}}
+          type=sha
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./${{ matrix.service }}
+        platforms: linux/amd64,linux/arm64
+        push: ${{ github.event_name != 'pull_request' }}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  test-docker:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Test Docker deployment
+      run: |
+        cd docker
+        # Use the existing .env file or create one if needed
+        if [ ! -f .env ]; then
+          if [ -f ../.env.example ]; then
+            cp ../.env.example .env
+            # Set the backend port to avoid conflicts with frontend
+            sed -i 's/PORT=3000/PORT=3001/' .env
+            sed -i 's/NODE_ENV=development/NODE_ENV=production/' .env
+          else
+            # Create minimal .env file
+            echo "VITE_BRANDING_URL=https://automate.builders" > .env
+            echo "VITE_BRANDING_NAME=Automate Builders" >> .env
+            echo "VITE_TABLE_COLUMNS=name,hostname,username,password,version" >> .env
+            echo "PORT=3001" >> .env
+            echo "NODE_ENV=production" >> .env
+            echo "UID=1000" >> .env
+            echo "GID=1000" >> .env
+          fi
+        fi
+        cp .env .env.test
+        # Use the latest images
+        export FRONTEND_TAG=latest
+        export BACKEND_TAG=latest
+        
+        # Start services
+        docker compose up -d
+        
+        # Wait for services
+        sleep 30
+        
+        # Get the backend port from .env and clean it up (remove comments and whitespace)
+        BACKEND_PORT=$(grep "^PORT=" .env 2>/dev/null | cut -d'=' -f2 | cut -d'#' -f1 | tr -d '\r\n[:space:]' || echo "3001")
+        echo "Backend port: $BACKEND_PORT"
+        echo "Port length: ${#BACKEND_PORT}"
+        
+        # Test backend health endpoint directly
+        curl -f "http://localhost:${BACKEND_PORT}/health" || exit 1
+        
+        # Test API through backend
+        curl -f "http://localhost:${BACKEND_PORT}/api/data" || exit 1
+        
+        # Cleanup
+        docker compose down

@@ -1,0 +1,27 @@
+[
+  {
+    "name": "name",
+    "type": "TEXT",
+    "validator": { "name": "isAscii", "options": "" }
+  },
+  {
+    "name": "hostname",
+    "type": "TEXT",
+    "validator": { "name": "isFQDN", "options": { "allow_numeric_tld": true } }
+  },
+  {
+    "name": "username",
+    "type": "TEXT",
+    "validator": { "name": "isAscii", "options": "" }
+  },
+  {
+    "name": "password",
+    "type": "TEXT",
+    "validator": { "name": "isAscii", "options": "" }
+  },
+  {
+    "name": "version",
+    "type": "TEXT",
+    "validator": { "name": "isDecimal", "options": { "force_decimal": true, "decimal_digits": "1,1", "locale": "en-US" } }
+  }
+]

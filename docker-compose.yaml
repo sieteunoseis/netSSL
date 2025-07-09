@@ -1,0 +1,31 @@
+services:
+  frontend:
+    build:
+      context: ./frontend # Path to the frontend Dockerfile
+    ports:
+      - "3000:80" # Map port 3000 on host to port 80 in container
+    networks:
+      - app-network
+    environment:
+      - VITE_API_URL=/api
+    env_file:
+      - .env
+    depends_on:
+      - backend
+
+  backend:
+    build:
+      context: ./backend # Path to the backend Dockerfile
+    expose:
+      - "${PORT:-3000}"  # Internal container port
+    ports:
+      - "${PORT:-3000}:${PORT:-3000}"  # Expose backend port for development
+    user: "${UID:-1000}:${GID:-1000}"  # Use host user's UID/GID
+    networks:
+      - app-network
+    env_file:
+      - .env
+
+networks:
+  app-network:
+    driver: bridge

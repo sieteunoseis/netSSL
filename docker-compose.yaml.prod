@@ -1,0 +1,28 @@
+services:
+  <package-name-frontend>:
+    image: ghcr.io/sieteunoseis/<package-name-frontend>:main
+    container_name: <package-name-frontend>
+    ports:
+      - "3001:80" # Map port 3000 on host to port 80 in container
+    networks:
+      - app-network
+    env_file:
+      - .env
+
+  <package-name-backend>:
+    image: ghcr.io/sieteunoseis/<package-name-backend>:main
+    container_name: <package-name-backend>
+    volumes:
+      - ./data:/usr/src/app/data
+      - ./db:/usr/src/app/db
+    expose:
+      - "5000"
+    user: "${UID:-1000}:${GID:-1000}"  # Use host user's UID/GID
+    networks:
+      - app-network
+    env_file:
+      - .env
+
+networks:
+  app-network:
+    driver: bridge

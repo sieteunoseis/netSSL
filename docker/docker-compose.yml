@@ -1,0 +1,54 @@
+# Docker Compose for Testing with Pre-built Images
+# This pulls images from GitHub Container Registry for testing purposes
+
+name: react-express-tailwind-app
+
+services:
+  frontend:
+    image: ghcr.io/sieteunoseis/react-express-tailwind-app/frontend:${FRONTEND_TAG:-latest}
+    container_name: react-frontend
+    ports:
+      - "3000:80"
+    networks:
+      - app-network
+    environment:
+      - PORT=${PORT:-3001}
+      - BACKEND_HOST=${BACKEND_HOST:-backend}
+      - VITE_API_URL=
+      - VITE_BRANDING_NAME=${VITE_BRANDING_NAME:-Automate Builders}
+      - VITE_BRANDING_URL=${VITE_BRANDING_URL:-https://automate.builders}
+      - VITE_TABLE_COLUMNS=${VITE_TABLE_COLUMNS:-name,hostname,username,password,version}
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  backend:
+    image: ghcr.io/sieteunoseis/react-express-tailwind-app/backend:${BACKEND_TAG:-latest}
+    container_name: react-backend
+    ports:
+      - "${PORT:-3001}:${PORT:-3001}"  # Expose backend port for testing
+    expose:
+      - "${PORT:-3001}"
+    networks:
+      - app-network
+    environment:
+      - PORT=${PORT:-3001}
+      - NODE_ENV=${NODE_ENV:-production}
+      - VITE_TABLE_COLUMNS=${VITE_TABLE_COLUMNS:-name,hostname,username,password,version}
+    volumes:
+      - backend_data:/app/db  # Persist database
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${PORT:-3001}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  backend_data:
+    driver: local
+
+networks:
+  app-network:
+    driver: bridge

@@ -1,0 +1,20 @@
+{
+  "name": "react-express-tailwind-app",
+  "version": "1.1.0",
+  "scripts": {
+    "install-all": "npm install && cd backend && npm install && cd ../frontend && npm install",
+    "start": "concurrently \"npm run start --prefix frontend\" \"npm run start --prefix backend\"",
+    "dev": "concurrently \"npm run dev --prefix frontend\" \"npm run dev --prefix backend\"",
+    "build": "docker-compose up --build",
+    "sync-remote": "git pull upstream main",
+    "port": "lsof -i :5000 -t | xargs ps -p | grep node | awk '{print $1}' | xargs kill -9",
+    "setup-template": "node scripts/setup-template.js"
+  },
+  "devDependencies": {
+    "@dotenvx/dotenvx": "^1.45.2",
+    "concurrently": "^9.1.0"
+  },
+  "dependencies": {
+    "cross-env": "^7.0.3"
+  }
+}
