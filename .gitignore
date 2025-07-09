@@ -14,3 +14,6 @@ frontend.env
 !.env.vault
 
 /net-commander
+
+# YoYo AI version control directory
+.yoyo/
