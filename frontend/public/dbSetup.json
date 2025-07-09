@@ -2,27 +2,70 @@
   {
     "name": "name",
     "type": "TEXT",
-    "validator": { "name": "isAscii", "options": "" }
+    "validator": { "name": "isAscii", "options": "" },
+    "label": "Connection Name",
+    "placeholder": "e.g., CUCM Primary"
   },
   {
     "name": "hostname",
     "type": "TEXT",
-    "validator": { "name": "isFQDN", "options": { "allow_numeric_tld": true } }
+    "validator": { "name": "isAscii", "options": "" },
+    "label": "Server Hostname",
+    "placeholder": "e.g., cucm01-pub"
   },
   {
     "name": "username",
     "type": "TEXT",
-    "validator": { "name": "isAscii", "options": "" }
+    "validator": { "name": "isAscii", "options": "" },
+    "label": "Username",
+    "placeholder": "e.g., administrator, ccmadmin, root, admin",
+    "default": "administrator"
   },
   {
     "name": "password",
     "type": "TEXT",
-    "validator": { "name": "isAscii", "options": "" }
+    "validator": { "name": "isAscii", "options": "" },
+    "label": "Password",
+    "placeholder": "Server password"
   },
   {
-    "name": "version",
+    "name": "domain",
     "type": "TEXT",
-    "validator": { "name": "isDecimal", "options": { "force_decimal": false, "decimal_digits": "1,2", "locale": "en-US" } },
-    "optional": true
+    "validator": { "name": "isFQDN", "options": { "allow_numeric_tld": true } },
+    "label": "Domain Name",
+    "placeholder": "e.g., automate.builders"
+  },
+  {
+    "name": "ssl_provider",
+    "type": "SELECT",
+    "validator": { "name": "isIn", "options": ["letsencrypt", "zerossl"] },
+    "label": "SSL Provider",
+    "options": [
+      { "value": "letsencrypt", "label": "Let's Encrypt" },
+      { "value": "zerossl", "label": "ZeroSSL" }
+    ],
+    "default": "letsencrypt"
+  },
+  {
+    "name": "dns_provider",
+    "type": "SELECT",
+    "validator": { "name": "isIn", "options": ["cloudflare", "digitalocean", "route53", "azure", "google"] },
+    "label": "DNS Provider",
+    "options": [
+      { "value": "cloudflare", "label": "Cloudflare" },
+      { "value": "digitalocean", "label": "DigitalOcean" },
+      { "value": "route53", "label": "AWS Route53" },
+      { "value": "azure", "label": "Azure DNS" },
+      { "value": "google", "label": "Google Cloud DNS" }
+    ],
+    "default": "cloudflare"
+  },
+  {
+    "name": "alt_names",
+    "type": "TEXT",
+    "validator": { "name": "isAscii", "options": "" },
+    "label": "Alternative Names (SANs)",
+    "placeholder": "e.g., server1.example.com, server2.example.com",
+    "required": false
   }
 ]

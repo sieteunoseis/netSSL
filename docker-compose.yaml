@@ -25,6 +25,9 @@ services:
       - app-network
     env_file:
       - .env
+    volumes:
+      - ./backend/accounts:/app/accounts  # Persistent storage for certificates and accounts
+      - ./backend/db:/app/db              # Persistent storage for database
 
 networks:
   app-network:
