@@ -277,6 +277,9 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
           ? domains.find(d => challenge.url.includes(d)) || domains[0]
           : domains[0];
         
+        // Clean up any existing TXT records before creating new one
+        await cloudflare.cleanupTxtRecords(challengeDomain);
+        
         const record = await cloudflare.createTxtRecord(challengeDomain, dnsValue);
         dnsRecords.push({ record, challenge, domain: challengeDomain });
         

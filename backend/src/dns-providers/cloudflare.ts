@@ -129,6 +129,47 @@ export class CloudflareProvider {
     }
   }
 
+  async findAllTxtRecords(domain: string): Promise<CloudflareRecord[]> {
+    try {
+      const recordName = `_acme-challenge.${domain}`;
+      Logger.info(`Looking for all TXT records: ${recordName}`);
+
+      const response = await this.makeRequest(
+        'GET',
+        `/zones/${this.zoneId}/dns_records?type=TXT&name=${recordName}`
+      );
+
+      if (!response.success) {
+        throw new Error(`Cloudflare API error: ${JSON.stringify(response.errors)}`);
+      }
+
+      const records = response.result as CloudflareRecord[];
+      Logger.info(`Found ${records.length} TXT records for ${recordName}`);
+      return records;
+    } catch (error) {
+      Logger.error(`Failed to find TXT records for ${domain}:`, error);
+      return [];
+    }
+  }
+
+  async cleanupTxtRecords(domain: string): Promise<void> {
+    try {
+      const records = await this.findAllTxtRecords(domain);
+      if (records.length === 0) {
+        Logger.info(`No existing TXT records to cleanup for ${domain}`);
+        return;
+      }
+
+      Logger.info(`Cleaning up ${records.length} existing TXT records for ${domain}`);
+      for (const record of records) {
+        await this.deleteTxtRecord(record.id);
+      }
+    } catch (error) {
+      Logger.error(`Failed to cleanup TXT records for ${domain}:`, error);
+      throw error;
+    }
+  }
+
   async verifyTxtRecord(domain: string, expectedValue: string, maxWaitTime: number = 300000): Promise<boolean> {
     try {
       const recordName = `_acme-challenge.${domain}`;
