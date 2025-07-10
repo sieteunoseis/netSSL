@@ -1,0 +1,29 @@
+{
+  "cloudflare": [
+    "1.1.1.1",
+    "1.0.0.1"
+  ],
+  "digitalocean": [
+    "ns1.digitalocean.com",
+    "ns2.digitalocean.com",
+    "ns3.digitalocean.com"
+  ],
+  "route53": [
+    "8.8.8.8",
+    "8.8.4.4"
+  ],
+  "azure": [
+    "8.8.8.8",
+    "8.8.4.4"
+  ],
+  "google": [
+    "ns-cloud-e1.googledomains.com",
+    "ns-cloud-e2.googledomains.com"
+  ],
+  "default": [
+    "8.8.8.8",
+    "1.1.1.1",
+    "8.8.4.4",
+    "1.0.0.1"
+  ]
+}

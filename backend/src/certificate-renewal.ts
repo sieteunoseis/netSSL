@@ -11,7 +11,7 @@ import { accountManager, AccountManager } from './account-manager';
 export interface RenewalStatus {
   id: string;
   connectionId: number;
-  status: 'pending' | 'generating_csr' | 'requesting_cert' | 'updating_dns' | 'uploading_cert' | 'completed' | 'failed';
+  status: 'pending' | 'generating_csr' | 'creating_account' | 'requesting_certificate' | 'creating_dns_challenge' | 'waiting_dns_propagation' | 'completing_validation' | 'downloading_certificate' | 'uploading_certificate' | 'completed' | 'failed';
   message: string;
   progress: number;
   startTime: Date;
@@ -41,6 +41,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     };
 
     this.renewalStatuses.set(renewalId, status);
+    Logger.info(`Created renewal status with ID: ${renewalId} for connection ${connectionId}`);
 
     // Start the renewal process asynchronously
     this.performRenewal(renewalId, connectionId, database).catch(error => {
@@ -55,6 +56,8 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
   }
 
   getRenewalStatus(renewalId: string): RenewalStatus | null {
+    Logger.info(`Looking for renewal status ID: ${renewalId}`);
+    Logger.info(`Available renewal IDs: ${Array.from(this.renewalStatuses.keys()).join(', ')}`);
     return this.renewalStatuses.get(renewalId) || null;
   }
 
@@ -73,12 +76,19 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       // Step 1: Generate CSR from CUCM
       const csr = await this.generateCSRFromCUCM(connection, status);
       
-      this.updateStatus(status, 'completed', 'CSR generated successfully - ready for next steps', 100);
+      // Now continue with Let's Encrypt certificate request
+      this.updateStatus(status, 'requesting_certificate', 'Requesting certificate from Let\'s Encrypt', 20);
+      const certificate = await this.requestCertificate(connection, csr, database, status);
+      
+      this.updateStatus(status, 'uploading_certificate', 'Uploading certificate to CUCM', 90);
+      await this.uploadCertificateToCUCM(connection, certificate, status);
+      
+      this.updateStatus(status, 'completed', 'Certificate renewal completed successfully', 100);
       status.endTime = new Date();
       
-      // Save the CSR info for later use
+      // Save the renewal completion info
       const fullFQDN = `${connection.hostname}.${connection.domain}`;
-      await accountManager.saveRenewalLog(fullFQDN, `CSR generation completed for renewal ${renewalId}`);
+      await accountManager.saveRenewalLog(fullFQDN, `Certificate renewal completed for renewal ${renewalId}`);
       
       // Update database with renewal info
       await this.updateDatabaseWithRenewal(connectionId, database);
@@ -207,7 +217,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     const settings = await database.getSettingsByProvider(sslProvider);
     
     if (sslProvider === 'letsencrypt') {
-      return this.requestLetsEncryptCertificate(connection, csr, settings, status);
+      return this.requestLetsEncryptCertificate(connection, csr, settings, database, status);
     } else if (sslProvider === 'zerossl') {
       return this.requestZeroSSLCertificate(connection, csr, settings, status);
     } else {
@@ -215,26 +225,114 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     }
   }
 
-  private async requestLetsEncryptCertificate(connection: ConnectionRecord, csr: string, settings: any[], status: RenewalStatus): Promise<string> {
-    // This would integrate with ACME client library for Let's Encrypt
-    // For now, return a placeholder
-    status.logs.push('Requesting certificate from Let\'s Encrypt');
-    
-    // TODO: Implement actual ACME protocol integration
-    // This would involve:
-    // 1. Creating ACME account
-    // 2. Submitting order for domain
-    // 3. Completing DNS-01 challenge
-    // 4. Finalizing order with CSR
-    // 5. Downloading certificate
-    
-    return new Promise((resolve, reject) => {
-      // Placeholder implementation
-      setTimeout(() => {
-        status.logs.push('Certificate obtained from Let\'s Encrypt');
-        resolve('-----BEGIN CERTIFICATE-----\n...certificate data...\n-----END CERTIFICATE-----');
-      }, 2000);
-    });
+  private async requestLetsEncryptCertificate(connection: ConnectionRecord, csr: string, settings: any[], database: DatabaseManager, status: RenewalStatus): Promise<string> {
+    try {
+      const { acmeClient } = await import('./acme-client');
+      const CloudflareProvider = (await import('./dns-providers/cloudflare')).default;
+      
+      const fullFQDN = `${connection.hostname}.${connection.domain}`;
+      
+      // Parse altNames from connection
+      const altNames = connection.alt_names 
+        ? connection.alt_names.split(',').map(name => name.trim()).filter(name => name.length > 0)
+        : [];
+      
+      const domains = [fullFQDN, ...altNames];
+      
+      this.updateStatus(status, 'creating_account', 'Setting up Let\'s Encrypt account', 20);
+      
+      // Get or create ACME account
+      let account = await acmeClient.loadAccount(fullFQDN);
+      if (!account) {
+        Logger.info('No existing account found, creating new account');
+        const email = settings.find(s => s.key_name === 'LETSENCRYPT_EMAIL')?.key_value;
+        if (!email) {
+          throw new Error('Let\'s Encrypt email not configured in settings. Please add LETSENCRYPT_EMAIL to your settings.');
+        }
+        Logger.info(`Creating new Let's Encrypt account with email: ${email}`);
+        account = await acmeClient.createAccount(email, fullFQDN);
+      } else {
+        Logger.info(`Using existing account for domain: ${fullFQDN}`);
+      }
+      
+      this.updateStatus(status, 'requesting_certificate', 'Requesting certificate from Let\'s Encrypt', 30);
+      
+      // Create certificate order
+      const order = await acmeClient.requestCertificate(csr, domains);
+      
+      this.updateStatus(status, 'creating_dns_challenge', 'Setting up DNS challenges', 40);
+      
+      // Initialize Cloudflare provider
+      const cloudflare = await CloudflareProvider.create(database, fullFQDN);
+      
+      // Create DNS TXT records for challenges
+      const dnsRecords: any[] = [];
+      
+      for (const challenge of order.challenges) {
+        const keyAuthorization = await acmeClient.getChallengeKeyAuthorization(challenge);
+        const dnsValue = acmeClient.getDNSRecordValue(keyAuthorization);
+        
+        // Extract domain from challenge
+        const challengeDomain = challenge.url.includes('identifier') 
+          ? domains.find(d => challenge.url.includes(d)) || domains[0]
+          : domains[0];
+        
+        const record = await cloudflare.createTxtRecord(challengeDomain, dnsValue);
+        dnsRecords.push({ record, challenge, domain: challengeDomain });
+        
+        status.logs.push(`Created DNS TXT record for ${challengeDomain}: ${record.id}`);
+      }
+      
+      this.updateStatus(status, 'waiting_dns_propagation', 'Waiting for DNS propagation', 50);
+      
+      // Wait for DNS propagation
+      for (const { record, challenge, domain } of dnsRecords) {
+        const keyAuthorization = await acmeClient.getChallengeKeyAuthorization(challenge);
+        const expectedValue = acmeClient.getDNSRecordValue(keyAuthorization);
+        
+        const isVerified = await cloudflare.verifyTxtRecord(domain, expectedValue);
+        if (!isVerified) {
+          throw new Error(`DNS propagation verification failed for ${domain}`);
+        }
+        
+        status.logs.push(`DNS propagation verified for ${domain}`);
+      }
+      
+      this.updateStatus(status, 'completing_validation', 'Completing Let\'s Encrypt validation', 70);
+      
+      // Complete challenges
+      for (const { challenge } of dnsRecords) {
+        await acmeClient.completeChallenge(challenge);
+      }
+      
+      // Wait for order completion
+      const completedOrder = await acmeClient.waitForOrderCompletion(order.order);
+      
+      this.updateStatus(status, 'downloading_certificate', 'Downloading certificate', 80);
+      
+      // Finalize and get certificate
+      const certificate = await acmeClient.finalizeCertificate(completedOrder, csr);
+      
+      // Clean up DNS records
+      for (const { record } of dnsRecords) {
+        try {
+          await cloudflare.deleteTxtRecord(record.id);
+          status.logs.push(`Cleaned up DNS TXT record: ${record.id}`);
+        } catch (error) {
+          Logger.warn(`Failed to clean up DNS record ${record.id}:`, error);
+        }
+      }
+      
+      // Save certificate and chain to accounts folder
+      await this.saveCertificateFiles(fullFQDN, certificate, status);
+      
+      status.logs.push('Certificate obtained from Let\'s Encrypt');
+      return certificate;
+      
+    } catch (error) {
+      Logger.error('Let\'s Encrypt certificate request failed:', error);
+      throw error;
+    }
   }
 
   private async requestZeroSSLCertificate(connection: ConnectionRecord, csr: string, settings: any[], status: RenewalStatus): Promise<string> {
@@ -354,10 +452,69 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     });
   }
 
+  private async saveCertificateFiles(domain: string, certificateData: string, status: RenewalStatus): Promise<void> {
+    try {
+      // Parse certificate chain
+      const certParts = certificateData.split('-----END CERTIFICATE-----');
+      const certificates = certParts
+        .filter(part => part.includes('-----BEGIN CERTIFICATE-----'))
+        .map(part => part.trim() + '\n-----END CERTIFICATE-----');
+      
+      if (certificates.length === 0) {
+        throw new Error('No certificates found in response');
+      }
+      
+      // First certificate is the domain certificate
+      const domainCert = certificates[0];
+      
+      // Remaining certificates are the chain (intermediate + root)
+      const chainCerts = certificates.slice(1);
+      const fullChain = chainCerts.join('\n');
+      
+      // Save domain certificate
+      await accountManager.saveCertificate(domain, domainCert, ''); // Private key not included in Let's Encrypt response
+      
+      // Save certificate chain to accounts folder
+      const accountsDir = process.env.ACCOUNTS_DIR || './accounts';
+      const domainDir = path.join(accountsDir, domain);
+      
+      // Ensure domain directory exists
+      if (!fs.existsSync(domainDir)) {
+        fs.mkdirSync(domainDir, { recursive: true });
+      }
+      
+      const chainPath = path.join(domainDir, 'chain.pem');
+      const fullChainPath = path.join(domainDir, 'fullchain.pem');
+      
+      await fs.promises.writeFile(chainPath, fullChain);
+      await fs.promises.writeFile(fullChainPath, certificateData);
+      
+      status.logs.push(`Saved certificate files for ${domain}`);
+      status.logs.push(`- Domain certificate: certificate.pem`);
+      status.logs.push(`- Certificate chain: chain.pem`);
+      status.logs.push(`- Full chain: fullchain.pem`);
+      
+      Logger.info(`Successfully saved certificate files for ${domain}`);
+    } catch (error) {
+      Logger.error(`Failed to save certificate files for ${domain}:`, error);
+      throw error;
+    }
+  }
+
   private async updateDatabaseWithRenewal(connectionId: number, database: DatabaseManager): Promise<void> {
-    // TODO: Update the database with renewal information
-    // This would update last_cert_issued, cert_count_this_week, etc.
-    Logger.info(`Updated database with renewal info for connection ${connectionId}`);
+    try {
+      // Update the database with renewal information
+      await database.updateConnection(connectionId, {
+        last_cert_issued: new Date().toISOString(),
+        cert_count_this_week: 1, // This should be calculated based on existing count
+        cert_count_reset_date: new Date().toISOString()
+      });
+      
+      Logger.info(`Updated database with renewal info for connection ${connectionId}`);
+    } catch (error) {
+      Logger.error(`Failed to update database with renewal info for connection ${connectionId}:`, error);
+      throw error;
+    }
   }
 }
 

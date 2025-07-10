@@ -11,7 +11,7 @@ import { apiCall } from "@/lib/api";
 interface RenewalStatus {
   id: string;
   connectionId: number;
-  status: 'pending' | 'generating_csr' | 'requesting_cert' | 'updating_dns' | 'uploading_cert' | 'completed' | 'failed';
+  status: 'pending' | 'generating_csr' | 'creating_account' | 'requesting_certificate' | 'creating_dns_challenge' | 'waiting_dns_propagation' | 'completing_validation' | 'downloading_certificate' | 'uploading_certificate' | 'completed' | 'failed';
   message: string;
   progress: number;
   startTime: string;
@@ -76,9 +76,13 @@ const RenewalStatusComponent: React.FC<RenewalStatusProps> = ({ connectionId, re
         return <XCircle className="w-4 h-4 text-red-500" />;
       case 'pending':
       case 'generating_csr':
-      case 'requesting_cert':
-      case 'updating_dns':
-      case 'uploading_cert':
+      case 'creating_account':
+      case 'requesting_certificate':
+      case 'creating_dns_challenge':
+      case 'waiting_dns_propagation':
+      case 'completing_validation':
+      case 'downloading_certificate':
+      case 'uploading_certificate':
         return <RefreshCw className="w-4 h-4 animate-spin text-blue-500" />;
       default:
         return <AlertCircle className="w-4 h-4 text-yellow-500" />;
@@ -95,9 +99,13 @@ const RenewalStatusComponent: React.FC<RenewalStatusProps> = ({ connectionId, re
         return "bg-red-100 text-red-800";
       case 'pending':
       case 'generating_csr':
-      case 'requesting_cert':
-      case 'updating_dns':
-      case 'uploading_cert':
+      case 'creating_account':
+      case 'requesting_certificate':
+      case 'creating_dns_challenge':
+      case 'waiting_dns_propagation':
+      case 'completing_validation':
+      case 'downloading_certificate':
+      case 'uploading_certificate':
         return "bg-blue-100 text-blue-800";
       default:
         return "bg-yellow-100 text-yellow-800";

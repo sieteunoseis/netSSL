@@ -299,12 +299,30 @@ app.post('/api/data/:id/issue-cert', asyncHandler(async (req: Request, res: Resp
 app.get('/api/data/:id/renewal-status/:renewalId', asyncHandler(async (req: Request, res: Response) => {
   const renewalId = req.params.renewalId;
   
-  const status = certificateRenewalService.getRenewalStatus(renewalId);
-  if (!status) {
-    return res.status(404).json({ error: 'Renewal status not found' });
-  }
+  Logger.info(`Fetching renewal status for ID: ${renewalId}`);
+  
+  try {
+    const status = certificateRenewalService.getRenewalStatus(renewalId);
+    if (!status) {
+      Logger.warn(`Renewal status not found for ID: ${renewalId}`);
+      return res.status(404).json({ error: 'Renewal status not found' });
+    }
 
-  return res.json(status);
+    // Convert Date objects to strings for JSON serialization
+    const serializedStatus = {
+      ...status,
+      startTime: status.startTime instanceof Date ? status.startTime.toISOString() : status.startTime,
+      endTime: status.endTime ? (status.endTime instanceof Date ? status.endTime.toISOString() : status.endTime) : undefined
+    };
+
+    return res.json(serializedStatus);
+  } catch (error) {
+    Logger.error(`Error fetching renewal status for ID ${renewalId}:`, error);
+    return res.status(500).json({ 
+      error: 'Internal server error',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
 }));
 
 // Settings/API Keys management endpoints

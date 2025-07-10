@@ -2,13 +2,15 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { useConfig } from '../config/ConfigContext';
 import { apiCall } from '../lib/api';
-import { ChevronDown, ChevronUp, FileText, Trash2, Clock, Eye, EyeOff } from 'lucide-react';
+import { ChevronDown, ChevronUp, FileText, Trash2, Clock, Eye, EyeOff, Edit } from 'lucide-react';
+import EditConnectionModal from './EditConnectionModal';
 
 const DataTable = ({ data, onDataChange }) => {
   const config = useConfig();
   const [jsonData, setData] = useState([]);
   const [expandedRows, setExpandedRows] = useState(new Set());
   const [visiblePasswords, setVisiblePasswords] = useState(new Set());
+  const [editingRecord, setEditingRecord] = useState(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -164,6 +166,15 @@ const DataTable = ({ data, onDataChange }) => {
                 <Button
                   variant="outline"
                   size="sm"
+                  onClick={() => setEditingRecord(record)}
+                  className="flex items-center space-x-1"
+                >
+                  <Edit className="w-4 h-4" />
+                </Button>
+                
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => handleDelete(record.id)}
                   className="flex items-center space-x-1 text-red-600 hover:text-red-700"
                 >
@@ -267,6 +278,14 @@ const DataTable = ({ data, onDataChange }) => {
           </div>
         </div>
       )}
+      
+      {/* Edit Modal */}
+      <EditConnectionModal
+        record={editingRecord}
+        isOpen={editingRecord !== null}
+        onClose={() => setEditingRecord(null)}
+        onConnectionUpdated={onDataChange}
+      />
     </div>
   );
 };

@@ -55,6 +55,23 @@ export const validateConnectionData = (data: any): { isValid: boolean; errors: s
     }
   }
 
+  // Alt names is optional
+  if (data.alt_names !== undefined && data.alt_names !== null && data.alt_names !== '') {
+    if (typeof data.alt_names !== 'string') {
+      errors.push('Alt names must be a string');
+    } else if (!validator.isAscii(data.alt_names)) {
+      errors.push('Alt names must contain only ASCII characters');
+    } else {
+      // Validate each alt name if comma-separated
+      const altNames = data.alt_names.split(',').map((name: string) => name.trim());
+      for (const altName of altNames) {
+        if (altName && !validator.isFQDN(altName, { allow_numeric_tld: true })) {
+          errors.push(`Alt name "${altName}" must be a valid FQDN`);
+        }
+      }
+    }
+  }
+
   return {
     isValid: errors.length === 0,
     errors
@@ -70,6 +87,7 @@ export const sanitizeConnectionData = (data: any): Partial<ConnectionRecord> => 
     domain: validator.escape(String(data.domain || '')),
     ssl_provider: validator.escape(String(data.ssl_provider || '')),
     dns_provider: validator.escape(String(data.dns_provider || '')),
-    version: validator.escape(String(data.version || ''))
+    version: validator.escape(String(data.version || '')),
+    alt_names: validator.escape(String(data.alt_names || ''))
   };
 };
