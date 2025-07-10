@@ -214,15 +214,11 @@ export class ACMEClient {
         Logger.error(`Order status details:`, JSON.stringify(orderStatus, null, 2));
         
         // Get authorization details
-        if (orderStatus.authorizations) {
-          for (const authUrl of orderStatus.authorizations) {
-            try {
-              const auth = await this.client.getAuthorization(authUrl);
-              Logger.error(`Authorization details for ${authUrl}:`, JSON.stringify(auth, null, 2));
-            } catch (authError) {
-              Logger.error(`Failed to get authorization details for ${authUrl}:`, authError);
-            }
-          }
+        try {
+          const authorizations = await this.client.getAuthorizations(orderStatus);
+          Logger.error(`Authorization details:`, JSON.stringify(authorizations, null, 2));
+        } catch (authError) {
+          Logger.error(`Failed to get authorization details:`, authError);
         }
       } catch (detailError) {
         Logger.error(`Failed to get order details:`, detailError);
