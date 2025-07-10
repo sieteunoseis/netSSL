@@ -34,12 +34,18 @@ export interface CertificateRenewalService {
 class CertificateRenewalServiceImpl implements CertificateRenewalService {
   private renewalStatuses: Map<string, RenewalStatus> = new Map();
   private database: DatabaseManager | null = null;
+  private activeRenewals: Set<number> = new Set(); // Track active renewals by connection ID
 
   setDatabase(database: DatabaseManager): void {
     this.database = database;
   }
 
   async renewCertificate(connectionId: number, database: DatabaseManager): Promise<RenewalStatus> {
+    // Check if there's already an active renewal for this connection
+    if (this.activeRenewals.has(connectionId)) {
+      throw new Error('A certificate renewal is already in progress for this connection');
+    }
+
     const renewalId = crypto.randomUUID();
     const status: RenewalStatus = {
       id: renewalId,
@@ -52,6 +58,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     };
 
     this.renewalStatuses.set(renewalId, status);
+    this.activeRenewals.add(connectionId); // Mark as active
     Logger.info(`Created renewal status with ID: ${renewalId} for connection ${connectionId}`);
 
     // Save to database
@@ -79,6 +86,9 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
           Logger.error(`Failed to save failed renewal status to database: ${err.message}`);
         });
       }
+    }).finally(() => {
+      // Always remove from active renewals when done
+      this.activeRenewals.delete(connectionId);
     });
 
     return status;
@@ -224,6 +234,9 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       status.message = 'Certificate renewal failed';
       status.endTime = new Date();
       status.logs.push(`ERROR: ${status.error}`);
+    } finally {
+      // Always remove from active renewals
+      this.activeRenewals.delete(connectionId);
     }
   }
 

@@ -150,9 +150,9 @@ export class ACMEClient {
       
       const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => {
-          Logger.error('Order creation timeout after 30 seconds');
-          reject(new Error('Order creation timeout after 30 seconds'));
-        }, 30000)
+          Logger.error('Order creation timeout after 15 seconds');
+          reject(new Error('Order creation timeout after 15 seconds - Let\'s Encrypt API may be slow'));
+        }, 15000)
       );
       
       Logger.info('Waiting for order creation response...');
