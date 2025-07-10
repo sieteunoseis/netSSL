@@ -34,7 +34,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
   const [visibleKeys, setVisibleKeys] = useState<Record<string, boolean>>({});
 
   const providers = [
-    { id: 'letsencrypt', name: 'Let\'s Encrypt', keys: ['LETSENCRYPT_EMAIL', 'LETSENCRYPT_DNS_1', 'LETSENCRYPT_DNS_2'] },
+    { id: 'letsencrypt', name: 'Let\'s Encrypt', keys: ['LETSENCRYPT_EMAIL'] },
     { id: 'zerossl', name: 'ZeroSSL', keys: ['ZEROSSL_KEY', 'MXTOOLBOX_KEY'] },
     { id: 'cloudflare', name: 'Cloudflare', keys: ['CF_KEY', 'CF_ZONE'] },
     { id: 'digitalocean', name: 'DigitalOcean', keys: ['DO_KEY'] },
@@ -177,7 +177,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
       <DialogTrigger asChild>
         {trigger || defaultTrigger}
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[800px] max-h-[80vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[800px] max-h-[80vh] overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-100 [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border-none dark:[&::-webkit-scrollbar-track]:bg-gray-800 dark:[&::-webkit-scrollbar-thumb]:bg-gray-600">
         <DialogHeader>
           <DialogTitle>API Keys & Settings</DialogTitle>
           <DialogDescription>

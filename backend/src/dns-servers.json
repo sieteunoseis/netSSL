@@ -17,8 +17,12 @@
     "8.8.4.4"
   ],
   "google": [
-    "ns-cloud-e1.googledomains.com",
-    "ns-cloud-e2.googledomains.com"
+    "8.8.8.8",
+    "8.8.4.4"
+  ],
+  "letsencrypt": [
+    "1.1.1.1",
+    "1.0.0.1"
   ],
   "default": [
     "8.8.8.8",

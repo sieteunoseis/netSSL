@@ -150,7 +150,7 @@ export class ACMEClient {
         setTimeout(() => reject(new Error('Order creation timeout after 30 seconds')), 30000)
       );
       
-      const order = await Promise.race([orderPromise, timeoutPromise]);
+      const order = await Promise.race([orderPromise, timeoutPromise]) as any;
       Logger.info(`Created certificate order: ${order.url}`);
 
       // Get authorizations and challenges with timeout
@@ -160,7 +160,7 @@ export class ACMEClient {
         setTimeout(() => reject(new Error('Authorization retrieval timeout after 30 seconds')), 30000)
       );
       
-      const authorizations = await Promise.race([authPromise, authTimeoutPromise]);
+      const authorizations = await Promise.race([authPromise, authTimeoutPromise]) as any;
       const challenges: any[] = [];
 
       for (const authorization of authorizations) {
