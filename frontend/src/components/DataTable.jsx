@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { useConfig } from '../config/ConfigContext';
 import { apiCall } from '../lib/api';
-import { ChevronDown, ChevronUp, FileText, Trash2, Clock, Eye, EyeOff, Edit } from 'lucide-react';
+import { ChevronDown, ChevronUp, Trash2, Eye, EyeOff, Edit } from 'lucide-react';
 import EditConnectionModal from './EditConnectionModal';
 
 const DataTable = ({ data, onDataChange }) => {
@@ -31,14 +31,6 @@ const DataTable = ({ data, onDataChange }) => {
     }
   };
 
-  const issueCertificate = async (id) => {
-    try {
-      await apiCall(`/data/${id}/issue-cert`, { method: "POST" });
-      onDataChange();
-    } catch (error) {
-      console.error("Error issuing certificate:", error);
-    }
-  };
 
   const toggleRow = (id) => {
     const newExpanded = new Set(expandedRows);
@@ -88,24 +80,9 @@ const DataTable = ({ data, onDataChange }) => {
       return providers[value] || value;
     }
     
-    if (columnName === "last_cert_issued") {
-      return value ? new Date(value).toLocaleDateString() : "Never";
-    }
-    
     return value || "—";
   };
 
-  const getCertificateStatus = (record) => {
-    if (!record.last_cert_issued) return "No certificate issued";
-    
-    const lastIssued = new Date(record.last_cert_issued);
-    const now = new Date();
-    const daysSince = Math.floor((now - lastIssued) / (1000 * 60 * 60 * 24));
-    
-    if (daysSince < 7) return `Issued ${daysSince} days ago`;
-    if (daysSince < 30) return `Issued ${Math.floor(daysSince / 7)} weeks ago`;
-    return `Issued ${Math.floor(daysSince / 30)} months ago`;
-  };
 
   const getMainDisplayColumns = () => {
     return ["name", "hostname", "domain"];
@@ -141,28 +118,6 @@ const DataTable = ({ data, onDataChange }) => {
               </div>
               
               <div className="flex items-center space-x-2 ml-4">
-                <div className="text-xs text-gray-500 dark:text-gray-400 text-right">
-                  <div className="flex items-center space-x-1">
-                    <Clock className="w-3 h-3" />
-                    <span>{getCertificateStatus(record)}</span>
-                  </div>
-                  {record.cert_count_this_week > 0 && (
-                    <div className="mt-1">
-                      {record.cert_count_this_week} certs this week
-                    </div>
-                  )}
-                </div>
-                
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => issueCertificate(record.id)}
-                  className="flex items-center space-x-1"
-                >
-                  <FileText className="w-4 h-4" />
-                  <span>Issue Cert</span>
-                </Button>
-                
                 <Button
                   variant="outline"
                   size="sm"
@@ -236,27 +191,6 @@ const DataTable = ({ data, onDataChange }) => {
                       </div>
                     );
                   })}
-                  
-                  {/* Certificate Status Details */}
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                      Certificate Status
-                    </div>
-                    <div className="text-sm text-gray-900 dark:text-gray-100">
-                      {getCertificateStatus(record)}
-                    </div>
-                  </div>
-                  
-                  {record.cert_count_this_week > 0 && (
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                        Weekly Usage
-                      </div>
-                      <div className="text-sm text-gray-900 dark:text-gray-100">
-                        {record.cert_count_this_week} certificates this week
-                      </div>
-                    </div>
-                  )}
                   
                   <div className="min-w-0">
                     <div className="text-sm font-medium text-gray-500 dark:text-gray-400">

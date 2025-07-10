@@ -32,18 +32,14 @@ const AddConnectionModal: React.FC<AddConnectionModalProps> = ({
       <DialogTrigger asChild>
         {trigger || defaultTrigger}
       </DialogTrigger>
-      <DialogContent 
-        className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto"
-      >
+      <DialogContent tabIndex={-1}>
         <DialogHeader>
           <DialogTitle>Add New Connection</DialogTitle>
           <DialogDescription>
             Add a new Cisco UC server connection for certificate management.
           </DialogDescription>
         </DialogHeader>
-        <div className="mt-4">
-          <DataForm onDataAdded={handleConnectionAdded} />
-        </div>
+        <DataForm onDataAdded={handleConnectionAdded} />
       </DialogContent>
     </Dialog>
   );

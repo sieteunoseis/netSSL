@@ -163,7 +163,7 @@ const EditConnectionModal: React.FC<EditConnectionModalProps> = ({
             Update the connection details for {record.name || 'this connection'}.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4 mt-4">
+        <form onSubmit={handleSubmit} className="space-y-4 mt-4" autoComplete="off">
           {data.map((col, index) => {
             const formValue = formData[col.name];
             const isOptional = col.optional === true;
@@ -199,6 +199,10 @@ const EditConnectionModal: React.FC<EditConnectionModalProps> = ({
                     name={col.name}
                     placeholder={placeholder}
                     value={formValue || ""}
+                    autoComplete="off"
+                    data-lpignore="true"
+                    data-form-type="other"
+                    data-1p-ignore="true"
                     onChange={(e) => {
                       handleChange(e, col.validator, isOptional);
                     }}

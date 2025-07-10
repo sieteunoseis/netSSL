@@ -66,6 +66,7 @@
     "validator": { "name": "isAscii", "options": "" },
     "label": "Alternative Names (SANs)",
     "placeholder": "e.g., server1.example.com, server2.example.com",
-    "required": false
+    "required": false,
+    "optional": true
   }
 ]

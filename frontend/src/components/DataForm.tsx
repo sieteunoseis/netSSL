@@ -145,7 +145,7 @@ const DataForm: React.FC<DataFormProps> = ({ onDataAdded }) => {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
       {data.map((col, index) => {
         const formValue = formData[col.name];
         const isOptional = col.optional === true;
@@ -163,7 +163,7 @@ const DataForm: React.FC<DataFormProps> = ({ onDataAdded }) => {
                 value={formValue || col.default || ""} 
                 onValueChange={(value) => handleSelectChange(col.name, value, col.validator, isOptional)}
               >
-                <SelectTrigger tabIndex={index + 1}>
+                <SelectTrigger tabIndex={0}>
                   <SelectValue placeholder={placeholder} />
                 </SelectTrigger>
                 <SelectContent>
@@ -181,8 +181,12 @@ const DataForm: React.FC<DataFormProps> = ({ onDataAdded }) => {
                 name={col.name}
                 placeholder={placeholder}
                 value={formValue || ""}
+                autoComplete="off"
+                data-lpignore="true"
+                data-form-type="other"
+                data-1p-ignore="true"
                 autoFocus={index === 0}
-                tabIndex={index + 1}
+                tabIndex={0}
                 onChange={(e) => {
                   handleChange(e, col.validator, isOptional);
                 }}
@@ -193,7 +197,7 @@ const DataForm: React.FC<DataFormProps> = ({ onDataAdded }) => {
           </div>
         );
       })}
-      <Button type="submit" tabIndex={data.length + 1}>Add Connection</Button>
+      <Button type="submit" tabIndex={0}>Add Connection</Button>
     </form>
   );
 };
