@@ -22,11 +22,16 @@ export interface RenewalStatus {
 
 export interface CertificateRenewalService {
   renewCertificate(connectionId: number, database: DatabaseManager): Promise<RenewalStatus>;
-  getRenewalStatus(renewalId: string): RenewalStatus | null;
+  getRenewalStatus(renewalId: string): Promise<RenewalStatus | null>;
 }
 
 class CertificateRenewalServiceImpl implements CertificateRenewalService {
   private renewalStatuses: Map<string, RenewalStatus> = new Map();
+  private database: DatabaseManager | null = null;
+
+  setDatabase(database: DatabaseManager): void {
+    this.database = database;
+  }
 
   async renewCertificate(connectionId: number, database: DatabaseManager): Promise<RenewalStatus> {
     const renewalId = crypto.randomUUID();
@@ -43,26 +48,95 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     this.renewalStatuses.set(renewalId, status);
     Logger.info(`Created renewal status with ID: ${renewalId} for connection ${connectionId}`);
 
+    // Save to database
+    await database.saveRenewalStatus(renewalId, connectionId, status.status, undefined, status.message, undefined, status.logs);
+
     // Start the renewal process asynchronously
-    this.performRenewal(renewalId, connectionId, database).catch(error => {
+    this.performRenewal(renewalId, connectionId, database).catch(async error => {
       Logger.error(`Certificate renewal failed for connection ${connectionId}:`, error);
       status.status = 'failed';
       status.error = error.message;
       status.message = 'Certificate renewal failed';
       status.endTime = new Date();
+      
+      // Save failed status to database
+      if (database) {
+        await database.saveRenewalStatus(
+          renewalId,
+          connectionId,
+          'failed',
+          undefined,
+          'Certificate renewal failed',
+          error.message,
+          status.logs
+        ).catch(err => {
+          Logger.error(`Failed to save failed renewal status to database: ${err.message}`);
+        });
+      }
     });
 
     return status;
   }
 
-  getRenewalStatus(renewalId: string): RenewalStatus | null {
+  async getRenewalStatus(renewalId: string): Promise<RenewalStatus | null> {
     Logger.info(`Looking for renewal status ID: ${renewalId}`);
-    Logger.info(`Available renewal IDs: ${Array.from(this.renewalStatuses.keys()).join(', ')}`);
-    return this.renewalStatuses.get(renewalId) || null;
+    
+    // First check memory cache
+    const memoryStatus = this.renewalStatuses.get(renewalId);
+    if (memoryStatus) {
+      return memoryStatus;
+    }
+    
+    // If not in memory, check database
+    if (this.database) {
+      const dbStatus = await this.database.getRenewalStatus(renewalId);
+      if (dbStatus) {
+        // Convert database format to RenewalStatus format
+        const status: RenewalStatus = {
+          id: dbStatus.renewal_id,
+          connectionId: dbStatus.connection_id,
+          status: dbStatus.status,
+          message: dbStatus.message || '',
+          progress: this.getProgressForStatus(dbStatus.status),
+          startTime: new Date(dbStatus.created_at),
+          endTime: dbStatus.updated_at ? new Date(dbStatus.updated_at) : undefined,
+          error: dbStatus.error,
+          logs: dbStatus.logs || []
+        };
+        // Cache in memory
+        this.renewalStatuses.set(renewalId, status);
+        return status;
+      }
+    }
+    
+    Logger.info(`Available renewal IDs in memory: ${Array.from(this.renewalStatuses.keys()).join(', ')}`);
+    return null;
+  }
+
+  private getProgressForStatus(status: string): number {
+    const progressMap: Record<string, number> = {
+      'pending': 0,
+      'generating_csr': 10,
+      'creating_account': 15,
+      'requesting_certificate': 20,
+      'creating_dns_challenge': 30,
+      'waiting_dns_propagation': 50,
+      'completing_validation': 70,
+      'downloading_certificate': 80,
+      'uploading_certificate': 90,
+      'completed': 100,
+      'failed': 0
+    };
+    return progressMap[status] || 0;
   }
 
   private async performRenewal(renewalId: string, connectionId: number, database: DatabaseManager): Promise<void> {
     const status = this.renewalStatuses.get(renewalId)!;
+    
+    // Ensure database is set for this renewal
+    if (!this.database) {
+      this.database = database;
+    }
     
     try {
       // Get connection details
@@ -76,26 +150,26 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       // Check for existing valid certificate
       const existingCert = await this.getExistingCertificate(fullFQDN);
       if (existingCert) {
-        this.updateStatus(status, 'uploading_certificate', 'Using existing valid certificate', 80);
+        await this.updateStatus(status, 'uploading_certificate', 'Using existing valid certificate', 80);
         await this.uploadCertificateToCUCM(connection, existingCert, status);
-        this.updateStatus(status, 'completed', 'Certificate renewal completed successfully', 100);
+        await this.updateStatus(status, 'completed', 'Certificate renewal completed successfully', 100);
         status.endTime = new Date();
         return;
       }
 
-      this.updateStatus(status, 'generating_csr', 'Generating CSR from CUCM server', 10);
+      await this.updateStatus(status, 'generating_csr', 'Generating CSR from CUCM server', 10);
       
       // Step 1: Generate CSR from CUCM
       const csr = await this.generateCSRFromCUCM(connection, status);
       
       // Now continue with Let's Encrypt certificate request
-      this.updateStatus(status, 'requesting_certificate', 'Requesting certificate from Let\'s Encrypt', 20);
+      await this.updateStatus(status, 'requesting_certificate', 'Requesting certificate from Let\'s Encrypt', 20);
       const certificate = await this.requestCertificate(connection, csr, database, status);
       
-      this.updateStatus(status, 'uploading_certificate', 'Uploading certificate to CUCM', 90);
+      await this.updateStatus(status, 'uploading_certificate', 'Uploading certificate to CUCM', 90);
       await this.uploadCertificateToCUCM(connection, certificate, status);
       
-      this.updateStatus(status, 'completed', 'Certificate renewal completed successfully', 100);
+      await this.updateStatus(status, 'completed', 'Certificate renewal completed successfully', 100);
       status.endTime = new Date();
       
       // Save the renewal completion info
@@ -139,12 +213,27 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     }
   }
 
-  private updateStatus(status: RenewalStatus, newStatus: RenewalStatus['status'], message: string, progress: number): void {
+  private async updateStatus(status: RenewalStatus, newStatus: RenewalStatus['status'], message: string, progress: number): Promise<void> {
     status.status = newStatus;
     status.message = message;
     status.progress = progress;
     status.logs.push(`${new Date().toISOString()}: ${message}`);
     Logger.info(`Renewal ${status.id}: ${message}`);
+    
+    // Save to database if available
+    if (this.database) {
+      await this.database.saveRenewalStatus(
+        status.id,
+        status.connectionId,
+        newStatus,
+        undefined,
+        message,
+        status.error,
+        status.logs
+      ).catch(err => {
+        Logger.error(`Failed to save renewal status to database: ${err.message}`);
+      });
+    }
   }
 
   private async generateCSRFromCUCM(connection: ConnectionRecord, status: RenewalStatus): Promise<string> {
@@ -280,7 +369,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       await accountManager.saveRenewalLog(fullFQDN, `Domains: ${domains.join(', ')}`);
       await accountManager.saveRenewalLog(fullFQDN, `Environment: ${process.env.LETSENCRYPT_STAGING !== 'false' ? 'STAGING' : 'PRODUCTION'}`);
       
-      this.updateStatus(status, 'creating_account', 'Setting up Let\'s Encrypt account', 20);
+      await this.updateStatus(status, 'creating_account', 'Setting up Let\'s Encrypt account', 20);
       
       // Get or create ACME account
       let account = await acmeClient.loadAccount(fullFQDN);
@@ -301,14 +390,14 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         await accountManager.saveRenewalLog(fullFQDN, `Account URL: ${account.accountUrl}`);
       }
       
-      this.updateStatus(status, 'requesting_certificate', 'Requesting certificate from Let\'s Encrypt', 30);
+      await this.updateStatus(status, 'requesting_certificate', 'Requesting certificate from Let\'s Encrypt', 30);
       
       // Create certificate order
       await accountManager.saveRenewalLog(fullFQDN, `Creating certificate order for domains: ${domains.join(', ')}`);
       const order = await acmeClient.requestCertificate(csr, domains);
       await accountManager.saveRenewalLog(fullFQDN, `Certificate order created: ${order.order.url}`);
       
-      this.updateStatus(status, 'creating_dns_challenge', 'Setting up DNS challenges', 40);
+      await this.updateStatus(status, 'creating_dns_challenge', 'Setting up DNS challenges', 40);
       
       // Initialize Cloudflare provider
       const cloudflare = await CloudflareProvider.create(database, fullFQDN);
@@ -346,7 +435,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         status.logs.push(`Created DNS TXT record for ${challengeDomain}: ${record.id}`);
       }
       
-      this.updateStatus(status, 'waiting_dns_propagation', 'Waiting for DNS propagation', 50);
+      await this.updateStatus(status, 'waiting_dns_propagation', 'Waiting for DNS propagation', 50);
       await accountManager.saveRenewalLog(fullFQDN, `Waiting for DNS propagation of ${dnsRecords.length} record(s)`);
       
       // Wait for DNS propagation
@@ -365,7 +454,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         status.logs.push(`DNS propagation verified for ${domain}`);
       }
       
-      this.updateStatus(status, 'completing_validation', 'Completing Let\'s Encrypt validation', 70);
+      await this.updateStatus(status, 'completing_validation', 'Completing Let\'s Encrypt validation', 70);
       await accountManager.saveRenewalLog(fullFQDN, `Completing ${dnsRecords.length} Let's Encrypt challenge(s)`);
       
       // Complete challenges
@@ -385,7 +474,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       const completedOrder = await acmeClient.waitForOrderCompletion(order.order);
       await accountManager.saveRenewalLog(fullFQDN, `Order completed successfully`);
       
-      this.updateStatus(status, 'downloading_certificate', 'Downloading certificate', 80);
+      await this.updateStatus(status, 'downloading_certificate', 'Downloading certificate', 80);
       
       // Finalize and get certificate
       await accountManager.saveRenewalLog(fullFQDN, `Finalizing certificate order`);
@@ -610,7 +699,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         const options = {
             hostname: fullFQDN,
             port: 443,
-            path: '/platformcom/api/v1/certmgr/config/trust/certificate',
+            path: '/platformcom/api/v1/certmgr/config/trust/certificate?service=tomcat',
             method: 'GET',
             headers: {
                 'Accept': 'application/json',

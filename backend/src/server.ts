@@ -23,6 +23,9 @@ console.log('Processed TABLE_COLUMNS:', TABLE_COLUMNS);
 // Initialize database
 const database = new DatabaseManager('./db/database.db', TABLE_COLUMNS);
 
+// Set database on certificate renewal service
+(certificateRenewalService as any).setDatabase(database);
+
 // Middleware
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
@@ -302,7 +305,7 @@ app.get('/api/data/:id/renewal-status/:renewalId', asyncHandler(async (req: Requ
   Logger.info(`Fetching renewal status for ID: ${renewalId}`);
   
   try {
-    const status = certificateRenewalService.getRenewalStatus(renewalId);
+    const status = await certificateRenewalService.getRenewalStatus(renewalId);
     if (!status) {
       Logger.warn(`Renewal status not found for ID: ${renewalId}`);
       return res.status(404).json({ error: 'Renewal status not found' });

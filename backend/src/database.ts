@@ -80,6 +80,21 @@ export class DatabaseManager {
       )
     `;
 
+    const createRenewalStatusTableQuery = `
+      CREATE TABLE IF NOT EXISTS renewal_status (
+        renewal_id TEXT PRIMARY KEY,
+        connection_id INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        current_step TEXT,
+        message TEXT,
+        error TEXT,
+        logs TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE CASCADE
+      )
+    `;
+
     this.db.run(createTableQuery, [], (err: any) => {
       if (err) {
         Logger.error('Failed to create connections table:', err);
@@ -95,6 +110,15 @@ export class DatabaseManager {
         throw err;
       } else {
         Logger.info('Database settings table created');
+      }
+    });
+
+    this.db.run(createRenewalStatusTableQuery, [], (err: any) => {
+      if (err) {
+        Logger.error('Failed to create renewal_status table:', err);
+        throw err;
+      } else {
+        Logger.info('Database renewal_status table created');
       }
     });
   }
@@ -125,6 +149,21 @@ export class DatabaseManager {
       )
     `;
 
+    const createRenewalStatusTableQuery = `
+      CREATE TABLE renewal_status (
+        renewal_id TEXT PRIMARY KEY,
+        connection_id INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        current_step TEXT,
+        message TEXT,
+        error TEXT,
+        logs TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE CASCADE
+      )
+    `;
+
     this.db.run(createTableQuery, [], (err: any) => {
       if (err) {
         Logger.error('Failed to create connections table:', err);
@@ -140,6 +179,15 @@ export class DatabaseManager {
         throw err;
       } else {
         Logger.info('Database settings table created');
+      }
+    });
+
+    this.db.run(createRenewalStatusTableQuery, [], (err: any) => {
+      if (err) {
+        Logger.error('Failed to create renewal_status table:', err);
+        throw err;
+      } else {
+        Logger.info('Database renewal_status table created');
       }
     });
   }
@@ -442,6 +490,82 @@ export class DatabaseManager {
           reject(err);
         } else {
           resolve(rows);
+        }
+      });
+    });
+  }
+
+  async saveRenewalStatus(renewalId: string, connectionId: number, status: string, currentStep?: string, message?: string, error?: string, logs?: string[]): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const query = `
+        INSERT OR REPLACE INTO renewal_status (renewal_id, connection_id, status, current_step, message, error, logs, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      `;
+      
+      const logsJson = logs ? JSON.stringify(logs) : null;
+      
+      this.db.run(query, [renewalId, connectionId, status, currentStep, message, error, logsJson], (err: any) => {
+        if (err) {
+          Logger.error('Failed to save renewal status:', err);
+          reject(err);
+        } else {
+          Logger.debug(`Saved renewal status: ${renewalId} - ${status}`);
+          resolve();
+        }
+      });
+    });
+  }
+
+  async getRenewalStatus(renewalId: string): Promise<any | null> {
+    return new Promise((resolve, reject) => {
+      const query = 'SELECT * FROM renewal_status WHERE renewal_id = ?';
+      
+      this.db.get(query, [renewalId], (err: any, row: any) => {
+        if (err) {
+          Logger.error('Failed to get renewal status:', err);
+          reject(err);
+        } else if (row) {
+          // Parse logs from JSON
+          if (row.logs) {
+            try {
+              row.logs = JSON.parse(row.logs);
+            } catch (e) {
+              row.logs = [];
+            }
+          }
+          resolve(row);
+        } else {
+          resolve(null);
+        }
+      });
+    });
+  }
+
+  async deleteRenewalStatus(renewalId: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.db.run('DELETE FROM renewal_status WHERE renewal_id = ?', [renewalId], (err: any) => {
+        if (err) {
+          Logger.error('Failed to delete renewal status:', err);
+          reject(err);
+        } else {
+          Logger.debug(`Deleted renewal status: ${renewalId}`);
+          resolve();
+        }
+      });
+    });
+  }
+
+  async cleanupOldRenewalStatuses(hoursOld: number = 24): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const query = `DELETE FROM renewal_status WHERE created_at < datetime('now', '-${hoursOld} hours')`;
+      
+      this.db.run(query, [], (err: any) => {
+        if (err) {
+          Logger.error('Failed to cleanup old renewal statuses:', err);
+          reject(err);
+        } else {
+          Logger.debug(`Cleaned up renewal statuses older than ${hoursOld} hours`);
+          resolve();
         }
       });
     });
