@@ -396,6 +396,12 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         const errorObj = JSON.parse(error instanceof Error ? error.message : String(error));
         if (errorObj && typeof errorObj === 'object') {
           await accountManager.saveRenewalLog(fullFQDN, `Detailed error: ${JSON.stringify(errorObj, null, 2)}`);
+          
+          // If we have authorization URLs, try to get detailed auth info
+          if (errorObj.authorizations && Array.isArray(errorObj.authorizations)) {
+            await accountManager.saveRenewalLog(fullFQDN, `Attempting to fetch detailed authorization information...`);
+            // The detailed auth info will be logged by the ACME client's enhanced error handling
+          }
         }
       } catch {
         // Not a JSON error, ignore

@@ -217,6 +217,22 @@ export class ACMEClient {
         try {
           const authorizations = await this.client.getAuthorizations(orderStatus);
           Logger.error(`Authorization details:`, JSON.stringify(authorizations, null, 2));
+          
+          // Check for specific challenge errors
+          authorizations.forEach((auth: any, index: number) => {
+            Logger.error(`Authorization ${index + 1} status: ${auth.status}`);
+            if (auth.challenges) {
+              auth.challenges.forEach((challenge: any, chalIndex: number) => {
+                Logger.error(`  Challenge ${chalIndex + 1} (${challenge.type}): ${challenge.status}`);
+                if (challenge.error) {
+                  Logger.error(`    Error: ${JSON.stringify(challenge.error, null, 4)}`);
+                }
+                if (challenge.validated) {
+                  Logger.error(`    Validated: ${challenge.validated}`);
+                }
+              });
+            }
+          });
         } catch (authError) {
           Logger.error(`Failed to get authorization details:`, authError);
         }
