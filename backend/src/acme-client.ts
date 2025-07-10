@@ -198,12 +198,36 @@ export class ACMEClient {
     try {
       Logger.info(`Waiting for order completion: ${order.url}`);
       
+      // Add a small delay before checking order status to allow ACME server to process
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
       const completedOrder = await this.client.waitForValidStatus(order);
       
       Logger.info(`Order completed successfully: ${completedOrder.url}`);
       return completedOrder;
     } catch (error) {
       Logger.error(`Failed to wait for order completion:`, error);
+      
+      // Try to get more details about the failure
+      try {
+        const orderStatus = await this.client.getOrder(order);
+        Logger.error(`Order status details:`, JSON.stringify(orderStatus, null, 2));
+        
+        // Get authorization details
+        if (orderStatus.authorizations) {
+          for (const authUrl of orderStatus.authorizations) {
+            try {
+              const auth = await this.client.getAuthorization(authUrl);
+              Logger.error(`Authorization details for ${authUrl}:`, JSON.stringify(auth, null, 2));
+            } catch (authError) {
+              Logger.error(`Failed to get authorization details for ${authUrl}:`, authError);
+            }
+          }
+        }
+      } catch (detailError) {
+        Logger.error(`Failed to get order details:`, detailError);
+      }
+      
       throw error;
     }
   }

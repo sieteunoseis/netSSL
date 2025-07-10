@@ -305,6 +305,10 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         await acmeClient.completeChallenge(challenge);
       }
       
+      // Add delay to ensure Let's Encrypt processes the completed challenges
+      Logger.info('Waiting for Let\'s Encrypt to process challenge completion...');
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
       // Wait for order completion
       const completedOrder = await acmeClient.waitForOrderCompletion(order.order);
       
@@ -313,14 +317,20 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       // Finalize and get certificate
       const certificate = await acmeClient.finalizeCertificate(completedOrder, csr);
       
-      // Clean up DNS records
-      for (const { record } of dnsRecords) {
-        try {
-          await cloudflare.deleteTxtRecord(record.id);
-          status.logs.push(`Cleaned up DNS TXT record: ${record.id}`);
-        } catch (error) {
-          Logger.warn(`Failed to clean up DNS record ${record.id}:`, error);
+      // Clean up DNS records - skip in staging mode for debugging
+      const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
+      if (!isStaging || process.env.LETSENCRYPT_CLEANUP_DNS === 'true') {
+        for (const { record } of dnsRecords) {
+          try {
+            await cloudflare.deleteTxtRecord(record.id);
+            status.logs.push(`Cleaned up DNS TXT record: ${record.id}`);
+          } catch (error) {
+            Logger.warn(`Failed to clean up DNS record ${record.id}:`, error);
+          }
         }
+      } else {
+        Logger.info(`Skipping DNS record cleanup in staging mode (${dnsRecords.length} records)`);
+        status.logs.push(`Skipped DNS cleanup in staging mode for debugging`);
       }
       
       // Save certificate and chain to accounts folder
