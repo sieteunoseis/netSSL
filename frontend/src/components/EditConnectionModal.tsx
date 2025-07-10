@@ -123,10 +123,10 @@ const EditConnectionModal: React.FC<EditConnectionModalProps> = ({
     const { name, value } = e.target;
     const newErrors: Record<string, string> = {};
 
-    // For CSR, validate format if not empty
+    // For CSR, validate format if not empty (can include private key)
     if (name === 'custom_csr' && value.trim() !== '') {
       if (!value.includes('-----BEGIN CERTIFICATE REQUEST-----') || !value.includes('-----END CERTIFICATE REQUEST-----')) {
-        newErrors[name] = "Must be a valid PEM formatted certificate request";
+        newErrors[name] = "Must contain a valid PEM formatted certificate request";
       } else {
         newErrors[name] = "";
       }

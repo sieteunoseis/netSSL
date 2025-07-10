@@ -169,10 +169,52 @@ app.post('/api/data', asyncHandler(async (req: Request, res: Response) => {
     }
   }
 
+  // Log the received data for debugging
+  Logger.info('Creating connection with data:', { 
+    application_type: req.body.application_type,
+    name: req.body.name,
+    hostname: req.body.hostname 
+  });
+
   // Sanitize input data
   const sanitizedData = sanitizeConnectionData(req.body);
   
+  Logger.info('Sanitized data for creation:', { 
+    application_type: sanitizedData.application_type,
+    name: sanitizedData.name,
+    hostname: sanitizedData.hostname 
+  });
+  
   const connectionId = await database.createConnection(sanitizedData as ConnectionRecord);
+  
+  // Pre-create Let's Encrypt account if using letsencrypt SSL provider
+  if (sanitizedData.ssl_provider === 'letsencrypt') {
+    try {
+      const { acmeClient } = await import('./acme-client');
+      const domain = `${sanitizedData.hostname}.${sanitizedData.domain}`;
+      
+      // Check if account already exists
+      const existingAccount = await acmeClient.loadAccount(domain);
+      if (!existingAccount) {
+        Logger.info(`Pre-creating Let's Encrypt account for new connection: ${domain}`);
+        const sslSettings = await database.getSettingsByProvider('letsencrypt');
+        const email = sslSettings.find(s => s.key_name === 'LETSENCRYPT_EMAIL')?.key_value;
+        
+        if (email) {
+          // Create account in background without blocking the response
+          acmeClient.createAccount(email, domain).then(() => {
+            Logger.info(`Successfully pre-created Let's Encrypt account for ${domain}`);
+          }).catch((error) => {
+            Logger.error(`Failed to pre-create Let's Encrypt account for ${domain}:`, error);
+            // Don't fail the connection creation if account creation fails
+          });
+        }
+      }
+    } catch (error) {
+      Logger.error('Error during Let\'s Encrypt account pre-creation:', error);
+      // Don't fail the connection creation if account setup fails
+    }
+  }
   
   return res.status(201).json({ 
     id: connectionId,
@@ -248,11 +290,55 @@ app.put('/api/data/:id', asyncHandler(async (req: Request, res: Response) => {
     });
   }
 
+  // Log the received data for debugging
+  Logger.info('Updating connection with data:', { 
+    id: id,
+    application_type: req.body.application_type,
+    name: req.body.name,
+    hostname: req.body.hostname 
+  });
+
   // Sanitize input data
   const sanitizedData = sanitizeConnectionData(req.body);
   
+  Logger.info('Sanitized data for update:', { 
+    id: id,
+    application_type: sanitizedData.application_type,
+    name: sanitizedData.name,
+    hostname: sanitizedData.hostname 
+  });
+  
   // Update connection in database
   await database.updateConnection(id, sanitizedData as ConnectionRecord);
+  
+  // Pre-create Let's Encrypt account if SSL provider was changed to letsencrypt
+  if (sanitizedData.ssl_provider === 'letsencrypt') {
+    try {
+      const { acmeClient } = await import('./acme-client');
+      const domain = `${sanitizedData.hostname}.${sanitizedData.domain}`;
+      
+      // Check if account already exists
+      const existingAccount = await acmeClient.loadAccount(domain);
+      if (!existingAccount) {
+        Logger.info(`Pre-creating Let's Encrypt account for updated connection: ${domain}`);
+        const sslSettings = await database.getSettingsByProvider('letsencrypt');
+        const email = sslSettings.find(s => s.key_name === 'LETSENCRYPT_EMAIL')?.key_value;
+        
+        if (email) {
+          // Create account in background without blocking the response
+          acmeClient.createAccount(email, domain).then(() => {
+            Logger.info(`Successfully pre-created Let's Encrypt account for ${domain}`);
+          }).catch((error) => {
+            Logger.error(`Failed to pre-create Let's Encrypt account for ${domain}:`, error);
+            // Don't fail the connection update if account creation fails
+          });
+        }
+      }
+    } catch (error) {
+      Logger.error('Error during Let\'s Encrypt account pre-creation on update:', error);
+      // Don't fail the connection update if account setup fails
+    }
+  }
   
   return res.json({ 
     id: id,

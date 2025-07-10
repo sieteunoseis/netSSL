@@ -187,19 +187,47 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       let csr: string;
       if (connection.application_type === 'general') {
         // For general applications, use the provided custom CSR
-        await this.updateStatus(status, 'generating_csr', 'Using custom CSR for general application', 10);
+        await this.updateStatus(status, 'generating_csr', 'Processing custom CSR for general application', 10);
         
         if (!connection.custom_csr) {
           throw new Error('Custom CSR is required for general applications');
         }
         
-        csr = connection.custom_csr;
+        // Extract CSR and private key if both are present
+        const customCsrContent = connection.custom_csr;
+        
+        // Look for CSR section
+        const csrMatch = customCsrContent.match(/-----BEGIN CERTIFICATE REQUEST-----[\s\S]*?-----END CERTIFICATE REQUEST-----/);
+        if (!csrMatch) {
+          throw new Error('Valid CSR not found in custom CSR field');
+        }
+        csr = csrMatch[0];
+        
+        // Look for private key section (supports both PRIVATE KEY and RSA PRIVATE KEY formats)
+        const privateKeyMatch = customCsrContent.match(/-----BEGIN (RSA )?PRIVATE KEY-----[\s\S]*?-----END (RSA )?PRIVATE KEY-----/);
+        
         status.logs.push(`Using custom CSR for general application: ${connection.name}`);
         await accountManager.saveRenewalLog(fullFQDN, `Using custom CSR for general application: ${connection.name}`);
         await accountManager.saveRenewalLog(fullFQDN, `CSR length: ${csr.length} characters`);
         
         // Save the CSR to accounts folder for record keeping
         await accountManager.saveCSR(fullFQDN, csr);
+        
+        // If private key is included, save it as well
+        if (privateKeyMatch) {
+          const privateKey = privateKeyMatch[0];
+          status.logs.push(`Private key found and saved for ${connection.name}`);
+          await accountManager.saveRenewalLog(fullFQDN, `Private key found and saved for ${connection.name}`);
+          await accountManager.saveRenewalLog(fullFQDN, `Private key length: ${privateKey.length} characters`);
+          
+          // Save private key to accounts folder
+          const domainDir = path.join(accountManager['accountsDir'], fullFQDN);
+          const privateKeyPath = path.join(domainDir, 'private_key.pem');
+          await fs.promises.writeFile(privateKeyPath, privateKey);
+        } else {
+          status.logs.push(`No private key found in custom CSR - only CSR will be processed`);
+          await accountManager.saveRenewalLog(fullFQDN, `No private key found in custom CSR - only CSR will be processed`);
+        }
       } else {
         // For VOS applications (CUCM, CER, CUC), generate CSR from API
         await this.updateStatus(status, 'generating_csr', 'Generating CSR from VOS application API', 10);
@@ -217,6 +245,36 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         status.logs.push(`Certificate generated and ready for manual installation on ${connection.name}`);
         await accountManager.saveRenewalLog(fullFQDN, `Certificate generated and ready for manual installation on ${connection.name}`);
         await accountManager.saveRenewalLog(fullFQDN, `Certificate files available in: ./accounts/${fullFQDN}/`);
+        
+        // Create CRT and KEY files for easier ESXi import
+        try {
+          const domainDir = path.join(accountManager['accountsDir'], fullFQDN);
+          const certPath = path.join(domainDir, 'certificate.pem');
+          const privateKeyPath = path.join(domainDir, 'private_key.pem');
+          
+          // Create .crt file from certificate.pem
+          if (fs.existsSync(certPath)) {
+            const certContent = await fs.promises.readFile(certPath, 'utf8');
+            const crtPath = path.join(domainDir, `${fullFQDN}.crt`);
+            await fs.promises.writeFile(crtPath, certContent);
+            status.logs.push(`Created ${fullFQDN}.crt file for ESXi import`);
+            await accountManager.saveRenewalLog(fullFQDN, `Created ${fullFQDN}.crt file for ESXi import`);
+          }
+          
+          // Create .key file from private_key.pem
+          if (fs.existsSync(privateKeyPath)) {
+            const keyContent = await fs.promises.readFile(privateKeyPath, 'utf8');
+            if (keyContent.trim()) { // Only create if not empty
+              const keyPath = path.join(domainDir, `${fullFQDN}.key`);
+              await fs.promises.writeFile(keyPath, keyContent);
+              status.logs.push(`Created ${fullFQDN}.key file for ESXi import`);
+              await accountManager.saveRenewalLog(fullFQDN, `Created ${fullFQDN}.key file for ESXi import`);
+            }
+          }
+        } catch (error) {
+          status.logs.push(`Warning: Could not create CRT/KEY files: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          await accountManager.saveRenewalLog(fullFQDN, `Warning: Could not create CRT/KEY files: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
       } else {
         // For VOS applications, upload via API
         await this.updateStatus(status, 'uploading_certificate', 'Uploading certificate to VOS application', 90);

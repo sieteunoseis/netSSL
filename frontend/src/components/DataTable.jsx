@@ -89,7 +89,7 @@ const DataTable = ({ data, onDataChange }) => {
   };
 
   const getDetailColumns = () => {
-    return jsonData.filter(col => !getMainDisplayColumns().includes(col.name));
+    return jsonData.filter(col => !getMainDisplayColumns().includes(col.name) && col.name !== 'custom_csr');
   };
 
   return (

@@ -326,13 +326,13 @@ export class DatabaseManager {
     const hashedPassword = data.password ? await this.hashPassword(data.password) : null;
     
     return new Promise((resolve, reject) => {
-      // Include all columns including password
-      const dataColumns = this.tableColumns;
-      const columnValues = dataColumns.map(col => (data as any)[col] || null);
+      // Include all columns including the newer fields
+      const allColumns = [...this.tableColumns, 'application_type', 'custom_csr'];
+      const columnValues = allColumns.map(col => (data as any)[col] || null);
 
       const insertQuery = `
-        INSERT INTO connections (${dataColumns.join(', ')}, password_hash) 
-        VALUES (${dataColumns.map(() => '?').join(', ')}, ?)
+        INSERT INTO connections (${allColumns.join(', ')}, password_hash) 
+        VALUES (${allColumns.map(() => '?').join(', ')}, ?)
       `;
 
       this.db.run(
