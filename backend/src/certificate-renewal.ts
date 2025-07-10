@@ -11,13 +11,19 @@ import { accountManager, AccountManager } from './account-manager';
 export interface RenewalStatus {
   id: string;
   connectionId: number;
-  status: 'pending' | 'generating_csr' | 'creating_account' | 'requesting_certificate' | 'creating_dns_challenge' | 'waiting_dns_propagation' | 'completing_validation' | 'downloading_certificate' | 'uploading_certificate' | 'completed' | 'failed';
+  status: 'pending' | 'generating_csr' | 'creating_account' | 'requesting_certificate' | 'creating_dns_challenge' | 'waiting_dns_propagation' | 'waiting_manual_dns' | 'completing_validation' | 'downloading_certificate' | 'uploading_certificate' | 'completed' | 'failed';
   message: string;
   progress: number;
   startTime: Date;
   endTime?: Date;
   error?: string;
   logs: string[];
+  challenges?: any[];
+  manualDNSEntry?: {
+    recordName: string;
+    recordValue: string;
+    instructions: string;
+  };
 }
 
 export interface CertificateRenewalService {
@@ -587,6 +593,8 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       await this.handleCloudflareChallenge(connection, settings, status);
     } else if (dnsProvider === 'digitalocean') {
       await this.handleDigitalOceanChallenge(connection, settings, status);
+    } else if (dnsProvider === 'internal') {
+      await this.handleInternalDNSChallenge(connection, settings, status);
     } else {
       throw new Error(`Unsupported DNS provider: ${dnsProvider}`);
     }
@@ -632,6 +640,67 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         resolve();
       }, 1000);
     });
+  }
+
+  private async handleInternalDNSChallenge(connection: ConnectionRecord, settings: any[], status: RenewalStatus): Promise<void> {
+    const fullFQDN = `${connection.hostname}.${connection.domain}`;
+    
+    try {
+      // Import the internal DNS provider
+      const { InternalDNSProvider } = await import('./dns-providers/internal');
+      if (!this.database) {
+        throw new Error('Database not initialized');
+      }
+      const internalDNS = await InternalDNSProvider.create(this.database, fullFQDN);
+      
+      await this.updateStatus(status, 'waiting_dns_propagation', 'Manual DNS entry required - waiting for admin', 60);
+      
+      // Get the challenges that were created in the renewal flow
+      const challenges = status.challenges || [];
+      
+      for (const challenge of challenges) {
+        const keyAuth = challenge.keyAuthorization;
+        const recordName = `_acme-challenge.${fullFQDN}`;
+        
+        // Create the DNS record instruction
+        await internalDNS.createDNSRecord(recordName, keyAuth, 'TXT');
+        
+        // Log manual instructions
+        const instructions = internalDNS.getManualInstructions(recordName, keyAuth);
+        await accountManager.saveRenewalLog(fullFQDN, instructions);
+        status.logs.push('Manual DNS entry required - check renewal logs for instructions');
+        
+        // Store renewal status with manual entry state
+        status.manualDNSEntry = {
+          recordName,
+          recordValue: keyAuth,
+          instructions
+        };
+        
+        // Update status to indicate manual intervention needed
+        await this.updateStatus(status, 'waiting_manual_dns', 'Waiting for manual DNS entry', 65);
+        
+        // Wait for manual DNS entry (5 minute timeout)
+        const maxWaitTime = 300000; // 5 minutes
+        Logger.info(`Waiting for manual DNS entry for ${recordName}`);
+        await accountManager.saveRenewalLog(fullFQDN, `Waiting for manual DNS entry. Timeout: ${maxWaitTime / 1000} seconds`);
+        
+        const isVerified = await internalDNS.waitForManualEntry(recordName, keyAuth, maxWaitTime);
+        
+        if (!isVerified) {
+          throw new Error(`Manual DNS entry verification timed out after ${maxWaitTime / 1000} seconds`);
+        }
+        
+        await accountManager.saveRenewalLog(fullFQDN, `Manual DNS entry verified successfully`);
+        status.logs.push(`DNS record verified: ${recordName}`);
+      }
+      
+      await this.updateStatus(status, 'completing_validation', 'Manual DNS entries verified - completing validation', 70);
+      
+    } catch (error) {
+      Logger.error(`Internal DNS challenge failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw error;
+    }
   }
 
   private async uploadCertificateToCUCM(connection: ConnectionRecord, certificate: string, status: RenewalStatus): Promise<void> {

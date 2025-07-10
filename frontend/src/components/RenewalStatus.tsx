@@ -4,20 +4,25 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { RefreshCw, CheckCircle, XCircle, Clock, AlertCircle } from "lucide-react";
+import { RefreshCw, CheckCircle, XCircle, Clock, AlertCircle, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiCall } from "@/lib/api";
 
 interface RenewalStatus {
   id: string;
   connectionId: number;
-  status: 'pending' | 'generating_csr' | 'creating_account' | 'requesting_certificate' | 'creating_dns_challenge' | 'waiting_dns_propagation' | 'completing_validation' | 'downloading_certificate' | 'uploading_certificate' | 'completed' | 'failed';
+  status: 'pending' | 'generating_csr' | 'creating_account' | 'requesting_certificate' | 'creating_dns_challenge' | 'waiting_dns_propagation' | 'waiting_manual_dns' | 'completing_validation' | 'downloading_certificate' | 'uploading_certificate' | 'completed' | 'failed';
   message: string;
   progress: number;
   startTime: string;
   endTime?: string;
   error?: string;
   logs: string[];
+  manualDNSEntry?: {
+    recordName: string;
+    recordValue: string;
+    instructions: string;
+  };
 }
 
 interface RenewalStatusProps {
@@ -26,11 +31,19 @@ interface RenewalStatusProps {
   onClose: () => void;
 }
 
+interface CertificateFile {
+  type: string;
+  filename: string;
+  size: number;
+  lastModified: string;
+}
+
 const RenewalStatusComponent: React.FC<RenewalStatusProps> = ({ connectionId, renewalId, onClose }) => {
   const { toast } = useToast();
   const [status, setStatus] = useState<RenewalStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [certificateFiles, setCertificateFiles] = useState<CertificateFile[]>([]);
 
   const fetchStatus = async () => {
     try {
@@ -38,6 +51,11 @@ const RenewalStatusComponent: React.FC<RenewalStatusProps> = ({ connectionId, re
       const data = await response.json();
       setStatus(data);
       setError(null);
+      
+      // If renewal is completed, fetch available certificate files
+      if (data.status === 'completed') {
+        await fetchCertificateFiles();
+      }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch renewal status';
       setError(errorMessage);
@@ -45,6 +63,32 @@ const RenewalStatusComponent: React.FC<RenewalStatusProps> = ({ connectionId, re
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchCertificateFiles = async () => {
+    try {
+      const response = await apiCall(`/data/${connectionId}/certificates`);
+      const data = await response.json();
+      setCertificateFiles(data.availableFiles || []);
+    } catch (err) {
+      console.error('Error fetching certificate files:', err);
+    }
+  };
+
+  const handleDownloadCertificate = (fileType: string) => {
+    const downloadUrl = `/api/data/${connectionId}/certificates/${fileType}`;
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = ``;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast({
+      title: "Download Started",
+      description: `Downloading ${fileType} certificate file`,
+      duration: 3000,
+    });
   };
 
   useEffect(() => {
@@ -68,6 +112,8 @@ const RenewalStatusComponent: React.FC<RenewalStatusProps> = ({ connectionId, re
         return <CheckCircle className="w-4 h-4 text-green-500" />;
       case 'failed':
         return <XCircle className="w-4 h-4 text-red-500" />;
+      case 'waiting_manual_dns':
+        return <Clock className="w-4 h-4 text-orange-500" />;
       case 'pending':
       case 'generating_csr':
       case 'creating_account':
@@ -91,6 +137,8 @@ const RenewalStatusComponent: React.FC<RenewalStatusProps> = ({ connectionId, re
         return "bg-green-100 text-green-800";
       case 'failed':
         return "bg-red-100 text-red-800";
+      case 'waiting_manual_dns':
+        return "bg-orange-100 text-orange-800";
       case 'pending':
       case 'generating_csr':
       case 'creating_account':
@@ -204,6 +252,40 @@ const RenewalStatusComponent: React.FC<RenewalStatusProps> = ({ connectionId, re
               </div>
             )}
 
+            {/* Manual DNS Instructions */}
+            {status.status === 'waiting_manual_dns' && status.manualDNSEntry && (
+              <div className="p-4 bg-orange-50 border border-orange-200 rounded-md">
+                <h4 className="font-medium text-orange-800 mb-2 flex items-center">
+                  <AlertCircle className="w-4 h-4 mr-2" />
+                  Manual DNS Configuration Required
+                </h4>
+                <div className="space-y-2 text-sm">
+                  <div>
+                    <span className="font-medium">Record Type:</span> TXT
+                  </div>
+                  <div>
+                    <span className="font-medium">Name:</span>
+                    <code className="ml-2 px-2 py-1 bg-orange-100 rounded text-xs">
+                      {status.manualDNSEntry.recordName}
+                    </code>
+                  </div>
+                  <div>
+                    <span className="font-medium">Value:</span>
+                    <code className="ml-2 px-2 py-1 bg-orange-100 rounded text-xs break-all">
+                      {status.manualDNSEntry.recordValue}
+                    </code>
+                  </div>
+                  <div>
+                    <span className="font-medium">TTL:</span> 300 (or minimum allowed)
+                  </div>
+                </div>
+                <div className="mt-3 text-xs text-orange-700">
+                  <strong>Instructions:</strong> Add the above TXT record to your DNS management interface. 
+                  The system will automatically verify the record every 10 seconds.
+                </div>
+              </div>
+            )}
+
             {/* Timing Info */}
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
@@ -231,6 +313,35 @@ const RenewalStatusComponent: React.FC<RenewalStatusProps> = ({ connectionId, re
                 </div>
               </ScrollArea>
             </div>
+
+            {/* Certificate Downloads */}
+            {status.status === 'completed' && certificateFiles.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="font-medium flex items-center">
+                  <Download className="w-4 h-4 mr-2" />
+                  Download Certificates:
+                </h4>
+                <div className="grid grid-cols-2 gap-2">
+                  {certificateFiles.map((file) => (
+                    <Button
+                      key={file.type}
+                      onClick={() => handleDownloadCertificate(file.type)}
+                      variant="outline"
+                      size="sm"
+                      className="justify-start text-left"
+                    >
+                      <Download className="w-3 h-3 mr-2" />
+                      <div className="flex flex-col items-start">
+                        <span className="text-xs font-medium">{file.filename}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {(file.size / 1024).toFixed(1)} KB
+                        </span>
+                      </div>
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Action Buttons */}
             <div className="flex space-x-2">

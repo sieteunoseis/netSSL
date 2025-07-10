@@ -40,7 +40,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
     { id: 'digitalocean', name: 'DigitalOcean', keys: ['DO_KEY'] },
     { id: 'route53', name: 'AWS Route53', keys: ['AWS_ACCESS_KEY', 'AWS_SECRET_KEY', 'AWS_ZONE_ID'] },
     { id: 'azure', name: 'Azure DNS', keys: ['AZURE_SUBSCRIPTION_ID', 'AZURE_RESOURCE_GROUP', 'AZURE_ZONE_NAME'] },
-    { id: 'google', name: 'Google Cloud DNS', keys: ['GOOGLE_PROJECT_ID', 'GOOGLE_ZONE_NAME'] }
+    { id: 'google', name: 'Google Cloud DNS', keys: ['GOOGLE_PROJECT_ID', 'GOOGLE_ZONE_NAME'] },
+    { id: 'internal', name: 'Internal DNS', keys: ['INTERNAL_DNS_SERVER_1', 'INTERNAL_DNS_SERVER_2'] }
   ];
 
   const fetchSettings = async () => {

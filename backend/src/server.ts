@@ -1,6 +1,8 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
 import { DatabaseManager } from './database';
 import { validateConnectionData, sanitizeConnectionData } from './validation';
 import { Logger } from './logger';
@@ -135,7 +137,8 @@ app.post('/api/data', asyncHandler(async (req: Request, res: Response) => {
     'digitalocean': ['DO_KEY'],
     'route53': ['AWS_ACCESS_KEY', 'AWS_SECRET_KEY', 'AWS_ZONE_ID'],
     'azure': ['AZURE_SUBSCRIPTION_ID', 'AZURE_RESOURCE_GROUP', 'AZURE_ZONE_NAME'],
-    'google': ['GOOGLE_PROJECT_ID', 'GOOGLE_ZONE_NAME']
+    'google': ['GOOGLE_PROJECT_ID', 'GOOGLE_ZONE_NAME'],
+    'internal': ['INTERNAL_DNS_SERVER_1', 'INTERNAL_DNS_SERVER_2']
   };
   
   if (ssl_provider) {
@@ -328,6 +331,127 @@ app.get('/api/data/:id/renewal-status/:renewalId', asyncHandler(async (req: Requ
   }
 }));
 
+// Certificate download endpoints
+app.get('/api/data/:id/certificates/:type', asyncHandler(async (req: Request, res: Response) => {
+  const connectionId = parseInt(req.params.id);
+  const certType = req.params.type; // 'certificate', 'private_key', 'chain', 'fullchain'
+  
+  if (isNaN(connectionId)) {
+    return res.status(400).json({ error: 'Invalid connection ID parameter' });
+  }
+
+  // Check if connection exists
+  const connection = await database.getConnectionById(connectionId);
+  if (!connection) {
+    return res.status(404).json({ error: 'Connection not found' });
+  }
+
+  const domain = `${connection.hostname}.${connection.domain}`;
+  const accountsPath = path.join(__dirname, '..', 'accounts', domain);
+  
+  let filePath: string;
+  let filename: string;
+  let contentType: string = 'application/x-pem-file';
+
+  switch (certType) {
+    case 'certificate':
+      filePath = path.join(accountsPath, 'certificate.pem');
+      filename = `${domain}_certificate.pem`;
+      break;
+    case 'private_key':
+      filePath = path.join(accountsPath, 'private_key.pem');
+      filename = `${domain}_private_key.pem`;
+      break;
+    case 'chain':
+      filePath = path.join(accountsPath, 'chain.pem');
+      filename = `${domain}_chain.pem`;
+      break;
+    case 'fullchain':
+      filePath = path.join(accountsPath, 'fullchain.pem');
+      filename = `${domain}_fullchain.pem`;
+      break;
+    case 'csr':
+      filePath = path.join(accountsPath, 'certificate.csr');
+      filename = `${domain}_certificate.csr`;
+      break;
+    default:
+      return res.status(400).json({ error: 'Invalid certificate type' });
+  }
+
+  try {
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: `Certificate file not found: ${certType}` });
+    }
+
+    // Set headers for file download
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    
+    // Stream the file
+    const fileStream = fs.createReadStream(filePath);
+    fileStream.pipe(res);
+    
+  } catch (error) {
+    Logger.error(`Error downloading certificate ${certType} for connection ${connectionId}:`, error);
+    return res.status(500).json({ 
+      error: 'Failed to download certificate',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+}));
+
+app.get('/api/data/:id/certificates', asyncHandler(async (req: Request, res: Response) => {
+  const connectionId = parseInt(req.params.id);
+  
+  if (isNaN(connectionId)) {
+    return res.status(400).json({ error: 'Invalid connection ID parameter' });
+  }
+
+  // Check if connection exists
+  const connection = await database.getConnectionById(connectionId);
+  if (!connection) {
+    return res.status(404).json({ error: 'Connection not found' });
+  }
+
+  const domain = `${connection.hostname}.${connection.domain}`;
+  const accountsPath = path.join(__dirname, '..', 'accounts', domain);
+  
+  // Check which certificate files are available
+  const availableFiles: { type: string; filename: string; size: number; lastModified: string }[] = [];
+  
+  const fileTypes = [
+    { type: 'certificate', filename: 'certificate.pem', displayName: 'Certificate' },
+    { type: 'private_key', filename: 'private_key.pem', displayName: 'Private Key' },
+    { type: 'chain', filename: 'chain.pem', displayName: 'Certificate Chain' },
+    { type: 'fullchain', filename: 'fullchain.pem', displayName: 'Full Chain' },
+    { type: 'csr', filename: 'certificate.csr', displayName: 'Certificate Signing Request' }
+  ];
+
+  for (const fileType of fileTypes) {
+    const filePath = path.join(accountsPath, fileType.filename);
+    try {
+      if (fs.existsSync(filePath)) {
+        const stats = fs.statSync(filePath);
+        availableFiles.push({
+          type: fileType.type,
+          filename: fileType.displayName,
+          size: stats.size,
+          lastModified: stats.mtime.toISOString()
+        });
+      }
+    } catch (error) {
+      Logger.debug(`Error checking file ${filePath}:`, error);
+    }
+  }
+
+  return res.json({
+    domain,
+    availableFiles,
+    downloadBaseUrl: `/api/data/${connectionId}/certificates`
+  });
+}));
+
 // Settings/API Keys management endpoints
 app.get('/api/settings', asyncHandler(async (req: Request, res: Response) => {
   const settings = await database.getAllSettings();
@@ -370,7 +494,8 @@ app.get('/api/settings/:provider/validate', asyncHandler(async (req: Request, re
     'digitalocean': ['DO_KEY'],
     'route53': ['AWS_ACCESS_KEY', 'AWS_SECRET_KEY', 'AWS_ZONE_ID'],
     'azure': ['AZURE_SUBSCRIPTION_ID', 'AZURE_RESOURCE_GROUP', 'AZURE_ZONE_NAME'],
-    'google': ['GOOGLE_PROJECT_ID', 'GOOGLE_ZONE_NAME']
+    'google': ['GOOGLE_PROJECT_ID', 'GOOGLE_ZONE_NAME'],
+    'internal': ['INTERNAL_DNS_SERVER_1', 'INTERNAL_DNS_SERVER_2']
   };
 
   const required = requiredKeys[provider] || [];
