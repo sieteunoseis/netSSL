@@ -17,3 +17,7 @@ frontend.env
 
 # YoYo AI version control directory
 .yoyo/
+
+# Certificate accounts and private keys - exclude everything except README
+backend/accounts/*
+!backend/accounts/README.md

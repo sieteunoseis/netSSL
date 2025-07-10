@@ -51,7 +51,10 @@ export class AccountManager {
   }
 
   private getAccountPath(domain: string, provider: string): string {
-    return path.join(this.accountsDir, `${domain}_${provider}.json`);
+    // Add staging/production suffix based on environment variable
+    const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
+    const suffix = isStaging ? 'staging' : 'prod';
+    return path.join(this.accountsDir, `${domain}_${provider}_${suffix}.json`);
   }
 
   private getDomainDir(domain: string): string {
@@ -228,8 +231,11 @@ export class AccountManager {
       );
       
       return accountFiles.map(file => {
-        const provider = file.replace(`${domain}_`, '').replace('.json', '');
-        return provider;
+        // Remove domain_ prefix and .json suffix, then remove staging/prod suffix
+        const withoutDomain = file.replace(`${domain}_`, '').replace('.json', '');
+        const parts = withoutDomain.split('_');
+        // Return provider name without staging/prod suffix
+        return parts.slice(0, -1).join('_');
       });
     } catch (error) {
       Logger.error(`Failed to list accounts for ${domain}:`, error);
@@ -275,9 +281,10 @@ export class AccountManager {
       
       accountFiles.forEach(file => {
         const parts = file.replace('.json', '').split('_');
-        if (parts.length >= 2) {
-          const domain = parts.slice(0, -1).join('_');
-          const provider = parts[parts.length - 1];
+        if (parts.length >= 3) {
+          // Format: domain_provider_suffix (e.g., example.com_letsencrypt_staging)
+          const domain = parts.slice(0, -2).join('_');
+          const provider = parts[parts.length - 2];
           domains.add(domain);
           providers.add(provider);
         }

@@ -249,4 +249,7 @@ export class ACMEClient {
   }
 }
 
-export const acmeClient = new ACMEClient(process.env.NODE_ENV !== 'production');
+// Create client based on LETSENCRYPT_STAGING environment variable
+// Defaults to staging (true) for safety unless explicitly set to 'false'
+const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
+export const acmeClient = new ACMEClient(isStaging);

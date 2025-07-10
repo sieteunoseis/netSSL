@@ -110,6 +110,10 @@ Backend requires environment variables matching `dbSetup.json` field names. Set 
 - `.env` file for local development
 - `docker-compose.yaml` for containerized deployment
 
+### Let's Encrypt Configuration
+- `LETSENCRYPT_STAGING`: Set to `false` for production certificates, `true` or unset for staging (default: `true`)
+- Account files are saved with staging/production suffix: `domain_letsencrypt_staging.json` or `domain_letsencrypt_prod.json`
+
 ## Template Configuration
 
 This is a configurable template repository. Configure for your project needs:
