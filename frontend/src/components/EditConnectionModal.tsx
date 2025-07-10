@@ -186,7 +186,15 @@ const EditConnectionModal: React.FC<EditConnectionModalProps> = ({
   const formatColumnName = (col: string): string => {
     return col
       .replace(/[^a-zA-Z]+/g, " ") // Replace non-letter characters with spaces
-      .toUpperCase();
+      .split(' ')
+      .map(word => {
+        // Keep SSL and DNS in uppercase
+        if (word.toLowerCase() === 'ssl' || word.toLowerCase() === 'dns') {
+          return word.toUpperCase();
+        }
+        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+      })
+      .join(' ');
   };
 
   if (!record) return null;

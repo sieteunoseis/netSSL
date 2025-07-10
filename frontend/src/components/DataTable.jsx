@@ -56,7 +56,13 @@ const DataTable = ({ data, onDataChange }) => {
     return col
       .replace(/[^a-zA-Z]+/g, ' ')
       .split(' ')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .map(word => {
+        // Keep SSL and DNS in uppercase
+        if (word.toLowerCase() === 'ssl' || word.toLowerCase() === 'dns') {
+          return word.toUpperCase();
+        }
+        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+      })
       .join(' ');
   };
 
