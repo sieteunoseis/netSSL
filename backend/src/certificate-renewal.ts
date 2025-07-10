@@ -1,12 +1,11 @@
 import https from 'https';
-import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { Logger } from './logger';
 import { DatabaseManager } from './database';
 import { ConnectionRecord } from './types';
-import { accountManager, AccountManager } from './account-manager';
+import { accountManager } from './account-manager';
 
 export interface RenewalStatus {
   id: string;
@@ -583,7 +582,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       await accountManager.saveRenewalLog(fullFQDN, `Waiting for DNS propagation of ${dnsRecords.length} record(s)`);
       
       // Wait for DNS propagation
-      for (const { record, challenge, domain } of dnsRecords) {
+      for (const { challenge, domain } of dnsRecords) {
         const keyAuthorization = await acmeClient.getChallengeKeyAuthorization(challenge);
         const expectedValue = acmeClient.getDNSRecordValue(keyAuthorization);
         
@@ -684,12 +683,12 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     }
   }
 
-  private async requestZeroSSLCertificate(connection: ConnectionRecord, csr: string, settings: any[], status: RenewalStatus): Promise<string> {
+  private async requestZeroSSLCertificate(_connection: ConnectionRecord, _csr: string, _settings: any[], status: RenewalStatus): Promise<string> {
     // This would integrate with ZeroSSL API
     status.logs.push('Requesting certificate from ZeroSSL');
     
     // TODO: Implement ZeroSSL API integration
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve, _reject) => {
       // Placeholder implementation
       setTimeout(() => {
         status.logs.push('Certificate obtained from ZeroSSL');
@@ -713,7 +712,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     }
   }
 
-  private async handleCloudflareChallenge(connection: ConnectionRecord, settings: any[], status: RenewalStatus): Promise<void> {
+  private async handleCloudflareChallenge(_connection: ConnectionRecord, settings: any[], status: RenewalStatus): Promise<void> {
     const cfKey = settings.find(s => s.key_name === 'CF_KEY')?.key_value;
     const cfZone = settings.find(s => s.key_name === 'CF_ZONE')?.key_value;
     
@@ -737,7 +736,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     });
   }
 
-  private async handleDigitalOceanChallenge(connection: ConnectionRecord, settings: any[], status: RenewalStatus): Promise<void> {
+  private async handleDigitalOceanChallenge(_connection: ConnectionRecord, settings: any[], status: RenewalStatus): Promise<void> {
     const doKey = settings.find(s => s.key_name === 'DO_KEY')?.key_value;
     
     if (!doKey) {
@@ -755,7 +754,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     });
   }
 
-  private async handleInternalDNSChallenge(connection: ConnectionRecord, settings: any[], status: RenewalStatus): Promise<void> {
+  private async handleInternalDNSChallenge(connection: ConnectionRecord, _settings: any[], status: RenewalStatus): Promise<void> {
     const fullFQDN = `${connection.hostname}.${connection.domain}`;
     
     try {
@@ -819,8 +818,6 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
   private async uploadCertificateToCUCM(connection: ConnectionRecord, certificate: string, status: RenewalStatus): Promise<void> {
     return new Promise(async (resolve, reject) => {
       try {
-        const fullFQDN = `${connection.hostname}.${connection.domain}`;
-
         // Parse the certificate chain into individual certificates
         const certParts = certificate.split('-----END CERTIFICATE-----');
         const certificates = certParts
