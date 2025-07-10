@@ -136,6 +136,10 @@ export class ACMEClient {
       if (!this.client) {
         throw new Error('ACME client not initialized. Please load or create an account first.');
       }
+
+      if (!domains || domains.length === 0) {
+        throw new Error('No domains provided for certificate request');
+      }
       
       // Create certificate order with timeout
       Logger.info(`Creating certificate order for domains: ${domains.join(', ')}`);

@@ -64,27 +64,32 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     // Save to database
     await database.saveRenewalStatus(renewalId, connectionId, status.status, undefined, status.message, undefined, status.logs);
 
-    // Start the renewal process asynchronously
+    // Start the renewal process asynchronously with comprehensive error handling
     this.performRenewal(renewalId, connectionId, database).catch(async error => {
-      Logger.error(`Certificate renewal failed for connection ${connectionId}:`, error);
-      status.status = 'failed';
-      status.error = error.message;
-      status.message = 'Certificate renewal failed';
-      status.endTime = new Date();
-      
-      // Save failed status to database
-      if (database) {
-        await database.saveRenewalStatus(
-          renewalId,
-          connectionId,
-          'failed',
-          undefined,
-          'Certificate renewal failed',
-          error.message,
-          status.logs
-        ).catch(err => {
-          Logger.error(`Failed to save failed renewal status to database: ${err.message}`);
-        });
+      try {
+        Logger.error(`Certificate renewal failed for connection ${connectionId}:`, error);
+        status.status = 'failed';
+        status.error = error.message || 'Unknown error during certificate renewal';
+        status.message = 'Certificate renewal failed';
+        status.endTime = new Date();
+        status.logs.push(`ERROR: ${status.error}`);
+        
+        // Save failed status to database
+        if (database) {
+          await database.saveRenewalStatus(
+            renewalId,
+            connectionId,
+            'failed',
+            undefined,
+            'Certificate renewal failed',
+            status.error,
+            status.logs
+          ).catch(err => {
+            Logger.error(`Failed to save failed renewal status to database: ${err.message}`);
+          });
+        }
+      } catch (cleanupError) {
+        Logger.error(`Error during renewal cleanup for connection ${connectionId}:`, cleanupError);
       }
     }).finally(() => {
       // Always remove from active renewals when done

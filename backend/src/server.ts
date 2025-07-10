@@ -587,6 +587,17 @@ const gracefulShutdown = () => {
   process.exit(0);
 };
 
+// Global error handlers to prevent server crashes
+process.on('uncaughtException', (error) => {
+  Logger.error('Uncaught Exception:', error);
+  // Don't exit the process, just log the error
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  Logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // Don't exit the process, just log the error
+});
+
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
 
