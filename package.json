@@ -8,7 +8,8 @@
     "build": "docker-compose up --build",
     "sync-remote": "git pull upstream main",
     "port": "lsof -i :5000 -t | xargs ps -p | grep node | awk '{print $1}' | xargs kill -9",
-    "setup-template": "node scripts/setup-template.js"
+    "setup-template": "node scripts/setup-template.js",
+    "kill": "lsof -ti :5173 | xargs kill -9; lsof -ti :3000 | xargs kill -9"
   },
   "devDependencies": {
     "@dotenvx/dotenvx": "^1.45.2",

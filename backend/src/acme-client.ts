@@ -201,7 +201,11 @@ export class ACMEClient {
       // Add a small delay before checking order status to allow ACME server to process
       await new Promise(resolve => setTimeout(resolve, 2000));
       
-      const completedOrder = await this.client.waitForValidStatus(order);
+      // Wait for the order to be ready
+      await this.client.waitForValidStatus(order);
+
+      // Fetch the latest order details from the ACME server
+      const completedOrder = await this.client.getOrder(order);
       
       Logger.info(`Order completed successfully: ${completedOrder.url}`);
       return completedOrder;
@@ -250,7 +254,8 @@ export class ACMEClient {
       
       // Finalize order with CSR
       const finalizedOrder = await this.client.finalizeOrder(order, csr);
-      
+      Logger.info('Finalized order details:', JSON.stringify(finalizedOrder, null, 2));
+
       // Get certificate
       const certificate = await this.client.getCertificate(finalizedOrder);
       
@@ -277,11 +282,11 @@ export class ACMEClient {
 
   // Helper method to get DNS TXT record value for challenge
   getDNSRecordValue(keyAuthorization: string): string {
-    const crypto = require('crypto');
-    return crypto.createHash('sha256').update(keyAuthorization).digest('base64')
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=/g, '');
+    // According to ACME RFC 8555, the DNS TXT record value should be
+    // the base64url-encoded SHA-256 digest of the key authorization.
+    // The acme-client library's getChallengeKeyAuthorization function
+    // already provides this value, so no further processing is needed.
+    return keyAuthorization;
   }
 }
 

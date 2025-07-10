@@ -71,6 +71,18 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         throw new Error(`Connection ${connectionId} not found`);
       }
 
+      const fullFQDN = `${connection.hostname}.${connection.domain}`;
+
+      // Check for existing valid certificate
+      const existingCert = await this.getExistingCertificate(fullFQDN);
+      if (existingCert) {
+        this.updateStatus(status, 'uploading_certificate', 'Using existing valid certificate', 80);
+        await this.uploadCertificateToCUCM(connection, existingCert, status);
+        this.updateStatus(status, 'completed', 'Certificate renewal completed successfully', 100);
+        status.endTime = new Date();
+        return;
+      }
+
       this.updateStatus(status, 'generating_csr', 'Generating CSR from CUCM server', 10);
       
       // Step 1: Generate CSR from CUCM
@@ -87,7 +99,6 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       status.endTime = new Date();
       
       // Save the renewal completion info
-      const fullFQDN = `${connection.hostname}.${connection.domain}`;
       await accountManager.saveRenewalLog(fullFQDN, `Certificate renewal completed for renewal ${renewalId}`);
       
       // Update database with renewal info
@@ -100,6 +111,31 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       status.message = 'Certificate renewal failed';
       status.endTime = new Date();
       status.logs.push(`ERROR: ${status.error}`);
+    }
+  }
+
+  private async getExistingCertificate(domain: string): Promise<string | null> {
+    try {
+      const fullChainPath = path.join(process.env.ACCOUNTS_DIR || './accounts', domain, 'fullchain.pem');
+      if (!fs.existsSync(fullChainPath)) {
+        return null;
+      }
+
+      const certificateData = await fs.promises.readFile(fullChainPath, 'utf8');
+      const cert = new crypto.X509Certificate(certificateData);
+
+      const thirtyDaysFromNow = new Date();
+      thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
+
+      if (new Date(cert.validTo) > thirtyDaysFromNow) {
+        Logger.info(`Found existing certificate for ${domain} that is valid for more than 30 days.`);
+        return certificateData;
+      }
+
+      return null;
+    } catch (error) {
+      Logger.error(`Error checking for existing certificate for ${domain}:`, error);
+      return null;
     }
   }
 
@@ -284,6 +320,10 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       
       for (const challenge of order.challenges) {
         const keyAuthorization = await acmeClient.getChallengeKeyAuthorization(challenge);
+        
+        // Log the key authorization for debugging
+        await accountManager.saveRenewalLog(fullFQDN, `Key authorization: ${keyAuthorization}`);
+        
         const dnsValue = acmeClient.getDNSRecordValue(keyAuthorization);
         
         // Extract domain from challenge
@@ -481,50 +521,195 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
   }
 
   private async uploadCertificateToCUCM(connection: ConnectionRecord, certificate: string, status: RenewalStatus): Promise<void> {
+    return new Promise(async (resolve, reject) => {
+      try {
+        const fullFQDN = `${connection.hostname}.${connection.domain}`;
+
+        // Parse the certificate chain into individual certificates
+        const certParts = certificate.split('-----END CERTIFICATE-----');
+        const certificates = certParts
+          .filter(part => part.includes('-----BEGIN CERTIFICATE-----'))
+          .map(part => (part.trim() + '\n-----END CERTIFICATE-----'));
+
+        if (certificates.length === 0) {
+          return reject(new Error('No certificates found to upload.'));
+        }
+
+        const leafCert = certificates[0];
+        const caCerts = certificates.slice(1);
+
+        // Upload the leaf certificate
+        await this.uploadLeafCertificate(connection, leafCert, status);
+
+        // Upload the CA certificates
+        if (caCerts.length > 0) {
+          await this.uploadCaCertificates(connection, caCerts, status);
+        }
+
+        resolve();
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  private async uploadLeafCertificate(connection: ConnectionRecord, certificate: string, status: RenewalStatus): Promise<void> {
     return new Promise((resolve, reject) => {
       const fullFQDN = `${connection.hostname}.${connection.domain}`;
+      const postData = JSON.stringify({
+        service: 'tomcat',
+        certificates: [certificate]
+      });
+
+      Logger.info(`CUCM leaf cert upload request body: ${postData}`);
+
       const options = {
         hostname: fullFQDN,
         port: 443,
-        path: '/platformcom/api/v1/certmgr/config/certificate',
+        path: '/platformcom/api/v1/certmgr/config/identity/certificates',
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Basic ${Buffer.from(`${connection.username}:${connection.password}`).toString('base64')}`
+          'Authorization': `Basic ${Buffer.from(`${connection.username}:${connection.password}`).toString('base64')}`,
+          'Content-Length': Buffer.byteLength(postData)
         },
         rejectUnauthorized: false
       };
-
-      const postData = JSON.stringify({
-        'certificate-name': 'tomcat',
-        'certificate-content': certificate,
-        'restart-services': true
-      });
 
       const req = https.request(options, (res) => {
         let data = '';
         res.on('data', (chunk) => data += chunk);
         res.on('end', () => {
           try {
-            const response = JSON.parse(data);
+            Logger.info(`CUCM leaf cert upload response: ${data}`);
             if (res.statusCode === 200 || res.statusCode === 201) {
-              status.logs.push(`Certificate uploaded successfully to ${fullFQDN}`);
+              status.logs.push(`Leaf certificate uploaded successfully to ${fullFQDN}`);
               resolve();
             } else {
-              reject(new Error(`Certificate upload failed: ${response.message || 'Unknown error'}`));
+              const response = JSON.parse(data);
+              reject(new Error(`Leaf certificate upload failed: ${response.message || 'Unknown error'}`));
             }
           } catch (error) {
-            reject(new Error(`Failed to parse upload response: ${error}`));
+            reject(new Error(`Failed to parse leaf cert upload response: ${error}. Raw response: ${data}`));
           }
         });
       });
 
       req.on('error', (error) => {
-        reject(new Error(`Certificate upload failed: ${error.message}`));
+        reject(new Error(`Leaf certificate upload failed: ${error.message}`));
       });
 
       req.write(postData);
       req.end();
+    });
+  }
+
+  private async getExistingTrustCertificates(connection: ConnectionRecord): Promise<string[]> {
+    return new Promise((resolve, reject) => {
+        const fullFQDN = `${connection.hostname}.${connection.domain}`;
+        const options = {
+            hostname: fullFQDN,
+            port: 443,
+            path: '/platformcom/api/v1/certmgr/config/trust/certificate',
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+                'Authorization': `Basic ${Buffer.from(`${connection.username}:${connection.password}`).toString('base64')}`
+            },
+            rejectUnauthorized: false
+        };
+
+        const req = https.request(options, (res) => {
+            let data = '';
+            res.on('data', (chunk) => data += chunk);
+            res.on('end', () => {
+                try {
+                    if (res.statusCode === 200) {
+                        const response = JSON.parse(data);
+                        const existingCerts = response.map((c: any) => c.certificate.trim());
+                        resolve(existingCerts);
+                    } else {
+                        Logger.warn(`Could not get existing trust certificates. Status: ${res.statusCode}, Body: ${data}`);
+                        resolve([]);
+                    }
+                } catch (error) {
+                    Logger.error(`Failed to parse existing trust certificates response: ${error}. Raw response: ${data}`);
+                    resolve([]);
+                }
+            });
+        });
+
+        req.on('error', (error) => {
+            Logger.error(`Failed to get existing trust certificates: ${error.message}`);
+            resolve([]);
+        });
+
+        req.end();
+    });
+  }
+
+  private async uploadCaCertificates(connection: ConnectionRecord, certificates: string[], status: RenewalStatus): Promise<void> {
+    return new Promise(async (resolve, reject) => {
+      try {
+        const existingCerts = await this.getExistingTrustCertificates(connection);
+        const certsToUpload = certificates.filter(c => !existingCerts.includes(c.trim()));
+
+        if (certsToUpload.length === 0) {
+            Logger.info('All CA certificates already exist on the server. Skipping upload.');
+            status.logs.push('All CA certificates already exist on the server. Skipping upload.');
+            return resolve();
+        }
+
+        const fullFQDN = `${connection.hostname}.${connection.domain}`;
+        const postData = JSON.stringify({
+          service: ['tomcat'],
+          certificates: certsToUpload,
+          description: 'Trust Certificate'
+        });
+
+        Logger.info(`CUCM CA cert upload request body: ${postData}`);
+
+        const options = {
+          hostname: fullFQDN,
+          port: 443,
+          path: '/platformcom/api/v1/certmgr/config/trust/certificates',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Basic ${Buffer.from(`${connection.username}:${connection.password}`).toString('base64')}`,
+            'Content-Length': Buffer.byteLength(postData)
+          },
+          rejectUnauthorized: false
+        };
+
+        const req = https.request(options, (res) => {
+          let data = '';
+          res.on('data', (chunk) => data += chunk);
+          res.on('end', () => {
+            try {
+              Logger.info(`CUCM CA cert upload response: ${data}`);
+              if (res.statusCode === 200 || res.statusCode === 201) {
+                status.logs.push(`CA certificates uploaded successfully to ${fullFQDN}`);
+                resolve();
+              } else {
+                const response = JSON.parse(data);
+                reject(new Error(`CA certificate upload failed: ${response.message || 'Unknown error'}`));
+              }
+            } catch (error) {
+              reject(new Error(`Failed to parse CA cert upload response: ${error}. Raw response: ${data}`));
+            }
+          });
+        });
+
+        req.on('error', (error) => {
+          reject(new Error(`CA certificate upload failed: ${error.message}`));
+        });
+
+        req.write(postData);
+        req.end();
+      } catch (error) {
+        reject(error);
+      }
     });
   }
 
