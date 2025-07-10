@@ -350,26 +350,36 @@ export class DatabaseManager {
   async updateConnection(id: number, data: Partial<ConnectionRecord>): Promise<void> {
     return new Promise(async (resolve, reject) => {
       try {
-        // Get column values excluding password and id
+        // Only update columns that are provided in data (excluding password and id)
         const dataColumns = this.tableColumns.filter(col => col !== 'password');
-        const columnValues = dataColumns.map(col => (data as any)[col] || null);
+        const updateColumns: string[] = [];
+        const updateValues: any[] = [];
+        
+        // Only include columns that are actually provided in the data
+        for (const col of dataColumns) {
+          if ((data as any)[col] !== undefined) {
+            updateColumns.push(col);
+            updateValues.push((data as any)[col]);
+          }
+        }
         
         // Handle password update if provided
-        let hashedPassword = null;
         if (data.password) {
-          hashedPassword = await this.hashPassword(data.password);
-        }
-
-        const updateColumns = [...dataColumns];
-        const updateValues = [...columnValues];
-        
-        if (hashedPassword) {
+          const hashedPassword = await this.hashPassword(data.password);
           updateColumns.push('password_hash');
           updateValues.push(hashedPassword);
         }
 
+        // Always update the timestamp
         updateColumns.push('updated_at');
         updateValues.push(new Date().toISOString());
+
+        // Skip update if no columns to update (besides timestamp)
+        if (updateColumns.length <= 1) {
+          Logger.warn(`No columns to update for connection ${id}`);
+          resolve();
+          return;
+        }
 
         const updateQuery = `
           UPDATE connections 

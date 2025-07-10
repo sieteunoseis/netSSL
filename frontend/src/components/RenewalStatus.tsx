@@ -35,12 +35,6 @@ const RenewalStatusComponent: React.FC<RenewalStatusProps> = ({ connectionId, re
   const fetchStatus = async () => {
     try {
       const response = await apiCall(`/data/${connectionId}/renewal-status/${renewalId}`);
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to fetch renewal status');
-      }
-      
       const data = await response.json();
       setStatus(data);
       setError(null);

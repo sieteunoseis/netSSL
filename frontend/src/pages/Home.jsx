@@ -195,6 +195,18 @@ const Home = () => {
       };
     }
 
+    // Check expiry first (this handles both expired and invalid due to expiry)
+    if (certInfo.daysUntilExpiry <= 0) {
+      return {
+        status: "expired",
+        text: "Certificate expired",
+        color: "bg-red-100 text-red-800",
+        icon: AlertCircle,
+        days: certInfo.daysUntilExpiry
+      };
+    }
+
+    // Check other invalid conditions (self-signed, etc.)
     if (!certInfo.isValid) {
       return {
         status: "invalid",
@@ -205,15 +217,7 @@ const Home = () => {
       };
     }
 
-    if (certInfo.daysUntilExpiry <= 0) {
-      return {
-        status: "expired",
-        text: "Certificate expired",
-        color: "bg-red-100 text-red-800",
-        icon: AlertCircle,
-        days: certInfo.daysUntilExpiry
-      };
-    } else if (certInfo.daysUntilExpiry <= 30) {
+    if (certInfo.daysUntilExpiry <= 30) {
       return {
         status: "expiring",
         text: `Expires in ${certInfo.daysUntilExpiry} days`,

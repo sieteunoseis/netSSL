@@ -252,7 +252,6 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         }
 
         const authHeader = `Basic ${Buffer.from(`${connection.username}:${connection.password}`).toString('base64')}`;
-        Logger.info(connection.password)
         Logger.info(`Using Authorization header: ${authHeader}`);
         
         // Parse altNames from comma-separated string
@@ -291,8 +290,22 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         Logger.info(`CSR Request Body: ${postData}`);
         Logger.info(`Using credentials for user: ${connection.username}`);
         
+        // Log detailed CSR information to renewal log
+        await accountManager.saveRenewalLog(fullFQDN, `=== CSR Generation Request ===`);
+        await accountManager.saveRenewalLog(fullFQDN, `Target: ${fullFQDN}:${options.port}${options.path}`);
+        await accountManager.saveRenewalLog(fullFQDN, `Service: ${csrPayload.service}`);
+        await accountManager.saveRenewalLog(fullFQDN, `Common Name: ${csrPayload.commonName}`);
+        await accountManager.saveRenewalLog(fullFQDN, `Key Type: ${csrPayload.keyType}, Length: ${csrPayload.keyLength}`);
+        await accountManager.saveRenewalLog(fullFQDN, `Hash Algorithm: ${csrPayload.hashAlgorithm}`);
+        if (altNames.length > 0) {
+          await accountManager.saveRenewalLog(fullFQDN, `Alt Names: ${altNames.join(', ')}`);
+        }
+        await accountManager.saveRenewalLog(fullFQDN, `Request Body: ${postData}`);
+        await accountManager.saveRenewalLog(fullFQDN, `Using credentials for user: ${connection.username}`);
+        
         // Test basic connectivity first
         Logger.info(`Testing CUCM connectivity and authentication...`);
+        await accountManager.saveRenewalLog(fullFQDN, `Testing CUCM connectivity and authentication...`);
         
         const req = https.request(options, (res) => {
           let data = '';
@@ -302,8 +315,13 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
               Logger.info(`CSR API Response Status: ${res.statusCode}`);
               Logger.info(`CSR API Response Body: ${data}`);
               
+              await accountManager.saveRenewalLog(fullFQDN, `CSR API Response Status: ${res.statusCode}`);
+              await accountManager.saveRenewalLog(fullFQDN, `CSR API Response Body: ${data}`);
+              
               if (res.statusCode !== 200) {
-                reject(new Error(`CSR API returned status ${res.statusCode}: ${data}`));
+                const errorMsg = `CSR API returned status ${res.statusCode}: ${data}`;
+                await accountManager.saveRenewalLog(fullFQDN, `ERROR: ${errorMsg}`);
+                reject(new Error(errorMsg));
                 return;
               }
               
@@ -312,20 +330,27 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
                 // Save CSR to accounts folder
                 await accountManager.saveCSR(fullFQDN, response.csr);
                 await accountManager.saveRenewalLog(fullFQDN, `Generated new CSR from ${fullFQDN} for service: tomcat`);
+                await accountManager.saveRenewalLog(fullFQDN, `CSR length: ${response.csr.length} characters`);
                 
                 status.logs.push(`CSR generated successfully from ${fullFQDN} for service: tomcat`);
                 resolve(response.csr);
               } else {
-                reject(new Error(`CSR not found in response. Response: ${JSON.stringify(response)}`));
+                const errorMsg = `CSR not found in response. Response: ${JSON.stringify(response)}`;
+                await accountManager.saveRenewalLog(fullFQDN, `ERROR: ${errorMsg}`);
+                reject(new Error(errorMsg));
               }
             } catch (error) {
-              reject(new Error(`Failed to parse CSR response: ${error}. Raw response: ${data}`));
+              const errorMsg = `Failed to parse CSR response: ${error}. Raw response: ${data}`;
+              await accountManager.saveRenewalLog(fullFQDN, `ERROR: ${errorMsg}`);
+              reject(new Error(errorMsg));
             }
           });
         });
 
-        req.on('error', (error) => {
-          reject(new Error(`CSR generation failed: ${error.message}`));
+        req.on('error', async (error) => {
+          const errorMsg = `CSR generation failed: ${error.message}`;
+          await accountManager.saveRenewalLog(fullFQDN, `ERROR: ${errorMsg}`);
+          reject(new Error(errorMsg));
         });
 
         req.write(postData);
@@ -643,14 +668,12 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
   }
 
   private async uploadLeafCertificate(connection: ConnectionRecord, certificate: string, status: RenewalStatus): Promise<void> {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       const fullFQDN = `${connection.hostname}.${connection.domain}`;
       const postData = JSON.stringify({
         service: 'tomcat',
         certificates: [certificate]
       });
-
-      Logger.info(`CUCM leaf cert upload request body: ${postData}`);
 
       const options = {
         hostname: fullFQDN,
@@ -665,27 +688,39 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         rejectUnauthorized: false
       };
 
+      Logger.info(`CUCM leaf cert upload request body: ${postData}`);
+      await accountManager.saveRenewalLog(fullFQDN, `CUCM leaf certificate upload request to ${fullFQDN}:${options.port}${options.path}`);
+      await accountManager.saveRenewalLog(fullFQDN, `Request body: ${postData}`);
+
       const req = https.request(options, (res) => {
         let data = '';
         res.on('data', (chunk) => data += chunk);
-        res.on('end', () => {
+        res.on('end', async () => {
           try {
             Logger.info(`CUCM leaf cert upload response: ${data}`);
+            await accountManager.saveRenewalLog(fullFQDN, `CUCM leaf cert upload response (${res.statusCode}): ${data}`);
             if (res.statusCode === 200 || res.statusCode === 201) {
               status.logs.push(`Leaf certificate uploaded successfully to ${fullFQDN}`);
+              await accountManager.saveRenewalLog(fullFQDN, `Leaf certificate uploaded successfully to ${fullFQDN}`);
               resolve();
             } else {
               const response = JSON.parse(data);
-              reject(new Error(`Leaf certificate upload failed: ${response.message || 'Unknown error'}`));
+              const errorMsg = `Leaf certificate upload failed: ${response.message || 'Unknown error'}`;
+              await accountManager.saveRenewalLog(fullFQDN, `ERROR: ${errorMsg}`);
+              reject(new Error(errorMsg));
             }
           } catch (error) {
-            reject(new Error(`Failed to parse leaf cert upload response: ${error}. Raw response: ${data}`));
+            const errorMsg = `Failed to parse leaf cert upload response: ${error}. Raw response: ${data}`;
+            await accountManager.saveRenewalLog(fullFQDN, `ERROR: ${errorMsg}`);
+            reject(new Error(errorMsg));
           }
         });
       });
 
-      req.on('error', (error) => {
-        reject(new Error(`Leaf certificate upload failed: ${error.message}`));
+      req.on('error', async (error) => {
+        const errorMsg = `Leaf certificate upload failed: ${error.message}`;
+        await accountManager.saveRenewalLog(fullFQDN, `ERROR: ${errorMsg}`);
+        reject(new Error(errorMsg));
       });
 
       req.write(postData);
@@ -715,7 +750,9 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
                 try {
                     if (res.statusCode === 200) {
                         const response = JSON.parse(data);
-                        const existingCerts = response.map((c: any) => c.certificate.trim());
+                        // Handle both array format and object with certificates property
+                        const certificates = Array.isArray(response) ? response : response.certificates || [];
+                        const existingCerts = certificates.map((c: any) => c.certificate.trim());
                         resolve(existingCerts);
                     } else {
                         Logger.warn(`Could not get existing trust certificates. Status: ${res.statusCode}, Body: ${data}`);
@@ -740,23 +777,23 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
   private async uploadCaCertificates(connection: ConnectionRecord, certificates: string[], status: RenewalStatus): Promise<void> {
     return new Promise(async (resolve, reject) => {
       try {
+        const fullFQDN = `${connection.hostname}.${connection.domain}`;
         const existingCerts = await this.getExistingTrustCertificates(connection);
         const certsToUpload = certificates.filter(c => !existingCerts.includes(c.trim()));
 
         if (certsToUpload.length === 0) {
             Logger.info('All CA certificates already exist on the server. Skipping upload.');
             status.logs.push('All CA certificates already exist on the server. Skipping upload.');
+            await accountManager.saveRenewalLog(fullFQDN, `All CA certificates already exist on ${fullFQDN}. Skipping upload.`);
+            await accountManager.saveRenewalLog(fullFQDN, `Found ${existingCerts.length} existing trust certificates on server`);
             return resolve();
         }
 
-        const fullFQDN = `${connection.hostname}.${connection.domain}`;
         const postData = JSON.stringify({
           service: ['tomcat'],
           certificates: certsToUpload,
           description: 'Trust Certificate'
         });
-
-        Logger.info(`CUCM CA cert upload request body: ${postData}`);
 
         const options = {
           hostname: fullFQDN,
@@ -771,27 +808,40 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
           rejectUnauthorized: false
         };
 
+        Logger.info(`CUCM CA cert upload request body: ${postData}`);
+        await accountManager.saveRenewalLog(fullFQDN, `Uploading ${certsToUpload.length} CA certificate(s) to ${fullFQDN}:${options.port}${options.path}`);
+        await accountManager.saveRenewalLog(fullFQDN, `CA cert request body: ${postData}`);
+
         const req = https.request(options, (res) => {
           let data = '';
           res.on('data', (chunk) => data += chunk);
-          res.on('end', () => {
+          res.on('end', async () => {
             try {
               Logger.info(`CUCM CA cert upload response: ${data}`);
+              await accountManager.saveRenewalLog(fullFQDN, `CUCM CA cert upload response (${res.statusCode}): ${data}`);
               if (res.statusCode === 200 || res.statusCode === 201) {
                 status.logs.push(`CA certificates uploaded successfully to ${fullFQDN}`);
+                await accountManager.saveRenewalLog(fullFQDN, `CA certificates uploaded successfully to ${fullFQDN}`);
                 resolve();
               } else {
                 const response = JSON.parse(data);
-                reject(new Error(`CA certificate upload failed: ${response.message || 'Unknown error'}`));
+                const errorMsg = `CA certificate upload failed: ${response.message || response.messages?.[0] || 'Unknown error'}`;
+                await accountManager.saveRenewalLog(fullFQDN, `ERROR: ${errorMsg}`);
+                await accountManager.saveRenewalLog(fullFQDN, `Full response: ${JSON.stringify(response, null, 2)}`);
+                reject(new Error(errorMsg));
               }
             } catch (error) {
-              reject(new Error(`Failed to parse CA cert upload response: ${error}. Raw response: ${data}`));
+              const errorMsg = `Failed to parse CA cert upload response: ${error}. Raw response: ${data}`;
+              await accountManager.saveRenewalLog(fullFQDN, `ERROR: ${errorMsg}`);
+              reject(new Error(errorMsg));
             }
           });
         });
 
-        req.on('error', (error) => {
-          reject(new Error(`CA certificate upload failed: ${error.message}`));
+        req.on('error', async (error) => {
+          const errorMsg = `CA certificate upload failed: ${error.message}`;
+          await accountManager.saveRenewalLog(fullFQDN, `ERROR: ${errorMsg}`);
+          reject(new Error(errorMsg));
         });
 
         req.write(postData);

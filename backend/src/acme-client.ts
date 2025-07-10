@@ -45,11 +45,18 @@ export class ACMEClient {
         accountKey
       });
 
-      // Create account with Let's Encrypt
-      const account = await this.client.createAccount({
+      // Create account with Let's Encrypt (with timeout)
+      Logger.info(`Creating Let's Encrypt account for ${email}`);
+      const accountPromise = this.client.createAccount({
         termsOfServiceAgreed: true,
         contact: [`mailto:${email}`]
       });
+      
+      const accountTimeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Account creation timeout after 30 seconds')), 30000)
+      );
+      
+      const account = await Promise.race([accountPromise, accountTimeoutPromise]);
 
       Logger.info(`Account creation response:`, account);
       
@@ -130,18 +137,30 @@ export class ACMEClient {
         throw new Error('ACME client not initialized. Please load or create an account first.');
       }
       
-      // Create certificate order
-      const order = await this.client.createOrder({
+      // Create certificate order with timeout
+      Logger.info(`Creating certificate order for domains: ${domains.join(', ')}`);
+      const orderPromise = this.client.createOrder({
         identifiers: domains.map(domain => ({
           type: 'dns',
           value: domain
         }))
       });
-
+      
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Order creation timeout after 30 seconds')), 30000)
+      );
+      
+      const order = await Promise.race([orderPromise, timeoutPromise]);
       Logger.info(`Created certificate order: ${order.url}`);
 
-      // Get authorizations and challenges
-      const authorizations = await this.client.getAuthorizations(order);
+      // Get authorizations and challenges with timeout
+      Logger.info(`Getting authorizations for order: ${order.url}`);
+      const authPromise = this.client.getAuthorizations(order);
+      const authTimeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Authorization retrieval timeout after 30 seconds')), 30000)
+      );
+      
+      const authorizations = await Promise.race([authPromise, authTimeoutPromise]);
       const challenges: any[] = [];
 
       for (const authorization of authorizations) {
