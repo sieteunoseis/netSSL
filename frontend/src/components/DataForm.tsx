@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import validator from "validator";
@@ -16,6 +17,10 @@ interface Column {
   default?: string;
   options?: { value: string; label: string }[];
   allowCustom?: boolean;
+  conditional?: {
+    field: string;
+    value: string;
+  };
   validator: {
     name: keyof typeof validator;
     options?: any;
@@ -104,6 +109,38 @@ const DataForm: React.FC<DataFormProps> = ({ onDataAdded }) => {
     }));
   };
 
+  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>, options: Column['validator'], isOptional = false) => {
+    const { name, value } = e.target;
+    const newErrors: Record<string, string> = {};
+
+    // For CSR, validate format if not empty
+    if (name === 'custom_csr' && value.trim() !== '') {
+      if (!value.includes('-----BEGIN CERTIFICATE REQUEST-----') || !value.includes('-----END CERTIFICATE REQUEST-----')) {
+        newErrors[name] = "Must be a valid PEM formatted certificate request";
+      } else {
+        newErrors[name] = "";
+      }
+    } else if (value.trim() !== '' || !isOptional) {
+      const validatorFn = validator[options.name] as any;
+      if (!validatorFn(value, options.options)) {
+        newErrors[name] = "Invalid value";
+      } else {
+        newErrors[name] = "";
+      }
+    } else {
+      newErrors[name] = "";
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+    }
+
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -153,7 +190,17 @@ const DataForm: React.FC<DataFormProps> = ({ onDataAdded }) => {
         const placeholder = col.placeholder || (isOptional 
           ? `${label} (Optional)`
           : label);
+
+        // Check if field should be shown based on conditional logic
+        const shouldShow = !col.conditional || formData[col.conditional.field] === col.conditional.value;
+        
+        // For conditional fields like custom_csr, make them required when their condition is met
+        const isConditionallyRequired = col.conditional && formData[col.conditional.field] === col.conditional.value && col.name === 'custom_csr';
           
+        if (!shouldShow) {
+          return null;
+        }
+
         return (
           <div key={col.name} className="space-y-2">
             <Label>{label}</Label>
@@ -174,9 +221,25 @@ const DataForm: React.FC<DataFormProps> = ({ onDataAdded }) => {
                   ))}
                 </SelectContent>
               </Select>
+            ) : col.type === "TEXTAREA" ? (
+              <Textarea
+                required={!isOptional || isConditionallyRequired}
+                name={col.name}
+                placeholder={placeholder}
+                value={formValue || ""}
+                rows={6}
+                autoComplete="off"
+                data-lpignore="true"
+                data-form-type="other"
+                data-1p-ignore="true"
+                tabIndex={0}
+                onChange={(e) => {
+                  handleTextareaChange(e, col.validator, isOptional && !isConditionallyRequired);
+                }}
+              />
             ) : (
               <Input
-                required={!isOptional}
+                required={!isOptional || isConditionallyRequired}
                 type={col.name === "password" || col.name === "pw" ? "password" : "text"}
                 name={col.name}
                 placeholder={placeholder}
@@ -188,7 +251,7 @@ const DataForm: React.FC<DataFormProps> = ({ onDataAdded }) => {
                 autoFocus={index === 0}
                 tabIndex={0}
                 onChange={(e) => {
-                  handleChange(e, col.validator, isOptional);
+                  handleChange(e, col.validator, isOptional && !isConditionallyRequired);
                 }}
               />
             )}

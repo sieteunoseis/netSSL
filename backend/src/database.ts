@@ -201,7 +201,7 @@ export class DatabaseManager {
       }
       
       const existingColumns = columns.map((col: any) => col.name);
-      const requiredColumns = ['id', ...this.tableColumns, 'password_hash', 'last_cert_issued', 'cert_count_this_week', 'cert_count_reset_date', 'created_at', 'updated_at'];
+      const requiredColumns = ['id', ...this.tableColumns, 'password_hash', 'application_type', 'custom_csr', 'last_cert_issued', 'cert_count_this_week', 'cert_count_reset_date', 'created_at', 'updated_at'];
       
       // Check for missing columns
       const missingColumns = requiredColumns.filter(col => !existingColumns.includes(col));
@@ -256,6 +256,10 @@ export class DatabaseManager {
         columnDef = 'DATETIME';
       } else if (column === 'cert_count_this_week') {
         columnDef = 'INTEGER DEFAULT 0';
+      } else if (column === 'application_type') {
+        columnDef = 'TEXT DEFAULT "vos"';
+      } else if (column === 'custom_csr') {
+        columnDef = 'TEXT';
       }
 
       const alterQuery = `ALTER TABLE connections ADD COLUMN ${column} ${columnDef}`;
@@ -283,7 +287,7 @@ export class DatabaseManager {
   getAllConnections(): Promise<ConnectionRecord[]> {
     return new Promise((resolve, reject) => {
       // Get all columns including password for API functionality
-      const baseColumns = ['id', ...this.tableColumns, 'last_cert_issued', 'cert_count_this_week', 'cert_count_reset_date', 'created_at', 'updated_at'];
+      const baseColumns = ['id', ...this.tableColumns, 'application_type', 'custom_csr', 'last_cert_issued', 'cert_count_this_week', 'cert_count_reset_date', 'created_at', 'updated_at'];
       const query = `SELECT ${baseColumns.join(', ')} FROM connections`;
       
       this.db.all(query, [], (err: any, rows: any[]) => {
@@ -301,7 +305,7 @@ export class DatabaseManager {
   getConnectionById(id: number): Promise<ConnectionRecord | null> {
     return new Promise((resolve, reject) => {
       // Get all columns including password for API functionality
-      const baseColumns = ['id', ...this.tableColumns, 'last_cert_issued', 'cert_count_this_week', 'cert_count_reset_date', 'created_at', 'updated_at'];
+      const baseColumns = ['id', ...this.tableColumns, 'application_type', 'custom_csr', 'last_cert_issued', 'cert_count_this_week', 'cert_count_reset_date', 'created_at', 'updated_at'];
       const query = `SELECT ${baseColumns.join(', ')} FROM connections WHERE id = ?`;
       
       this.db.get(query, [id], (err: any, row: any) => {
@@ -319,7 +323,7 @@ export class DatabaseManager {
   async createConnection(data: Omit<ConnectionRecord, 'id'>): Promise<number> {
     // For CUCM API automation, store password directly since we need it for API calls
     // This is less secure but necessary for automation tools
-    const hashedPassword = await this.hashPassword(data.password);
+    const hashedPassword = data.password ? await this.hashPassword(data.password) : null;
     
     return new Promise((resolve, reject) => {
       // Include all columns including password

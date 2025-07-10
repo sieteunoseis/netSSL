@@ -1,5 +1,16 @@
 [
   {
+    "name": "application_type",
+    "type": "SELECT",
+    "validator": { "name": "isIn", "options": ["vos", "general"] },
+    "label": "Application Type",
+    "options": [
+      { "value": "vos", "label": "Cisco VOS Application (CUCM/CER/CUC)" },
+      { "value": "general", "label": "General Application (ESXi, etc.)" }
+    ],
+    "default": "vos"
+  },
+  {
     "name": "name",
     "type": "TEXT",
     "validator": { "name": "isAscii", "options": "" },
@@ -19,14 +30,22 @@
     "validator": { "name": "isAscii", "options": "" },
     "label": "Username",
     "placeholder": "e.g., administrator, ccmadmin, root, admin",
-    "default": "administrator"
+    "default": "administrator",
+    "conditional": {
+      "field": "application_type",
+      "value": "vos"
+    }
   },
   {
     "name": "password",
     "type": "TEXT",
     "validator": { "name": "isAscii", "options": "" },
     "label": "Password",
-    "placeholder": "Server password"
+    "placeholder": "Server password",
+    "conditional": {
+      "field": "application_type",
+      "value": "vos"
+    }
   },
   {
     "name": "domain",
@@ -34,6 +53,19 @@
     "validator": { "name": "isFQDN", "options": { "allow_numeric_tld": true } },
     "label": "Domain Name",
     "placeholder": "e.g., automate.builders"
+  },
+  {
+    "name": "custom_csr",
+    "type": "TEXTAREA",
+    "validator": { "name": "isAscii", "options": "" },
+    "label": "Custom CSR (Required for General Applications)",
+    "placeholder": "-----BEGIN CERTIFICATE REQUEST-----\nPaste your Certificate Signing Request here\n-----END CERTIFICATE REQUEST-----",
+    "required": false,
+    "optional": true,
+    "conditional": {
+      "field": "application_type",
+      "value": "general"
+    }
   },
   {
     "name": "ssl_provider",

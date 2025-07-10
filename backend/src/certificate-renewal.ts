@@ -156,24 +156,57 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       // Check for existing valid certificate
       const existingCert = await this.getExistingCertificate(fullFQDN);
       if (existingCert) {
-        await this.updateStatus(status, 'uploading_certificate', 'Using existing valid certificate', 80);
-        await this.uploadCertificateToCUCM(connection, existingCert, status);
+        if (connection.application_type === 'general') {
+          await this.updateStatus(status, 'uploading_certificate', 'Existing certificate available for download', 80);
+          status.logs.push(`Existing valid certificate available for ${connection.name}`);
+        } else {
+          await this.updateStatus(status, 'uploading_certificate', 'Using existing valid certificate', 80);
+          await this.uploadCertificateToCUCM(connection, existingCert, status);
+        }
         await this.updateStatus(status, 'completed', 'Certificate renewal completed successfully', 100);
         status.endTime = new Date();
         return;
       }
 
-      await this.updateStatus(status, 'generating_csr', 'Generating CSR from CUCM server', 10);
-      
-      // Step 1: Generate CSR from CUCM
-      const csr = await this.generateCSRFromCUCM(connection, status);
+      // Step 1: Get CSR based on application type
+      let csr: string;
+      if (connection.application_type === 'general') {
+        // For general applications, use the provided custom CSR
+        await this.updateStatus(status, 'generating_csr', 'Using custom CSR for general application', 10);
+        
+        if (!connection.custom_csr) {
+          throw new Error('Custom CSR is required for general applications');
+        }
+        
+        csr = connection.custom_csr;
+        status.logs.push(`Using custom CSR for general application: ${connection.name}`);
+        await accountManager.saveRenewalLog(fullFQDN, `Using custom CSR for general application: ${connection.name}`);
+        await accountManager.saveRenewalLog(fullFQDN, `CSR length: ${csr.length} characters`);
+        
+        // Save the CSR to accounts folder for record keeping
+        await accountManager.saveCSR(fullFQDN, csr);
+      } else {
+        // For VOS applications (CUCM, CER, CUC), generate CSR from API
+        await this.updateStatus(status, 'generating_csr', 'Generating CSR from VOS application API', 10);
+        csr = await this.generateCSRFromCUCM(connection, status);
+      }
       
       // Now continue with Let's Encrypt certificate request
       await this.updateStatus(status, 'requesting_certificate', 'Requesting certificate from Let\'s Encrypt', 20);
       const certificate = await this.requestCertificate(connection, csr, database, status);
       
-      await this.updateStatus(status, 'uploading_certificate', 'Uploading certificate to CUCM', 90);
-      await this.uploadCertificateToCUCM(connection, certificate, status);
+      // Step 4: Handle certificate installation based on application type
+      if (connection.application_type === 'general') {
+        // For general applications, just make certificate available for download
+        await this.updateStatus(status, 'uploading_certificate', 'Certificate ready for download', 90);
+        status.logs.push(`Certificate generated and ready for manual installation on ${connection.name}`);
+        await accountManager.saveRenewalLog(fullFQDN, `Certificate generated and ready for manual installation on ${connection.name}`);
+        await accountManager.saveRenewalLog(fullFQDN, `Certificate files available in: ./accounts/${fullFQDN}/`);
+      } else {
+        // For VOS applications, upload via API
+        await this.updateStatus(status, 'uploading_certificate', 'Uploading certificate to VOS application', 90);
+        await this.uploadCertificateToCUCM(connection, certificate, status);
+      }
       
       await this.updateStatus(status, 'completed', 'Certificate renewal completed successfully', 100);
       status.endTime = new Date();
@@ -255,6 +288,10 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
           await accountManager.saveRenewalLog(fullFQDN, `Using existing CSR for renewal`);
           resolve(existingCSR);
           return;
+        }
+
+        if (!connection.username || !connection.password) {
+          throw new Error('Username and password are required for VOS applications');
         }
 
         const authHeader = `Basic ${Buffer.from(`${connection.username}:${connection.password}`).toString('base64')}`;
@@ -739,6 +776,12 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
   private async uploadLeafCertificate(connection: ConnectionRecord, certificate: string, status: RenewalStatus): Promise<void> {
     return new Promise(async (resolve, reject) => {
       const fullFQDN = `${connection.hostname}.${connection.domain}`;
+      
+      if (!connection.username || !connection.password) {
+        reject(new Error('Username and password are required for VOS application certificate upload'));
+        return;
+      }
+
       const postData = JSON.stringify({
         service: 'tomcat',
         certificates: [certificate]
@@ -800,6 +843,12 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
   private async getExistingTrustCertificates(connection: ConnectionRecord): Promise<string[]> {
     return new Promise((resolve, reject) => {
         const fullFQDN = `${connection.hostname}.${connection.domain}`;
+        
+        if (!connection.username || !connection.password) {
+          reject(new Error('Username and password are required for VOS application certificate operations'));
+          return;
+        }
+
         const options = {
             hostname: fullFQDN,
             port: 443,
@@ -847,6 +896,12 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     return new Promise(async (resolve, reject) => {
       try {
         const fullFQDN = `${connection.hostname}.${connection.domain}`;
+        
+        if (!connection.username || !connection.password) {
+          reject(new Error('Username and password are required for VOS application certificate upload'));
+          return;
+        }
+
         const existingCerts = await this.getExistingTrustCertificates(connection);
         const certsToUpload = certificates.filter(c => !existingCerts.includes(c.trim()));
 
