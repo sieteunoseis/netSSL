@@ -356,11 +356,13 @@ export class DatabaseManager {
       try {
         // Only update columns that are provided in data (excluding password and id)
         const dataColumns = this.tableColumns.filter(col => col !== 'password');
+        // Add the new fields that were added later
+        const allUpdateableColumns = [...dataColumns, 'application_type', 'custom_csr'];
         const updateColumns: string[] = [];
         const updateValues: any[] = [];
         
         // Only include columns that are actually provided in the data
-        for (const col of dataColumns) {
+        for (const col of allUpdateableColumns) {
           if ((data as any)[col] !== undefined) {
             updateColumns.push(col);
             updateValues.push((data as any)[col]);
