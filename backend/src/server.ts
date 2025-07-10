@@ -15,7 +15,7 @@ import { getAccountsDirectoryStructure, getAccountsSize, formatBytes } from './a
 dotenv.config({ path: '../.env' });
 
 const app = express();
-const PORT = process.env.PORT ? parseInt(process.env.PORT) : 5000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 console.log('TABLE_COLUMNS from env:', process.env.TABLE_COLUMNS);
 const TABLE_COLUMNS = (process.env.TABLE_COLUMNS || 'name,hostname,username,password,version')
   .split(',')
