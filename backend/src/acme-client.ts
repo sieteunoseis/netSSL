@@ -139,6 +139,8 @@ export class ACMEClient {
       
       // Create certificate order with timeout
       Logger.info(`Creating certificate order for domains: ${domains.join(', ')}`);
+      Logger.info(`Using ACME directory: ${this.isStaging ? 'STAGING' : 'PRODUCTION'}`);
+      
       const orderPromise = this.client.createOrder({
         identifiers: domains.map(domain => ({
           type: 'dns',
@@ -147,9 +149,13 @@ export class ACMEClient {
       });
       
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Order creation timeout after 30 seconds')), 30000)
+        setTimeout(() => {
+          Logger.error('Order creation timeout after 30 seconds');
+          reject(new Error('Order creation timeout after 30 seconds'));
+        }, 30000)
       );
       
+      Logger.info('Waiting for order creation response...');
       const order = await Promise.race([orderPromise, timeoutPromise]) as any;
       Logger.info(`Created certificate order: ${order.url}`);
 
