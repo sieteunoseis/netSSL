@@ -59,7 +59,7 @@
     "type": "TEXTAREA",
     "validator": { "name": "isAscii", "options": "" },
     "label": "Custom CSR (Required for General Applications)",
-    "placeholder": "-----BEGIN CERTIFICATE REQUEST-----\nPaste your Certificate Signing Request here\n-----END CERTIFICATE REQUEST-----",
+    "placeholder": "-----BEGIN CERTIFICATE REQUEST-----\nPaste your Certificate Signing Request here\n-----END CERTIFICATE REQUEST-----\n\nOptional: Include your private key below the CSR\n-----BEGIN PRIVATE KEY----- or -----BEGIN RSA PRIVATE KEY-----\nYour private key content\n-----END PRIVATE KEY----- or -----END RSA PRIVATE KEY-----",
     "required": false,
     "optional": true,
     "conditional": {
