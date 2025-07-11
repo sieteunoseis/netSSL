@@ -138,7 +138,7 @@ app.post('/api/data', asyncHandler(async (req: Request, res: Response) => {
     'route53': ['AWS_ACCESS_KEY', 'AWS_SECRET_KEY', 'AWS_ZONE_ID'],
     'azure': ['AZURE_SUBSCRIPTION_ID', 'AZURE_RESOURCE_GROUP', 'AZURE_ZONE_NAME'],
     'google': ['GOOGLE_PROJECT_ID', 'GOOGLE_ZONE_NAME'],
-    'internal': ['INTERNAL_DNS_SERVER_1', 'INTERNAL_DNS_SERVER_2']
+    'custom': ['CUSTOM_DNS_SERVER_1', 'CUSTOM_DNS_SERVER_2']
   };
   
   if (ssl_provider) {
@@ -581,7 +581,7 @@ app.get('/api/settings/:provider/validate', asyncHandler(async (req: Request, re
     'route53': ['AWS_ACCESS_KEY', 'AWS_SECRET_KEY', 'AWS_ZONE_ID'],
     'azure': ['AZURE_SUBSCRIPTION_ID', 'AZURE_RESOURCE_GROUP', 'AZURE_ZONE_NAME'],
     'google': ['GOOGLE_PROJECT_ID', 'GOOGLE_ZONE_NAME'],
-    'internal': ['INTERNAL_DNS_SERVER_1', 'INTERNAL_DNS_SERVER_2']
+    'custom': ['CUSTOM_DNS_SERVER_1', 'CUSTOM_DNS_SERVER_2']
   };
 
   const required = requiredKeys[provider] || [];

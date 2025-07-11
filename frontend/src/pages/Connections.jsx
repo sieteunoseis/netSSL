@@ -34,7 +34,7 @@ function App() {
           <div>
             <h1 className="scroll-m-20 text-4xl font-extrabold tracking-tight lg:text-5xl mb-2">Saved Connections</h1>
             <p className="text-lg text-gray-600 dark:text-gray-300">
-              Manage your Cisco UC server connections ({data.length})
+              Manage your Cisco application connections ({data.length})
             </p>
           </div>
           <div className="flex space-x-2">

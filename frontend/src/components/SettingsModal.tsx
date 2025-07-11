@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Settings, Key, Check, X, Eye, EyeOff } from "lucide-react";
+import { Settings, Key, Check, X, Eye, EyeOff, ChevronLeft, ChevronRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiCall } from "@/lib/api";
 
@@ -32,6 +32,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
   const [providerSettings, setProviderSettings] = useState<Record<string, ProviderSettings>>({});
   const [loading, setLoading] = useState(false);
   const [visibleKeys, setVisibleKeys] = useState<Record<string, boolean>>({});
+  const [showLeftScroll, setShowLeftScroll] = useState(false);
+  const [showRightScroll, setShowRightScroll] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const providers = [
     { id: 'letsencrypt', name: 'Let\'s Encrypt', keys: ['LETSENCRYPT_EMAIL'] },
@@ -41,7 +44,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
     { id: 'route53', name: 'AWS Route53', keys: ['AWS_ACCESS_KEY', 'AWS_SECRET_KEY', 'AWS_ZONE_ID'] },
     { id: 'azure', name: 'Azure DNS', keys: ['AZURE_SUBSCRIPTION_ID', 'AZURE_RESOURCE_GROUP', 'AZURE_ZONE_NAME'] },
     { id: 'google', name: 'Google Cloud DNS', keys: ['GOOGLE_PROJECT_ID', 'GOOGLE_ZONE_NAME'] },
-    { id: 'internal', name: 'Internal DNS', keys: ['INTERNAL_DNS_SERVER_1', 'INTERNAL_DNS_SERVER_2'] }
+    { id: 'custom', name: 'Custom DNS', keys: ['CUSTOM_DNS_SERVER_1', 'CUSTOM_DNS_SERVER_2'] }
   ];
 
   const fetchSettings = async () => {
@@ -160,9 +163,29 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
     }));
   };
 
+  const checkScroll = () => {
+    if (scrollContainerRef.current) {
+      const { scrollLeft, scrollWidth, clientWidth } = scrollContainerRef.current;
+      setShowLeftScroll(scrollLeft > 0);
+      setShowRightScroll(scrollLeft < scrollWidth - clientWidth - 1);
+    }
+  };
+
+  const scrollTabs = (direction: 'left' | 'right') => {
+    if (scrollContainerRef.current) {
+      const scrollAmount = 200;
+      scrollContainerRef.current.scrollBy({
+        left: direction === 'left' ? -scrollAmount : scrollAmount,
+        behavior: 'smooth'
+      });
+    }
+  };
+
   useEffect(() => {
     if (isOpen) {
       fetchSettings();
+      // Check scroll on open
+      setTimeout(checkScroll, 100);
     }
   }, [isOpen]);
 
@@ -178,7 +201,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
       <DialogTrigger asChild>
         {trigger || defaultTrigger}
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[800px] max-h-[80vh] overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-100 [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border-none dark:[&::-webkit-scrollbar-track]:bg-gray-800 dark:[&::-webkit-scrollbar-thumb]:bg-gray-600">
+      <DialogContent className="sm:max-w-[1000px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>API Keys & Settings</DialogTitle>
           <DialogDescription>
@@ -230,13 +253,58 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
           
           <TabsContent value="configure" className="space-y-4">
             <Tabs defaultValue={providers[0].id} orientation="vertical">
-              <TabsList className="grid w-full grid-cols-3 lg:grid-cols-7">
-                {providers.map(provider => (
-                  <TabsTrigger key={provider.id} value={provider.id} className="text-xs">
-                    {provider.name}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
+              <div className="relative group">
+                {/* Left scroll button */}
+                {showLeftScroll && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="absolute left-0 top-1/2 -translate-y-1/2 z-10 h-8 w-8 p-0 bg-background/80 backdrop-blur-sm hover:bg-background"
+                    onClick={() => scrollTabs('left')}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                )}
+                
+                {/* Scrollable tabs container */}
+                <div 
+                  ref={scrollContainerRef}
+                  onScroll={checkScroll}
+                  className="overflow-x-auto scrollbar-hide"
+                >
+                  <TabsList className="inline-flex h-10 items-center justify-start rounded-md bg-muted p-1 text-muted-foreground w-max">
+                    {providers.map(provider => (
+                      <TabsTrigger 
+                        key={provider.id} 
+                        value={provider.id} 
+                        className="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+                      >
+                        {provider.name}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </div>
+                
+                {/* Right scroll button */}
+                {showRightScroll && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="absolute right-0 top-1/2 -translate-y-1/2 z-10 h-8 w-8 p-0 bg-background/80 backdrop-blur-sm hover:bg-background"
+                    onClick={() => scrollTabs('right')}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                )}
+                
+                {/* Gradient fade indicators */}
+                {showLeftScroll && (
+                  <div className="pointer-events-none absolute inset-y-0 left-0 w-12 bg-gradient-to-r from-background via-background/50 to-transparent" />
+                )}
+                {showRightScroll && (
+                  <div className="pointer-events-none absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-background via-background/50 to-transparent" />
+                )}
+              </div>
               
               {providers.map(provider => (
                 <TabsContent key={provider.id} value={provider.id} className="space-y-4">

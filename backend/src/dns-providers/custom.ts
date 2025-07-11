@@ -3,7 +3,7 @@ import { DatabaseManager } from '../database';
 import { Logger } from '../logger';
 import dnsServers from '../dns-servers.json';
 
-export interface InternalDNSRecord {
+export interface CustomDNSRecord {
   id: string;
   domain: string;
   recordName: string;
@@ -14,7 +14,7 @@ export interface InternalDNSRecord {
   verifiedAt?: Date;
 }
 
-export class InternalDNSProvider {
+export class CustomDNSProvider {
   private database: DatabaseManager;
   private domain: string;
   private customDnsServers: string[] = [];
@@ -24,24 +24,24 @@ export class InternalDNSProvider {
     this.domain = domain;
   }
 
-  static async create(database: DatabaseManager, domain: string): Promise<InternalDNSProvider> {
-    const provider = new InternalDNSProvider(database, domain);
+  static async create(database: DatabaseManager, domain: string): Promise<CustomDNSProvider> {
+    const provider = new CustomDNSProvider(database, domain);
     
     // Load custom DNS servers from settings
-    const settings = await database.getSettingsByProvider('internal');
-    const dnsServer1 = settings.find(s => s.key_name === 'INTERNAL_DNS_SERVER_1')?.key_value;
-    const dnsServer2 = settings.find(s => s.key_name === 'INTERNAL_DNS_SERVER_2')?.key_value;
+    const settings = await database.getSettingsByProvider('custom');
+    const dnsServer1 = settings.find(s => s.key_name === 'CUSTOM_DNS_SERVER_1')?.key_value;
+    const dnsServer2 = settings.find(s => s.key_name === 'CUSTOM_DNS_SERVER_2')?.key_value;
     
     if (dnsServer1) provider.customDnsServers.push(dnsServer1);
     if (dnsServer2) provider.customDnsServers.push(dnsServer2);
     
-    Logger.info(`Internal DNS provider initialized for ${domain} with custom servers: ${provider.customDnsServers.join(', ')}`);
+    Logger.info(`Custom DNS provider initialized for ${domain} with custom servers: ${provider.customDnsServers.join(', ')}`);
     return provider;
   }
 
-  async createDNSRecord(recordName: string, recordValue: string, recordType: string = 'TXT'): Promise<InternalDNSRecord> {
-    const record: InternalDNSRecord = {
-      id: `internal_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+  async createDNSRecord(recordName: string, recordValue: string, recordType: string = 'TXT'): Promise<CustomDNSRecord> {
+    const record: CustomDNSRecord = {
+      id: `custom_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       domain: this.domain,
       recordName,
       recordValue,
@@ -50,7 +50,7 @@ export class InternalDNSProvider {
       createdAt: new Date()
     };
 
-    Logger.info(`Internal DNS: Created record ${recordName} = ${recordValue}`);
+    Logger.info(`Custom DNS: Created record ${recordName} = ${recordValue}`);
     Logger.info(`Manual DNS Entry Required:`);
     Logger.info(`  Record Type: ${recordType}`);
     Logger.info(`  Name: ${recordName}`);
@@ -64,7 +64,7 @@ export class InternalDNSProvider {
     // Use custom DNS servers if configured, otherwise use defaults
     const nameservers = this.customDnsServers.length > 0 
       ? this.customDnsServers 
-      : (dnsServers.internal || dnsServers.default);
+      : (dnsServers.custom || dnsServers.default);
     
     Logger.info(`Verifying DNS propagation for ${recordName} using servers: ${nameservers.join(', ')}`);
     
@@ -112,8 +112,8 @@ export class InternalDNSProvider {
   }
 
   async deleteDNSRecord(recordId: string): Promise<void> {
-    // For internal DNS, we just log the deletion - admin needs to manually remove
-    Logger.info(`Internal DNS: Record ${recordId} marked for deletion`);
+    // For custom DNS, we just log the deletion - admin needs to manually remove
+    Logger.info(`Custom DNS: Record ${recordId} marked for deletion`);
     Logger.info(`Manual DNS Entry Removal Required - please remove the TXT record manually`);
   }
 

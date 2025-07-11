@@ -60,8 +60,8 @@ export const validateConnectionData = (data: any): { isValid: boolean; errors: s
 
   if (!data.dns_provider || typeof data.dns_provider !== 'string') {
     errors.push('DNS provider is required and must be a string');
-  } else if (!validator.isIn(data.dns_provider, ['cloudflare', 'digitalocean', 'route53', 'azure', 'google', 'internal'])) {
-    errors.push('DNS provider must be one of: cloudflare, digitalocean, route53, azure, google, internal');
+  } else if (!validator.isIn(data.dns_provider, ['cloudflare', 'digitalocean', 'route53', 'azure', 'google', 'custom'])) {
+    errors.push('DNS provider must be one of: cloudflare, digitalocean, route53, azure, google, custom');
   }
 
   // Version is optional

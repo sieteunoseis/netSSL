@@ -705,8 +705,8 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       await this.handleCloudflareChallenge(connection, settings, status);
     } else if (dnsProvider === 'digitalocean') {
       await this.handleDigitalOceanChallenge(connection, settings, status);
-    } else if (dnsProvider === 'internal') {
-      await this.handleInternalDNSChallenge(connection, settings, status);
+    } else if (dnsProvider === 'custom') {
+      await this.handleCustomDNSChallenge(connection, settings, status);
     } else {
       throw new Error(`Unsupported DNS provider: ${dnsProvider}`);
     }
@@ -754,16 +754,16 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     });
   }
 
-  private async handleInternalDNSChallenge(connection: ConnectionRecord, _settings: any[], status: RenewalStatus): Promise<void> {
+  private async handleCustomDNSChallenge(connection: ConnectionRecord, _settings: any[], status: RenewalStatus): Promise<void> {
     const fullFQDN = `${connection.hostname}.${connection.domain}`;
     
     try {
-      // Import the internal DNS provider
-      const { InternalDNSProvider } = await import('./dns-providers/internal');
+      // Import the custom DNS provider
+      const { CustomDNSProvider } = await import('./dns-providers/custom');
       if (!this.database) {
         throw new Error('Database not initialized');
       }
-      const internalDNS = await InternalDNSProvider.create(this.database, fullFQDN);
+      const customDNS = await CustomDNSProvider.create(this.database, fullFQDN);
       
       await this.updateStatus(status, 'waiting_dns_propagation', 'Manual DNS entry required - waiting for admin', 60);
       
@@ -775,10 +775,10 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         const recordName = `_acme-challenge.${fullFQDN}`;
         
         // Create the DNS record instruction
-        await internalDNS.createDNSRecord(recordName, keyAuth, 'TXT');
+        await customDNS.createDNSRecord(recordName, keyAuth, 'TXT');
         
         // Log manual instructions
-        const instructions = internalDNS.getManualInstructions(recordName, keyAuth);
+        const instructions = customDNS.getManualInstructions(recordName, keyAuth);
         await accountManager.saveRenewalLog(fullFQDN, instructions);
         status.logs.push('Manual DNS entry required - check renewal logs for instructions');
         
@@ -797,7 +797,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         Logger.info(`Waiting for manual DNS entry for ${recordName}`);
         await accountManager.saveRenewalLog(fullFQDN, `Waiting for manual DNS entry. Timeout: ${maxWaitTime / 1000} seconds`);
         
-        const isVerified = await internalDNS.waitForManualEntry(recordName, keyAuth, maxWaitTime);
+        const isVerified = await customDNS.waitForManualEntry(recordName, keyAuth, maxWaitTime);
         
         if (!isVerified) {
           throw new Error(`Manual DNS entry verification timed out after ${maxWaitTime / 1000} seconds`);
@@ -810,7 +810,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       await this.updateStatus(status, 'completing_validation', 'Manual DNS entries verified - completing validation', 70);
       
     } catch (error) {
-      Logger.error(`Internal DNS challenge failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      Logger.error(`Custom DNS challenge failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
       throw error;
     }
   }

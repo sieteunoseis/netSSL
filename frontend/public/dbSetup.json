@@ -81,7 +81,7 @@
   {
     "name": "dns_provider",
     "type": "SELECT",
-    "validator": { "name": "isIn", "options": ["cloudflare", "digitalocean", "route53", "azure", "google", "internal"] },
+    "validator": { "name": "isIn", "options": ["cloudflare", "digitalocean", "route53", "azure", "google", "custom"] },
     "label": "DNS Provider",
     "options": [
       { "value": "cloudflare", "label": "Cloudflare" },
@@ -89,7 +89,7 @@
       { "value": "route53", "label": "AWS Route53" },
       { "value": "azure", "label": "Azure DNS" },
       { "value": "google", "label": "Google Cloud DNS" },
-      { "value": "internal", "label": "Internal DNS (Manual)" }
+      { "value": "custom", "label": "Custom DNS (Manual)" }
     ],
     "default": "cloudflare"
   },

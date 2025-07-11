@@ -287,7 +287,7 @@ const Home = () => {
           <div className="inline-block animate-fade-in text-center">
             <h1 className="text-4xl font-bold mb-2 animate-slide-up">Certificate Dashboard</h1>
             <p className="text-lg text-muted-foreground animate-slide-up-delayed">
-              Monitor and manage SSL certificates for your Cisco UC servers
+              Monitor and manage SSL certificates for your Cisco applications
             </p>
           </div>
           <div className="mt-6 flex space-x-4">
