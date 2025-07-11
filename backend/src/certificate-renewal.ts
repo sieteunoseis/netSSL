@@ -10,7 +10,7 @@ import { accountManager } from './account-manager';
 export interface RenewalStatus {
   id: string;
   connectionId: number;
-  status: 'pending' | 'generating_csr' | 'creating_account' | 'requesting_certificate' | 'creating_dns_challenge' | 'waiting_dns_propagation' | 'waiting_manual_dns' | 'completing_validation' | 'downloading_certificate' | 'uploading_certificate' | 'completed' | 'failed';
+  status: 'pending' | 'generating_csr' | 'creating_account' | 'requesting_certificate' | 'creating_dns_challenge' | 'dns_validation' | 'waiting_dns_propagation' | 'waiting_manual_dns' | 'completing_validation' | 'downloading_certificate' | 'uploading_certificate' | 'completed' | 'failed';
   message: string;
   progress: number;
   startTime: Date;
@@ -34,6 +34,8 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
   private renewalStatuses: Map<string, RenewalStatus> = new Map();
   private database: DatabaseManager | null = null;
   private activeRenewals: Set<number> = new Set(); // Track active renewals by connection ID
+  private authzRecords: any[] = []; // Store authorization records for DNS challenges
+  private dnsRecordIds: string[] = []; // Store DNS record IDs for cleanup
 
   setDatabase(database: DatabaseManager): void {
     this.database = database;
@@ -683,18 +685,134 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     }
   }
 
-  private async requestZeroSSLCertificate(_connection: ConnectionRecord, _csr: string, _settings: any[], status: RenewalStatus): Promise<string> {
-    // This would integrate with ZeroSSL API
-    status.logs.push('Requesting certificate from ZeroSSL');
-    
-    // TODO: Implement ZeroSSL API integration
-    return new Promise((resolve, _reject) => {
-      // Placeholder implementation
-      setTimeout(() => {
-        status.logs.push('Certificate obtained from ZeroSSL');
-        resolve('-----BEGIN CERTIFICATE-----\n...certificate data...\n-----END CERTIFICATE-----');
-      }, 2000);
-    });
+  private async requestZeroSSLCertificate(connection: ConnectionRecord, csr: string, _settings: any[], status: RenewalStatus): Promise<string> {
+    try {
+      const { ZeroSSLProvider } = await import('./ssl-providers/zerossl');
+      const { MXToolboxService } = await import('./services/mxtoolbox');
+      
+      if (!this.database) {
+        throw new Error('Database not initialized');
+      }
+
+      const zeroSSL = await ZeroSSLProvider.create(this.database);
+      const mxToolbox = await MXToolboxService.create(this.database);
+      
+      const fullFQDN = `${connection.hostname}.${connection.domain}`;
+      const domains = [fullFQDN];
+      
+      // Add alt_names if provided
+      if (connection.alt_names) {
+        const altNames = connection.alt_names.split(',').map(name => name.trim()).filter(name => name);
+        domains.push(...altNames);
+      }
+
+      await this.updateStatus(status, 'requesting_certificate', 'Creating ZeroSSL certificate request', 30);
+      
+      // Create certificate with ZeroSSL
+      const certificate = await zeroSSL.createCertificate(domains, csr);
+      status.logs.push(`ZeroSSL certificate created with ID: ${certificate.id}`);
+
+      await this.updateStatus(status, 'creating_dns_challenge', 'Setting up DNS validation', 40);
+      
+      // Get validation details
+      const validations = await zeroSSL.getValidationDetails(certificate.id);
+      status.logs.push(`Retrieved validation details for ${validations.length} domains`);
+
+      // Create DNS records for validation
+      const dnsProvider = connection.dns_provider || 'cloudflare';
+      
+      for (const validation of validations) {
+        if (validation.details?.cname_validation_p1 && validation.details?.cname_validation_p2) {
+          const recordName = validation.details.cname_validation_p1;
+          const recordValue = validation.details.cname_validation_p2;
+          
+          status.logs.push(`Creating CNAME record: ${recordName} -> ${recordValue}`);
+          
+          // Create DNS record using the configured DNS provider
+          await this.createDNSRecordForValidation(dnsProvider, recordName, recordValue, 'CNAME');
+          
+          // Store record for cleanup
+          this.dnsRecordIds.push(`CNAME_${recordName}`);
+        }
+      }
+
+      await this.updateStatus(status, 'waiting_dns_propagation', 'Waiting for DNS propagation via MXToolbox', 50);
+      
+      // Wait for DNS propagation using MXToolbox
+      for (const validation of validations) {
+        if (validation.details?.cname_validation_p1 && validation.details?.cname_validation_p2) {
+          const recordName = validation.details.cname_validation_p1;
+          const recordValue = validation.details.cname_validation_p2;
+          
+          const isVerified = await mxToolbox.waitForDNSPropagation(
+            recordName,
+            recordValue,
+            'CNAME',
+            180000 // 3 minutes timeout
+          );
+          
+          if (!isVerified) {
+            throw new Error(`DNS propagation failed for ${recordName}`);
+          }
+          
+          status.logs.push(`CNAME record verified: ${recordName}`);
+        }
+      }
+
+      await this.updateStatus(status, 'completing_validation', 'Triggering ZeroSSL validation', 70);
+      
+      // Verify domains with ZeroSSL
+      for (const validation of validations) {
+        await zeroSSL.verifyDomain(certificate.id, validation.domain);
+        status.logs.push(`Verification triggered for ${validation.domain}`);
+      }
+
+      await this.updateStatus(status, 'downloading_certificate', 'Waiting for certificate issuance', 80);
+      
+      // Wait for certificate to be issued and download it
+      const certificateData = await zeroSSL.waitForCertificate(certificate.id, 300000); // 5 minutes
+      status.logs.push('ZeroSSL certificate downloaded successfully');
+
+      return certificateData;
+    } catch (error) {
+      Logger.error(`ZeroSSL certificate request failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw error;
+    }
+  }
+
+  private async createDNSRecordForValidation(dnsProvider: string, recordName: string, recordValue: string, recordType: string = 'TXT'): Promise<void> {
+    if (!this.database) {
+      throw new Error('Database not initialized');
+    }
+
+    try {
+      if (dnsProvider === 'cloudflare') {
+        const { CloudflareProvider } = await import('./dns-providers/cloudflare');
+        const cloudflare = await CloudflareProvider.create(this.database, recordName);
+        await cloudflare.createDNSRecord(recordName, recordValue, recordType);
+      } else if (dnsProvider === 'digitalocean') {
+        const { DigitalOceanDNSProvider } = await import('./dns-providers/digitalocean');
+        const digitalOcean = await DigitalOceanDNSProvider.create(this.database, recordName);
+        await digitalOcean.createDNSRecord(recordName, recordValue, recordType);
+      } else if (dnsProvider === 'route53') {
+        const { Route53DNSProvider } = await import('./dns-providers/route53');
+        const route53 = await Route53DNSProvider.create(this.database, recordName);
+        await route53.createDNSRecord(recordName, recordValue, recordType);
+      } else if (dnsProvider === 'azure') {
+        const { AzureDNSProvider } = await import('./dns-providers/azure');
+        const azure = await AzureDNSProvider.create(this.database, recordName);
+        await azure.createDNSRecord(recordName, recordValue, recordType);
+      } else if (dnsProvider === 'google') {
+        const { GoogleDNSProvider } = await import('./dns-providers/google');
+        const google = await GoogleDNSProvider.create(this.database, recordName);
+        await google.createDNSRecord(recordName, recordValue, recordType);
+      } else {
+        throw new Error(`DNS provider ${dnsProvider} not supported for ZeroSSL CNAME validation`);
+      }
+    } catch (error) {
+      Logger.error(`Failed to create DNS record: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw error;
+    }
   }
 
   private async handleDNSChallenge(connection: ConnectionRecord, database: DatabaseManager, status: RenewalStatus): Promise<void> {
@@ -705,6 +823,12 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       await this.handleCloudflareChallenge(connection, settings, status);
     } else if (dnsProvider === 'digitalocean') {
       await this.handleDigitalOceanChallenge(connection, settings, status);
+    } else if (dnsProvider === 'route53') {
+      await this.handleRoute53Challenge(connection, settings, status);
+    } else if (dnsProvider === 'azure') {
+      await this.handleAzureChallenge(connection, settings, status);
+    } else if (dnsProvider === 'google') {
+      await this.handleGoogleChallenge(connection, settings, status);
     } else if (dnsProvider === 'custom') {
       await this.handleCustomDNSChallenge(connection, settings, status);
     } else {
@@ -736,22 +860,224 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     });
   }
 
-  private async handleDigitalOceanChallenge(_connection: ConnectionRecord, settings: any[], status: RenewalStatus): Promise<void> {
-    const doKey = settings.find(s => s.key_name === 'DO_KEY')?.key_value;
+  private async handleDigitalOceanChallenge(connection: ConnectionRecord, _settings: any[], status: RenewalStatus): Promise<void> {
+    const fullFQDN = `${connection.hostname}.${connection.domain}`;
     
-    if (!doKey) {
-      throw new Error('DigitalOcean API key not configured');
+    try {
+      const { DigitalOceanDNSProvider } = await import('./dns-providers/digitalocean');
+      if (!this.database) {
+        throw new Error('Database not initialized');
+      }
+      const digitalOceanDNS = await DigitalOceanDNSProvider.create(this.database, fullFQDN);
+      
+      await this.updateStatus(status, 'dns_validation', 'Creating DNS records in DigitalOcean', 50);
+      
+      // Process each authorization
+      for (const authz of this.authzRecords) {
+        const challenge = authz.challenges.find((ch: any) => ch.type === 'dns-01');
+        if (!challenge) continue;
+        
+        const recordName = `_acme-challenge.${authz.identifier.value}`;
+        const keyAuth = challenge.keyAuthorization;
+        
+        // Create the DNS record
+        const record = await digitalOceanDNS.createDNSRecord(recordName, keyAuth, 'TXT');
+        status.logs.push(`Created DigitalOcean DNS record with ID: ${record.id}`);
+        
+        // Store record ID for cleanup
+        this.dnsRecordIds.push(record.id.toString());
+      }
+      
+      // Wait for DNS propagation
+      await this.updateStatus(status, 'waiting_dns_propagation', 'Waiting for DNS propagation', 60);
+      
+      for (const authz of this.authzRecords) {
+        const recordName = `_acme-challenge.${authz.identifier.value}`;
+        const challenge = authz.challenges.find((ch: any) => ch.type === 'dns-01');
+        if (!challenge) continue;
+        
+        const isVerified = await digitalOceanDNS.waitForDNSPropagation(
+          recordName,
+          challenge.keyAuthorization,
+          120000 // 2 minutes timeout
+        );
+        
+        if (!isVerified) {
+          throw new Error(`DNS propagation failed for ${recordName}`);
+        }
+      }
+      
+      await this.updateStatus(status, 'completing_validation', 'DNS propagation confirmed - completing validation', 70);
+      
+    } catch (error) {
+      Logger.error(`DigitalOcean DNS challenge failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw error;
     }
+  }
 
-    status.logs.push('Managing DNS challenge via DigitalOcean');
+  private async handleRoute53Challenge(connection: ConnectionRecord, _settings: any[], status: RenewalStatus): Promise<void> {
+    const fullFQDN = `${connection.hostname}.${connection.domain}`;
     
-    // TODO: Implement DigitalOcean API integration
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        status.logs.push('DNS challenge completed via DigitalOcean');
-        resolve();
-      }, 1000);
-    });
+    try {
+      const { Route53DNSProvider } = await import('./dns-providers/route53');
+      if (!this.database) {
+        throw new Error('Database not initialized');
+      }
+      const route53DNS = await Route53DNSProvider.create(this.database, fullFQDN);
+      
+      await this.updateStatus(status, 'dns_validation', 'Creating DNS records in Route53', 50);
+      
+      // Process each authorization
+      for (const authz of this.authzRecords) {
+        const challenge = authz.challenges.find((ch: any) => ch.type === 'dns-01');
+        if (!challenge) continue;
+        
+        const recordName = `_acme-challenge.${authz.identifier.value}`;
+        const keyAuth = challenge.keyAuthorization;
+        
+        // Create the DNS record
+        const record = await route53DNS.createDNSRecord(recordName, keyAuth, 'TXT');
+        status.logs.push(`Created Route53 DNS record: ${record.id}`);
+        
+        // Store record ID for cleanup
+        this.dnsRecordIds.push(record.id);
+      }
+      
+      // Wait for DNS propagation
+      await this.updateStatus(status, 'waiting_dns_propagation', 'Waiting for DNS propagation', 60);
+      
+      for (const authz of this.authzRecords) {
+        const recordName = `_acme-challenge.${authz.identifier.value}`;
+        const challenge = authz.challenges.find((ch: any) => ch.type === 'dns-01');
+        if (!challenge) continue;
+        
+        const isVerified = await route53DNS.waitForDNSPropagation(
+          recordName,
+          challenge.keyAuthorization,
+          120000 // 2 minutes timeout
+        );
+        
+        if (!isVerified) {
+          throw new Error(`DNS propagation failed for ${recordName}`);
+        }
+      }
+      
+      await this.updateStatus(status, 'completing_validation', 'DNS propagation confirmed - completing validation', 70);
+      
+    } catch (error) {
+      Logger.error(`Route53 DNS challenge failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw error;
+    }
+  }
+
+  private async handleAzureChallenge(connection: ConnectionRecord, _settings: any[], status: RenewalStatus): Promise<void> {
+    const fullFQDN = `${connection.hostname}.${connection.domain}`;
+    
+    try {
+      const { AzureDNSProvider } = await import('./dns-providers/azure');
+      if (!this.database) {
+        throw new Error('Database not initialized');
+      }
+      const azureDNS = await AzureDNSProvider.create(this.database, fullFQDN);
+      
+      await this.updateStatus(status, 'dns_validation', 'Creating DNS records in Azure', 50);
+      
+      // Process each authorization
+      for (const authz of this.authzRecords) {
+        const challenge = authz.challenges.find((ch: any) => ch.type === 'dns-01');
+        if (!challenge) continue;
+        
+        const recordName = `_acme-challenge.${authz.identifier.value}`;
+        const keyAuth = challenge.keyAuthorization;
+        
+        // Create the DNS record
+        const record = await azureDNS.createDNSRecord(recordName, keyAuth, 'TXT');
+        status.logs.push(`Created Azure DNS record: ${record.id}`);
+        
+        // Store record ID for cleanup
+        this.dnsRecordIds.push(record.id);
+      }
+      
+      // Wait for DNS propagation
+      await this.updateStatus(status, 'waiting_dns_propagation', 'Waiting for DNS propagation', 60);
+      
+      for (const authz of this.authzRecords) {
+        const recordName = `_acme-challenge.${authz.identifier.value}`;
+        const challenge = authz.challenges.find((ch: any) => ch.type === 'dns-01');
+        if (!challenge) continue;
+        
+        const isVerified = await azureDNS.waitForDNSPropagation(
+          recordName,
+          challenge.keyAuthorization,
+          120000 // 2 minutes timeout
+        );
+        
+        if (!isVerified) {
+          throw new Error(`DNS propagation failed for ${recordName}`);
+        }
+      }
+      
+      await this.updateStatus(status, 'completing_validation', 'DNS propagation confirmed - completing validation', 70);
+      
+    } catch (error) {
+      Logger.error(`Azure DNS challenge failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw error;
+    }
+  }
+
+  private async handleGoogleChallenge(connection: ConnectionRecord, _settings: any[], status: RenewalStatus): Promise<void> {
+    const fullFQDN = `${connection.hostname}.${connection.domain}`;
+    
+    try {
+      const { GoogleDNSProvider } = await import('./dns-providers/google');
+      if (!this.database) {
+        throw new Error('Database not initialized');
+      }
+      const googleDNS = await GoogleDNSProvider.create(this.database, fullFQDN);
+      
+      await this.updateStatus(status, 'dns_validation', 'Creating DNS records in Google Cloud', 50);
+      
+      // Process each authorization
+      for (const authz of this.authzRecords) {
+        const challenge = authz.challenges.find((ch: any) => ch.type === 'dns-01');
+        if (!challenge) continue;
+        
+        const recordName = `_acme-challenge.${authz.identifier.value}`;
+        const keyAuth = challenge.keyAuthorization;
+        
+        // Create the DNS record
+        const record = await googleDNS.createDNSRecord(recordName, keyAuth, 'TXT');
+        status.logs.push(`Created Google Cloud DNS record: ${record.id}`);
+        
+        // Store record ID for cleanup
+        this.dnsRecordIds.push(record.id);
+      }
+      
+      // Wait for DNS propagation
+      await this.updateStatus(status, 'waiting_dns_propagation', 'Waiting for DNS propagation', 60);
+      
+      for (const authz of this.authzRecords) {
+        const recordName = `_acme-challenge.${authz.identifier.value}`;
+        const challenge = authz.challenges.find((ch: any) => ch.type === 'dns-01');
+        if (!challenge) continue;
+        
+        const isVerified = await googleDNS.waitForDNSPropagation(
+          recordName,
+          challenge.keyAuthorization,
+          120000 // 2 minutes timeout
+        );
+        
+        if (!isVerified) {
+          throw new Error(`DNS propagation failed for ${recordName}`);
+        }
+      }
+      
+      await this.updateStatus(status, 'completing_validation', 'DNS propagation confirmed - completing validation', 70);
+      
+    } catch (error) {
+      Logger.error(`Google Cloud DNS challenge failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw error;
+    }
   }
 
   private async handleCustomDNSChallenge(connection: ConnectionRecord, _settings: any[], status: RenewalStatus): Promise<void> {

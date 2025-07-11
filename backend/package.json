@@ -13,7 +13,12 @@
     "test:coverage": "jest --coverage"
   },
   "dependencies": {
+    "@aws-sdk/client-route-53": "^3.400.0",
+    "@azure/arm-dns": "^5.1.0",
+    "@azure/identity": "^4.0.0",
+    "@google-cloud/dns": "^4.0.0",
     "acme-client": "^5.4.0",
+    "axios": "^1.6.0",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
     "dotenv": "^10.0.0",

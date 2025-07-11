@@ -80,6 +80,36 @@ export class CloudflareProvider {
     }
   }
 
+  async createDNSRecord(recordName: string, recordValue: string, recordType: string = 'TXT'): Promise<CloudflareRecord> {
+    try {
+      Logger.info(`Creating ${recordType} record: ${recordName} = ${recordValue}`);
+
+      const postData = JSON.stringify({
+        type: recordType,
+        name: recordName,
+        content: recordValue,
+        ttl: 120 // 2 minutes for faster propagation
+      });
+
+      const response = await this.makeRequest(
+        'POST',
+        `/zones/${this.zoneId}/dns_records`,
+        postData
+      );
+
+      if (!response.success) {
+        throw new Error(`Cloudflare API error: ${JSON.stringify(response.errors)}`);
+      }
+
+      const record = response.result as CloudflareRecord;
+      Logger.info(`Successfully created ${recordType} record: ${record.id}`);
+      return record;
+    } catch (error) {
+      Logger.error(`Failed to create ${recordType} record for ${recordName}:`, error);
+      throw error;
+    }
+  }
+
   async deleteTxtRecord(recordId: string): Promise<void> {
     try {
       Logger.info(`Deleting TXT record: ${recordId}`);
