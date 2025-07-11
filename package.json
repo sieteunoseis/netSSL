@@ -1,5 +1,5 @@
 {
-  "name": "react-express-tailwind-app",
+  "name": "cisco-ssl-dashboard",
   "version": "1.1.0",
   "scripts": {
     "install-all": "npm install && cd backend && npm install && cd ../frontend && npm install",
