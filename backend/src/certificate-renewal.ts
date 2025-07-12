@@ -694,8 +694,8 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         status.logs.push(`Skipped DNS cleanup in staging mode for debugging`);
       }
       
-      // Save certificate and chain to accounts folder
-      await this.saveCertificateFiles(fullFQDN, certificate, status);
+      // Save certificate and chain to accounts folder with individual certificate extraction
+      await this.saveCertificateChain(fullFQDN, certificate, status);
       
       await accountManager.saveRenewalLog(fullFQDN, `=== Certificate obtained successfully from Let's Encrypt ===`);
       status.logs.push('Certificate obtained from Let\'s Encrypt');
@@ -1423,51 +1423,36 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     });
   }
 
-  private async saveCertificateFiles(domain: string, certificateData: string, status: RenewalStatus): Promise<void> {
+  private async saveCertificateChain(domain: string, certificateData: string, status: RenewalStatus): Promise<void> {
     try {
-      // Parse certificate chain
-      const certParts = certificateData.split('-----END CERTIFICATE-----');
-      const certificates = certParts
-        .filter(part => part.includes('-----BEGIN CERTIFICATE-----'))
-        .map(part => part.trim() + '\n-----END CERTIFICATE-----');
-      
-      if (certificates.length === 0) {
-        throw new Error('No certificates found in response');
+      // Load existing private key if it exists (for general applications with custom CSR)
+      let privateKey = '';
+      try {
+        const existingCert = await accountManager.loadCertificate(domain);
+        if (existingCert) {
+          privateKey = existingCert.privateKey;
+        }
+      } catch (error) {
+        // Private key not found, this is normal for VOS applications
+        Logger.debug(`No existing private key found for ${domain}, this is normal for VOS applications`);
       }
-      
-      // First certificate is the domain certificate
-      const domainCert = certificates[0];
-      
-      // Remaining certificates are the chain (intermediate + root)
-      const chainCerts = certificates.slice(1);
-      const fullChain = chainCerts.join('\n');
-      
-      // Save domain certificate
-      await accountManager.saveCertificate(domain, domainCert, ''); // Private key not included in Let's Encrypt response
-      
-      // Save certificate chain to accounts folder
-      const accountsDir = process.env.ACCOUNTS_DIR || './accounts';
-      const domainDir = path.join(accountsDir, domain);
-      
-      // Ensure domain directory exists
-      if (!fs.existsSync(domainDir)) {
-        fs.mkdirSync(domainDir, { recursive: true });
-      }
-      
-      const chainPath = path.join(domainDir, 'chain.pem');
-      const fullChainPath = path.join(domainDir, 'fullchain.pem');
-      
-      await fs.promises.writeFile(chainPath, fullChain);
-      await fs.promises.writeFile(fullChainPath, certificateData);
+
+      // Use the new chain saving method that extracts individual certificates
+      await accountManager.saveCertificateChain(domain, certificateData, privateKey);
       
       status.logs.push(`Saved certificate files for ${domain}`);
-      status.logs.push(`- Domain certificate: certificate.pem`);
-      status.logs.push(`- Certificate chain: chain.pem`);
+      status.logs.push(`- Domain certificate: certificate.pem, ${domain}.crt`);
+      status.logs.push(`- Intermediate certificate: intermediate.crt`);
+      status.logs.push(`- Root certificate: root.crt`);
+      status.logs.push(`- CA bundle: ca-bundle.crt`);
       status.logs.push(`- Full chain: fullchain.pem`);
+      if (privateKey) {
+        status.logs.push(`- Private key: private_key.pem, ${domain}.key`);
+      }
       
-      Logger.info(`Successfully saved certificate files for ${domain}`);
+      Logger.info(`Successfully saved certificate chain for ${domain}`);
     } catch (error) {
-      Logger.error(`Failed to save certificate files for ${domain}:`, error);
+      Logger.error(`Failed to save certificate chain for ${domain}:`, error);
       throw error;
     }
   }

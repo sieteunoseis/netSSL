@@ -194,7 +194,8 @@ export class ACMEClient {
         challenges
       };
     } catch (error) {
-      Logger.error(`Failed to request certificate for domains ${domains.join(', ')}:`, error);
+      const domainList = domains && Array.isArray(domains) ? domains.join(', ') : 'unknown domains';
+      Logger.error(`Failed to request certificate for domains ${domainList}:`, error);
       throw error;
     }
   }

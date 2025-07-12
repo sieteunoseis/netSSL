@@ -151,6 +151,67 @@ export class AccountManager {
     }
   }
 
+  async saveCertificateChain(domain: string, fullChainData: string, privateKey: string): Promise<void> {
+    try {
+      const domainEnvDir = this.getDomainEnvDir(domain);
+      const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
+      const envType = isStaging ? 'staging' : 'production';
+
+      // Save the complete chain
+      const fullChainPath = path.join(domainEnvDir, 'fullchain.pem');
+      await fs.promises.writeFile(fullChainPath, fullChainData);
+
+      // Parse and extract individual certificates
+      const certParts = fullChainData.split('-----END CERTIFICATE-----');
+      const certificates = certParts
+        .filter(part => part.includes('-----BEGIN CERTIFICATE-----'))
+        .map(part => part.trim() + '\n-----END CERTIFICATE-----');
+
+      if (certificates.length === 0) {
+        throw new Error('No certificates found in chain data');
+      }
+
+      // Extract individual components
+      const leafCert = certificates[0]; // Domain certificate
+      const chainCerts = certificates.slice(1); // Intermediate + Root certificates
+      
+      // Save individual certificate files
+      await fs.promises.writeFile(path.join(domainEnvDir, 'certificate.pem'), leafCert);
+      await fs.promises.writeFile(path.join(domainEnvDir, 'private_key.pem'), privateKey);
+
+      // Save chain certificates (intermediate + root)
+      if (chainCerts.length > 0) {
+        const chainData = chainCerts.join('\n');
+        await fs.promises.writeFile(path.join(domainEnvDir, 'chain.pem'), chainData);
+
+        // Save individual CA certificates for easier application integration
+        if (chainCerts.length >= 1) {
+          // First chain cert is usually the intermediate
+          await fs.promises.writeFile(path.join(domainEnvDir, 'intermediate.crt'), chainCerts[0]);
+        }
+        
+        if (chainCerts.length >= 2) {
+          // Second chain cert is usually the root
+          await fs.promises.writeFile(path.join(domainEnvDir, 'root.crt'), chainCerts[1]);
+        }
+
+        // For applications that need all CA certs in one file
+        await fs.promises.writeFile(path.join(domainEnvDir, 'ca-bundle.crt'), chainData);
+      }
+
+      // Create application-friendly formats
+      await fs.promises.writeFile(path.join(domainEnvDir, `${domain}.crt`), leafCert);
+      await fs.promises.writeFile(path.join(domainEnvDir, `${domain}.key`), privateKey);
+
+      Logger.info(`Saved complete certificate chain for domain: ${domain} (${envType})`);
+      Logger.info(`Certificate files: certificate.pem, ${domain}.crt, intermediate.crt, root.crt, ca-bundle.crt`);
+
+    } catch (error) {
+      Logger.error(`Failed to save certificate chain for ${domain}:`, error);
+      throw error;
+    }
+  }
+
   async loadCertificate(domain: string): Promise<{ certificate: string; privateKey: string } | null> {
     try {
       const domainEnvDir = this.getDomainEnvDir(domain);

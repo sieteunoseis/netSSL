@@ -349,14 +349,14 @@ export class SSHClient {
             // For service restart commands, look for specific completion patterns
             if (command.includes('service restart') && command.includes('Cisco Tomcat')) {
               // Look for service restart completion patterns
-              if (chunk.includes('[STARTED]') && chunk.includes('admin:')) {
+              if (commandOutput.includes('[STARTED]') && chunk.includes('admin:')) {
                 clearTimeout(timeout);
                 Logger.info(`Cisco Tomcat service restart completed for ${hostname}`);
                 resolveResult({
                   success: true,
                   output: commandOutput
                 });
-              } else if (chunk.includes('[FAILED]') || chunk.includes('ERROR')) {
+              } else if (commandOutput.includes('[FAILED]') || commandOutput.includes('ERROR')) {
                 clearTimeout(timeout);
                 Logger.error(`Cisco Tomcat service restart failed for ${hostname}`);
                 resolveResult({

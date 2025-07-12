@@ -33,7 +33,7 @@ export async function getCertificateInfo(hostname: string, port: number = 443): 
       host: hostname,
       port: port,
       rejectUnauthorized: false, // Allow self-signed certificates
-      timeout: 10000, // 10 second timeout
+      timeout: 5000, // 5 second timeout
     };
 
     const socket = tls.connect(options, () => {
@@ -112,7 +112,7 @@ export async function getCertificateInfo(hostname: string, port: number = 443): 
       resolve(null);
     });
 
-    socket.setTimeout(10000);
+    socket.setTimeout(5000);
   });
 }
 

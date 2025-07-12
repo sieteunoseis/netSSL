@@ -710,6 +710,96 @@ app.post('/api/ssh/test', asyncHandler(async (req: Request, res: Response) => {
   }
 }));
 
+// Manual service restart endpoint for VOS applications
+app.post('/api/data/:id/restart-service', asyncHandler(async (req: Request, res: Response) => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) {
+    return res.status(400).json({ error: 'Invalid ID parameter' });
+  }
+
+  // Get the connection
+  const connection = await database.getConnectionById(id);
+  if (!connection) {
+    return res.status(404).json({ error: 'Connection not found' });
+  }
+
+  // Check if SSH is enabled
+  if (!connection.enable_ssh) {
+    return res.status(400).json({ 
+      error: 'SSH not enabled for this connection',
+      details: 'SSH must be enabled to restart services remotely'
+    });
+  }
+
+  // Check if this is a VOS application
+  if (connection.application_type !== 'vos' && !connection.application_type) {
+    return res.status(400).json({ 
+      error: 'Service restart only supported for VOS applications',
+      details: 'This endpoint is designed for Cisco VOS applications (CUCM, CUC, CER)'
+    });
+  }
+
+  if (!connection.username || !connection.password) {
+    return res.status(400).json({ 
+      error: 'Missing credentials',
+      details: 'Username and password are required for SSH connection'
+    });
+  }
+
+  const fqdn = `${connection.hostname}.${connection.domain}`;
+  Logger.info(`Manual Cisco Tomcat service restart requested for ${fqdn}`);
+
+  try {
+    // Test SSH connection first
+    const sshTest = await SSHClient.testConnection({
+      hostname: fqdn,
+      username: connection.username,
+      password: connection.password
+    });
+
+    if (!sshTest.success) {
+      return res.status(500).json({
+        success: false,
+        error: 'SSH connection failed',
+        details: sshTest.error
+      });
+    }
+
+    // Execute service restart command with extended timeout (5 minutes)
+    const restartResult = await SSHClient.executeCommand({
+      hostname: fqdn,
+      username: connection.username,
+      password: connection.password,
+      command: 'utils service restart Cisco Tomcat',
+      timeout: 300000 // 5 minutes for service restart
+    });
+
+    if (restartResult.success) {
+      Logger.info(`Successfully restarted Cisco Tomcat service for ${fqdn}`);
+      return res.json({
+        success: true,
+        message: 'Cisco Tomcat service restart completed successfully',
+        output: restartResult.output || 'Service restart command executed'
+      });
+    } else {
+      Logger.error(`Failed to restart Cisco Tomcat service for ${fqdn}: ${restartResult.error}`);
+      return res.status(500).json({
+        success: false,
+        error: 'Service restart failed',
+        details: restartResult.error
+      });
+    }
+
+  } catch (error: any) {
+    Logger.error(`Error during manual service restart for ${fqdn}: ${error.message}`);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error during service restart',
+      details: error.message
+    });
+  }
+}));
+
 // Apply error handling middleware
 app.use(errorHandler);
 

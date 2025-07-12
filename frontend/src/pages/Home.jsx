@@ -44,6 +44,9 @@ const Home = () => {
     connectionId: null
   });
 
+  const [restartingService, setRestartingService] = useState(new Set());
+  const [confirmRestart, setConfirmRestart] = useState(null); // {id, name} for confirmation dialog
+
   // Fetch initial connections
   useEffect(() => {
     if (!templateConfig.useBackend) {
@@ -252,6 +255,56 @@ const Home = () => {
     return providers[provider] || provider;
   };
 
+  const handleServiceRestart = async (connection, confirmed = false) => {
+    // If not confirmed, show confirmation dialog
+    if (!confirmed) {
+      setConfirmRestart({ id: connection.id, name: connection.name });
+      return;
+    }
+
+    // Close confirmation dialog
+    setConfirmRestart(null);
+
+    const newRestarting = new Set(restartingService);
+    newRestarting.add(connection.id);
+    setRestartingService(newRestarting);
+
+    try {
+      const response = await apiCall(`/data/${connection.id}/restart-service`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        toast({
+          title: "Service Restart Successful",
+          description: "Cisco Tomcat service has been restarted successfully",
+        });
+      } else {
+        toast({
+          title: "Service Restart Failed",
+          description: result.error || "Unable to restart service",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Error restarting service:', error);
+      toast({
+        title: "Restart Error",
+        description: "Failed to restart service. Please check your connection.",
+        variant: "destructive",
+      });
+    } finally {
+      const newRestarting = new Set(restartingService);
+      newRestarting.delete(connection.id);
+      setRestartingService(newRestarting);
+    }
+  };
+
   const getOverallStatus = () => {
     if (connectionState.connections.length === 0) return { total: 0, valid: 0, expiring: 0, expired: 0 };
     
@@ -429,6 +482,30 @@ const Home = () => {
                     )}
 
                   </div>
+
+                  {/* VOS Service Restart Button - only show for VOS apps with SSH enabled */}
+                  {connection.application_type === 'vos' && connection.enable_ssh && (
+                    <div className="flex justify-end pt-4">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleServiceRestart(connection)}
+                        disabled={restartingService.has(connection.id)}
+                        className="flex items-center space-x-2 text-orange-600 hover:text-orange-700 disabled:opacity-50"
+                        title="Restart Cisco Tomcat Service"
+                      >
+                        <Server className="w-4 h-4" />
+                        {restartingService.has(connection.id) ? (
+                          <>
+                            <RotateCcw className="w-4 h-4 animate-spin" />
+                            <span>Restarting...</span>
+                          </>
+                        ) : (
+                          <span>Restart Service</span>
+                        )}
+                      </Button>
+                    </div>
+                  )}
                   
                   <CertificateInfo 
                     connectionId={connection.id} 
@@ -449,6 +526,42 @@ const Home = () => {
               Get started by adding your first Cisco UC server connection.
             </p>
             <AddConnectionModal onConnectionAdded={handleConnectionAdded} />
+          </div>
+        )}
+
+        {/* Service Restart Confirmation Dialog */}
+        {confirmRestart && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
+              <div className="flex items-center mb-4">
+                <Server className="w-6 h-6 text-orange-600 mr-3" />
+                <h3 className="text-lg font-semibold">Confirm Service Restart</h3>
+              </div>
+              <p className="text-gray-600 dark:text-gray-300 mb-6">
+                Are you sure you want to restart the Cisco Tomcat service on <strong>{confirmRestart.name}</strong>?
+                <br /><br />
+                This will temporarily interrupt access to the VOS application while the service restarts.
+              </p>
+              <div className="flex justify-end space-x-3">
+                <Button
+                  variant="outline"
+                  onClick={() => setConfirmRestart(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="default"
+                  onClick={() => {
+                    const connection = connectionState.connections.find(c => c.id === confirmRestart.id);
+                    if (connection) handleServiceRestart(connection, true);
+                  }}
+                  className="bg-orange-600 hover:bg-orange-700 text-white"
+                >
+                  <Server className="w-4 h-4 mr-2" />
+                  Restart Service
+                </Button>
+              </div>
+            </div>
           </div>
         )}
 
