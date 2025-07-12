@@ -1,28 +1,141 @@
 [
   {
+    "name": "application_type",
+    "type": "SELECT",
+    "validator": { "name": "isIn", "options": ["vos", "general"] },
+    "label": "Application Type",
+    "options": [
+      { "value": "vos", "label": "Cisco VOS Application (CUCM/CER/CUC)" },
+      { "value": "general", "label": "General Application (ESXi, etc.)" }
+    ],
+    "default": "vos"
+  },
+  {
     "name": "name",
     "type": "TEXT",
-    "validator": { "name": "isAscii", "options": "" }
+    "validator": { "name": "isAscii", "options": "" },
+    "label": "Connection Name",
+    "placeholder": "e.g., CUCM Primary"
   },
   {
     "name": "hostname",
     "type": "TEXT",
-    "validator": { "name": "isFQDN", "options": { "allow_numeric_tld": true } }
+    "validator": { "name": "isAscii", "options": "" },
+    "label": "Server Hostname",
+    "placeholder": "e.g., cucm01-pub"
   },
   {
     "name": "username",
     "type": "TEXT",
-    "validator": { "name": "isAscii", "options": "" }
+    "validator": { "name": "isAscii", "options": "" },
+    "label": "Username",
+    "placeholder": "e.g., administrator, ccmadmin, root, admin",
+    "default": "administrator",
+    "conditional": {
+      "field": "application_type",
+      "value": "vos"
+    }
   },
   {
     "name": "password",
     "type": "TEXT",
-    "validator": { "name": "isAscii", "options": "" }
+    "validator": { "name": "isAscii", "options": "" },
+    "label": "Password",
+    "placeholder": "Server password",
+    "conditional": {
+      "field": "application_type",
+      "value": "vos"
+    }
   },
   {
-    "name": "version",
+    "name": "domain",
     "type": "TEXT",
-    "validator": { "name": "isDecimal", "options": { "force_decimal": false, "decimal_digits": "1,2", "locale": "en-US" } },
+    "validator": { "name": "isFQDN", "options": { "allow_numeric_tld": true } },
+    "label": "Domain Name",
+    "placeholder": "e.g., automate.builders"
+  },
+  {
+    "name": "custom_csr",
+    "type": "TEXTAREA",
+    "validator": { "name": "isAscii", "options": "" },
+    "label": "Custom CSR (Required for General Applications)",
+    "placeholder": "-----BEGIN CERTIFICATE REQUEST-----\nPaste your Certificate Signing Request here\n-----END CERTIFICATE REQUEST-----\n\nOptional: Include your private key below the CSR\n-----BEGIN PRIVATE KEY----- or -----BEGIN RSA PRIVATE KEY-----\nYour private key content\n-----END PRIVATE KEY----- or -----END RSA PRIVATE KEY-----",
+    "required": false,
+    "optional": true,
+    "conditional": {
+      "field": "application_type",
+      "value": "general"
+    }
+  },
+  {
+    "name": "ssl_provider",
+    "type": "SELECT",
+    "validator": { "name": "isIn", "options": ["letsencrypt", "zerossl"] },
+    "label": "SSL Provider",
+    "options": [
+      { "value": "letsencrypt", "label": "Let's Encrypt" },
+      { "value": "zerossl", "label": "ZeroSSL" }
+    ],
+    "default": "letsencrypt"
+  },
+  {
+    "name": "dns_provider",
+    "type": "SELECT",
+    "validator": { "name": "isIn", "options": ["cloudflare", "digitalocean", "route53", "azure", "google", "custom"] },
+    "label": "DNS Provider",
+    "options": [
+      { "value": "cloudflare", "label": "Cloudflare" },
+      { "value": "digitalocean", "label": "DigitalOcean" },
+      { "value": "route53", "label": "AWS Route53" },
+      { "value": "azure", "label": "Azure DNS" },
+      { "value": "google", "label": "Google Cloud DNS" },
+      { "value": "custom", "label": "Custom DNS (Manual)" }
+    ],
+    "default": "cloudflare"
+  },
+  {
+    "name": "alt_names",
+    "type": "TEXT",
+    "validator": { "name": "isAscii", "options": "" },
+    "label": "Alternative Names (SANs)",
+    "placeholder": "e.g., server1.example.com, server2.example.com",
+    "required": false,
     "optional": true
+  },
+  {
+    "name": "enable_ssh",
+    "type": "SWITCH",
+    "validator": { "name": "isAscii", "options": "" },
+    "label": "Allow SSH",
+    "description": "For testing and service management",
+    "default": false,
+    "conditional": {
+      "field": "application_type",
+      "value": "vos"
+    }
+  },
+  {
+    "name": "auto_restart_service",
+    "type": "SWITCH",
+    "validator": { "name": "isAscii", "options": "" },
+    "label": "Auto Restart Tomcat Service",
+    "description": "Automatically restart 'Cisco Tomcat' service after certificate installation",
+    "default": false,
+    "conditional": {
+      "field": "enable_ssh",
+      "value": true
+    }
+  },
+  {
+    "name": "auto_renew",
+    "type": "SWITCH",
+    "validator": { "name": "isAscii", "options": "" },
+    "label": "Auto Renew Certificate",
+    "description": "Automatically renew certificate 7 days before expiration at midnight",
+    "default": false,
+    "conditional": {
+      "field": "application_type",
+      "value": "vos"
+    }
   }
 ]

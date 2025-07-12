@@ -6,6 +6,7 @@ import { Logger } from './logger';
 import { DatabaseManager } from './database';
 import { ConnectionRecord } from './types';
 import { accountManager } from './account-manager';
+import { SSHClient } from './ssh-client';
 
 export interface RenewalStatus {
   id: string;
@@ -179,6 +180,10 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
           await this.updateStatus(status, 'uploading_certificate', 'Using existing valid certificate', 80);
           await this.uploadCertificateToCUCM(connection, existingCert, status);
         }
+        
+        // Handle service restart if enabled
+        await this.handleServiceRestart(connection, status);
+        
         await this.updateStatus(status, 'completed', 'Certificate renewal completed successfully', 100);
         status.endTime = new Date();
         return;
@@ -281,6 +286,9 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         await this.updateStatus(status, 'uploading_certificate', 'Uploading certificate to VOS application', 90);
         await this.uploadCertificateToCUCM(connection, certificate, status);
       }
+      
+      // Handle service restart if enabled
+      await this.handleServiceRestart(connection, status);
       
       await this.updateStatus(status, 'completed', 'Certificate renewal completed successfully', 100);
       status.endTime = new Date();
@@ -1437,6 +1445,63 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     } catch (error) {
       Logger.error(`Failed to update database with renewal info for connection ${connectionId}:`, error);
       throw error;
+    }
+  }
+
+  /**
+   * Restart Cisco Tomcat service via SSH if auto_restart_service is enabled
+   */
+  private async handleServiceRestart(connection: ConnectionRecord, status: RenewalStatus): Promise<void> {
+    // Only proceed if SSH is enabled and auto_restart_service is enabled
+    if (!connection.enable_ssh || !connection.auto_restart_service) {
+      Logger.info(`Skipping service restart for ${connection.hostname}.${connection.domain} - SSH or auto restart not enabled`);
+      return;
+    }
+
+    try {
+      const fqdn = `${connection.hostname}.${connection.domain}`;
+      Logger.info(`Starting Cisco Tomcat service restart for ${fqdn}`);
+      
+      status.logs.push(`Restarting Cisco Tomcat service on ${fqdn}`);
+      await this.updateStatus(status, 'uploading_certificate', 'Restarting Cisco Tomcat service via SSH', 95);
+
+      // Test SSH connection first
+      const sshTest = await SSHClient.testConnection({
+        hostname: fqdn,
+        username: connection.username!,
+        password: connection.password!
+      });
+
+      if (!sshTest.success) {
+        const errorMsg = `SSH connection failed for ${fqdn}: ${sshTest.error}`;
+        Logger.error(errorMsg);
+        status.logs.push(`Warning: ${errorMsg}`);
+        return;
+      }
+
+      // Execute service restart command with extended timeout (5 minutes)
+      const restartResult = await SSHClient.executeCommand({
+        hostname: fqdn,
+        username: connection.username!,
+        password: connection.password!,
+        command: 'utils service restart Cisco Tomcat',
+        timeout: 300000 // 5 minutes for service restart
+      });
+
+      if (restartResult.success) {
+        Logger.info(`Successfully restarted Cisco Tomcat service for ${fqdn}`);
+        status.logs.push(`✅ Cisco Tomcat service restarted successfully on ${fqdn}`);
+        status.logs.push(`Service restart output: ${restartResult.output || 'Command completed'}`);
+      } else {
+        const errorMsg = `Failed to restart Cisco Tomcat service for ${fqdn}: ${restartResult.error}`;
+        Logger.error(errorMsg);
+        status.logs.push(`⚠️ ${errorMsg}`);
+      }
+
+    } catch (error: any) {
+      const errorMsg = `Error during service restart for ${connection.hostname}: ${error.message}`;
+      Logger.error(errorMsg);
+      status.logs.push(`⚠️ ${errorMsg}`);
     }
   }
 }

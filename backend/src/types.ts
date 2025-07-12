@@ -11,6 +11,11 @@ export interface ConnectionRecord {
   version?: string;
   alt_names?: string;
   custom_csr?: string;
+  enable_ssh?: boolean;
+  auto_restart_service?: boolean;
+  auto_renew?: boolean;
+  auto_renew_status?: string;
+  auto_renew_last_attempt?: string;
   last_cert_issued?: string;
   cert_count_this_week?: number;
   cert_count_reset_date?: string;

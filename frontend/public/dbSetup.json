@@ -101,5 +101,41 @@
     "placeholder": "e.g., server1.example.com, server2.example.com",
     "required": false,
     "optional": true
+  },
+  {
+    "name": "enable_ssh",
+    "type": "SWITCH",
+    "validator": { "name": "isAscii", "options": "" },
+    "label": "Allow SSH",
+    "description": "For testing and service management",
+    "default": false,
+    "conditional": {
+      "field": "application_type",
+      "value": "vos"
+    }
+  },
+  {
+    "name": "auto_restart_service",
+    "type": "SWITCH",
+    "validator": { "name": "isAscii", "options": "" },
+    "label": "Auto Restart Tomcat Service",
+    "description": "Automatically restart 'Cisco Tomcat' service after certificate installation",
+    "default": false,
+    "conditional": {
+      "field": "enable_ssh",
+      "value": true
+    }
+  },
+  {
+    "name": "auto_renew",
+    "type": "SWITCH",
+    "validator": { "name": "isAscii", "options": "" },
+    "label": "Auto Renew Certificate",
+    "description": "Automatically renew certificate 7 days before expiration at midnight",
+    "default": false,
+    "conditional": {
+      "field": "application_type",
+      "value": "vos"
+    }
   }
 ]

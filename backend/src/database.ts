@@ -369,6 +369,13 @@ export class DatabaseManager {
           }
         }
         
+        Logger.info(`Update columns for connection ${id}:`, { 
+          updateColumns, 
+          updateValues,
+          allUpdateableColumns,
+          providedData: Object.keys(data)
+        });
+        
         // Handle password update if provided
         if (data.password) {
           const hashedPassword = await this.hashPassword(data.password);

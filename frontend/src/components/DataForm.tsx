@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import validator from "validator";
 import { apiCall } from '../lib/api';
@@ -14,12 +15,13 @@ interface Column {
   optional?: boolean;
   label?: string;
   placeholder?: string;
-  default?: string;
+  default?: string | boolean;
+  description?: string;
   options?: { value: string; label: string }[];
   allowCustom?: boolean;
   conditional?: {
     field: string;
-    value: string;
+    value: string | boolean;
   };
   validator: {
     name: keyof typeof validator;
@@ -29,34 +31,57 @@ interface Column {
 
 interface DataFormProps {
   onDataAdded: () => void;
+  fields?: Column[];
+  onFormDataChange?: (data: Record<string, string | boolean>) => void;
+  sharedFormData?: Record<string, string | boolean>;
+  isPartOfTabbedForm?: boolean;
 }
 
-const DataForm: React.FC<DataFormProps> = ({ onDataAdded }) => {
+const DataForm: React.FC<DataFormProps> = ({ 
+  onDataAdded, 
+  fields, 
+  onFormDataChange,
+  sharedFormData,
+  isPartOfTabbedForm = false
+}) => {
   const { toast } = useToast();
   const [data, setData] = useState<Column[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const object = data.reduce((obj: Record<string, string>, value) => {
-    obj[value.name] = value.default || "";
+  const object = data.reduce((obj: Record<string, string | boolean>, value) => {
+    obj[value.name] = value.default || (value.type === "SWITCH" ? false : "");
     return obj;
   }, {});
-  const [formData, setFormData] = useState<Record<string, string>>(object);
+  const [formData, setFormData] = useState<Record<string, string | boolean>>(sharedFormData || object);
 
   useEffect(() => {
-    const fetchData = async () => {
-      const response = await fetch("/dbSetup.json"); // Note the leading '/'
-      const jsonData: Column[] = await response.json();
-      setData(jsonData);
-      
-      // Initialize form data with default values
-      const initialData = jsonData.reduce((obj: Record<string, string>, value) => {
-        obj[value.name] = value.default || "";
-        return obj;
-      }, {});
-      setFormData(initialData);
-    };
+    if (fields) {
+      setData(fields);
+    } else {
+      const fetchData = async () => {
+        const response = await fetch("/dbSetup.json"); // Note the leading '/'
+        const jsonData: Column[] = await response.json();
+        setData(jsonData);
+        
+        // Initialize form data with default values
+        const initialData = jsonData.reduce((obj: Record<string, string | boolean>, value) => {
+          obj[value.name] = value.default !== undefined ? value.default : (value.type === "SWITCH" ? false : "");
+          return obj;
+        }, {});
+        if (!sharedFormData) {
+          setFormData(initialData);
+        }
+      };
 
-    fetchData();
-  }, []);
+      fetchData();
+    }
+  }, [fields, sharedFormData]);
+
+  // Sync with shared form data
+  useEffect(() => {
+    if (sharedFormData) {
+      setFormData(sharedFormData);
+    }
+  }, [sharedFormData]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>, options: Column['validator'], isOptional = false) => {
     const { name, value } = e.target;
@@ -64,10 +89,15 @@ const DataForm: React.FC<DataFormProps> = ({ onDataAdded }) => {
 
     // Validate - skip validation if field is optional and empty
     if (value.trim() !== '' || !isOptional) {
-      const validatorFn = validator[options.name] as any;
-      if (!validatorFn(value, options.options)) {
-        newErrors[name] = "Invalid value";
-      } else {
+      try {
+        const validatorFn = validator[options.name] as any;
+        if (validatorFn && !validatorFn(value, options.options)) {
+          newErrors[name] = "Invalid value";
+        } else {
+          newErrors[name] = "";
+        }
+      } catch (error) {
+        console.warn(`Validation error for field ${name}:`, error);
         newErrors[name] = "";
       }
     } else {
@@ -78,10 +108,12 @@ const DataForm: React.FC<DataFormProps> = ({ onDataAdded }) => {
       setErrors(newErrors);
     }
 
-    setFormData((prev) => ({
-      ...prev,
+    const newFormData = {
+      ...formData,
       [name]: value,
-    }));
+    };
+    setFormData(newFormData);
+    onFormDataChange?.(newFormData);
   };
 
   const handleSelectChange = (name: string, value: string, options: Column['validator'], isOptional = false) => {
@@ -103,10 +135,12 @@ const DataForm: React.FC<DataFormProps> = ({ onDataAdded }) => {
       setErrors(newErrors);
     }
 
-    setFormData((prev) => ({
-      ...prev,
+    const newFormData = {
+      ...formData,
       [name]: value,
-    }));
+    };
+    setFormData(newFormData);
+    onFormDataChange?.(newFormData);
   };
 
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>, options: Column['validator'], isOptional = false) => {
@@ -135,10 +169,12 @@ const DataForm: React.FC<DataFormProps> = ({ onDataAdded }) => {
       setErrors(newErrors);
     }
 
-    setFormData((prev) => ({
-      ...prev,
+    const newFormData = {
+      ...formData,
       [name]: value,
-    }));
+    };
+    setFormData(newFormData);
+    onFormDataChange?.(newFormData);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -158,8 +194,8 @@ const DataForm: React.FC<DataFormProps> = ({ onDataAdded }) => {
       onDataAdded(); // Notify the table to refresh
       
       // Reset form with default values
-      const resetData = data.reduce((obj: Record<string, string>, value) => {
-        obj[value.name] = value.default || "";
+      const resetData = data.reduce((obj: Record<string, string | boolean>, value) => {
+        obj[value.name] = value.default || (value.type === "SWITCH" ? false : "");
         return obj;
       }, {});
       setFormData(resetData);
@@ -180,8 +216,8 @@ const DataForm: React.FC<DataFormProps> = ({ onDataAdded }) => {
       .replace(/[^a-zA-Z]+/g, " ") // Replace non-letter characters with spaces
       .split(' ')
       .map(word => {
-        // Keep SSL and DNS in uppercase
-        if (word.toLowerCase() === 'ssl' || word.toLowerCase() === 'dns') {
+        // Keep SSL, DNS, and SSH in uppercase
+        if (word.toLowerCase() === 'ssl' || word.toLowerCase() === 'dns' || word.toLowerCase() === 'ssh') {
           return word.toUpperCase();
         }
         return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
@@ -192,6 +228,7 @@ const DataForm: React.FC<DataFormProps> = ({ onDataAdded }) => {
   return (
     <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
       {data.map((col, index) => {
+        try {
         const formValue = formData[col.name];
         const isOptional = col.optional === true;
         const label = col.label || formatColumnName(col.name);
@@ -204,6 +241,11 @@ const DataForm: React.FC<DataFormProps> = ({ onDataAdded }) => {
         
         // For conditional fields like custom_csr, make them required when their condition is met
         const isConditionallyRequired = col.conditional && formData[col.conditional.field] === col.conditional.value && col.name === 'custom_csr';
+        
+        // Skip validation for SWITCH types
+        if (col.type === "SWITCH") {
+          // Handle switch validation separately or skip it
+        }
           
         if (!shouldShow) {
           return null;
@@ -211,11 +253,11 @@ const DataForm: React.FC<DataFormProps> = ({ onDataAdded }) => {
 
         return (
           <div key={col.name} className="space-y-2">
-            <Label>{label}</Label>
+            {col.type !== "SWITCH" && <Label>{label}</Label>}
             
             {col.type === "SELECT" ? (
               <Select 
-                value={formValue || col.default || ""} 
+                value={String(formValue || col.default || "")} 
                 onValueChange={(value) => handleSelectChange(col.name, value, col.validator, isOptional)}
               >
                 <SelectTrigger tabIndex={0}>
@@ -229,12 +271,42 @@ const DataForm: React.FC<DataFormProps> = ({ onDataAdded }) => {
                   ))}
                 </SelectContent>
               </Select>
+            ) : col.type === "SWITCH" ? (
+              <div className="space-y-2">
+                <div className="flex items-start space-x-3">
+                  <Switch
+                    id={col.name}
+                    checked={Boolean(formValue)}
+                    onCheckedChange={(checked) => {
+                      const newFormData = { ...formData, [col.name]: checked };
+                      setFormData(newFormData);
+                      onFormDataChange?.(newFormData);
+                      setErrors(prev => {
+                        const newErrors = { ...prev };
+                        delete newErrors[col.name];
+                        return newErrors;
+                      });
+                    }}
+                    className="mt-1"
+                  />
+                  <div className="space-y-1">
+                    <Label htmlFor={col.name} className="text-sm font-medium cursor-pointer">
+                      {label}
+                    </Label>
+                    {col.description && (
+                      <p className="text-xs text-muted-foreground">
+                        {col.description}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
             ) : col.type === "TEXTAREA" ? (
               <Textarea
                 required={!isOptional || isConditionallyRequired}
                 name={col.name}
                 placeholder={placeholder}
-                value={formValue || ""}
+                value={String(formValue || "")}
                 rows={6}
                 autoComplete="off"
                 data-lpignore="true"
@@ -251,7 +323,7 @@ const DataForm: React.FC<DataFormProps> = ({ onDataAdded }) => {
                 type={col.name === "password" || col.name === "pw" ? "password" : "text"}
                 name={col.name}
                 placeholder={placeholder}
-                value={formValue || ""}
+                value={String(formValue || "")}
                 autoComplete="off"
                 data-lpignore="true"
                 data-form-type="other"
@@ -267,8 +339,16 @@ const DataForm: React.FC<DataFormProps> = ({ onDataAdded }) => {
             {errors[col.name] && <span className="text-red-500 font-semibold">{errors[col.name]}</span>}
           </div>
         );
+        } catch (error) {
+          console.error(`Error rendering field ${col.name}:`, error);
+          return (
+            <div key={col.name} className="space-y-2">
+              <div className="text-red-500 text-sm">Error rendering field: {col.name}</div>
+            </div>
+          );
+        }
       })}
-      <Button type="submit" tabIndex={0}>Add Connection</Button>
+      {!isPartOfTabbedForm && <Button type="submit" tabIndex={0}>Add Connection</Button>}
     </form>
   );
 };

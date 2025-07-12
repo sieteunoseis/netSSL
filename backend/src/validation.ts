@@ -138,5 +138,26 @@ export const sanitizeConnectionData = (data: any): Partial<ConnectionRecord> => 
     sanitized.password = validator.escape(String(data.password));
   }
 
+  // Handle boolean fields for VOS applications
+  if (data.enable_ssh !== undefined) {
+    sanitized.enable_ssh = Boolean(data.enable_ssh);
+  }
+  
+  if (data.auto_restart_service !== undefined) {
+    sanitized.auto_restart_service = Boolean(data.auto_restart_service);
+  }
+  
+  if (data.auto_renew !== undefined) {
+    sanitized.auto_renew = Boolean(data.auto_renew);
+  }
+  
+  if (data.auto_renew_status !== undefined) {
+    sanitized.auto_renew_status = validator.escape(String(data.auto_renew_status || ''));
+  }
+  
+  if (data.auto_renew_last_attempt !== undefined) {
+    sanitized.auto_renew_last_attempt = validator.escape(String(data.auto_renew_last_attempt || ''));
+  }
+
   return sanitized;
 };

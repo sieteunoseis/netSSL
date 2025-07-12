@@ -5,7 +5,7 @@ import BackgroundLogo from "@/components/BackgroundLogo";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import AddConnectionModal from "@/components/AddConnectionModal";
+import AddConnectionModal from "@/components/AddConnectionModalTabbed";
 import SettingsModal from "@/components/SettingsModal";
 import CertificateInfo from "@/components/CertificateInfo";
 import RenewalStatus from "@/components/RenewalStatus";
@@ -20,7 +20,10 @@ import {
   RefreshCw, 
   Shield,
   Zap,
-  Globe
+  Globe,
+  Terminal,
+  RotateCcw,
+  Settings
 } from "lucide-react";
 
 const Home = () => {
@@ -366,7 +369,8 @@ const Home = () => {
                 </CardHeader>
                 
                 <CardContent>
-                  <div className="flex items-center justify-between">
+                  <div className="space-y-4">
+                    {/* Provider Information */}
                     <div className="flex space-x-6">
                       <div className="flex items-center space-x-2">
                         <Shield className="h-4 w-4 text-muted-foreground" />
@@ -392,22 +396,44 @@ const Home = () => {
                       )}
                     </div>
 
-                    <div className="flex space-x-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleRenewCertificate(connection.id)}
-                        className="flex items-center space-x-1"
-                      >
-                        <FileText className="w-4 h-4" />
-                        <span>Renew Certificate</span>
-                      </Button>
-                    </div>
+                    {/* VOS Features Status */}
+                    {connection.application_type === 'vos' && (
+                      <div className="flex space-x-6 text-sm">
+                        <div className="flex items-center space-x-2">
+                          <Terminal className="h-4 w-4 text-muted-foreground" />
+                          <span>SSH: {connection.enable_ssh ? 'Enabled' : 'Disabled'}</span>
+                        </div>
+                        
+                        <div className="flex items-center space-x-2">
+                          <Settings className="h-4 w-4 text-muted-foreground" />
+                          <span>Auto Restart: {connection.auto_restart_service ? 'Enabled' : 'Disabled'}</span>
+                        </div>
+                        
+                        <div className="flex items-center space-x-2">
+                          <RotateCcw className="h-4 w-4 text-muted-foreground" />
+                          <span>Auto Renew: {connection.auto_renew ? 'Enabled' : 'Disabled'}</span>
+                          {connection.auto_renew && connection.auto_renew_status && (
+                            <Badge 
+                              className={
+                                connection.auto_renew_status === 'success' ? 'bg-green-100 text-green-800' :
+                                connection.auto_renew_status === 'failed' ? 'bg-red-100 text-red-800' :
+                                connection.auto_renew_status === 'in_progress' ? 'bg-blue-100 text-blue-800' :
+                                'bg-gray-100 text-gray-800'
+                              }
+                            >
+                              {connection.auto_renew_status}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                   </div>
                   
                   <CertificateInfo 
                     connectionId={connection.id} 
                     hostname={`${connection.hostname}.${connection.domain}`}
+                    onRenewCertificate={() => handleRenewCertificate(connection.id)}
                   />
                 </CardContent>
               </Card>

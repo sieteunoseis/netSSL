@@ -11,6 +11,8 @@ import { getCertificateInfoWithFallback } from './certificate';
 import { certificateRenewalService } from './certificate-renewal';
 import { accountManager } from './account-manager';
 import { getAccountsDirectoryStructure, getAccountsSize, formatBytes } from './accounts-utils';
+import { SSHClient } from './ssh-client';
+import { autoRenewalCron } from './auto-renewal-cron';
 
 dotenv.config({ path: '../.env' });
 
@@ -27,6 +29,10 @@ const database = new DatabaseManager('./db/database.db', TABLE_COLUMNS);
 
 // Set database on certificate renewal service
 (certificateRenewalService as any).setDatabase(database);
+
+// Set database on auto-renewal cron service and start it
+(autoRenewalCron as any).database = database;
+autoRenewalCron.start();
 
 // Middleware
 app.use(cors({
@@ -295,7 +301,10 @@ app.put('/api/data/:id', asyncHandler(async (req: Request, res: Response) => {
     id: id,
     application_type: req.body.application_type,
     name: req.body.name,
-    hostname: req.body.hostname 
+    hostname: req.body.hostname,
+    enable_ssh: req.body.enable_ssh,
+    auto_restart_service: req.body.auto_restart_service,
+    auto_renew: req.body.auto_renew
   });
 
   // Sanitize input data
@@ -305,7 +314,10 @@ app.put('/api/data/:id', asyncHandler(async (req: Request, res: Response) => {
     id: id,
     application_type: sanitizedData.application_type,
     name: sanitizedData.name,
-    hostname: sanitizedData.hostname 
+    hostname: sanitizedData.hostname,
+    enable_ssh: sanitizedData.enable_ssh,
+    auto_restart_service: sanitizedData.auto_restart_service,
+    auto_renew: sanitizedData.auto_renew
   });
   
   // Update connection in database
@@ -656,6 +668,36 @@ app.get('/api/accounts/debug', asyncHandler(async (req: Request, res: Response) 
       total_size: formatBytes(size.totalSize)
     }
   });
+}));
+
+// SSH test endpoint
+app.post('/api/ssh/test', asyncHandler(async (req: Request, res: Response) => {
+  const { hostname, username, password } = req.body;
+
+  if (!hostname || !username || !password) {
+    return res.status(400).json({ 
+      error: 'Missing required fields', 
+      details: 'hostname, username, and password are required' 
+    });
+  }
+
+  Logger.info(`Testing SSH connection to ${hostname}`);
+
+  try {
+    const result = await SSHClient.testConnection({
+      hostname,
+      username,
+      password
+    });
+
+    return res.json(result);
+  } catch (error: any) {
+    Logger.error(`SSH test failed: ${error.message}`);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error during SSH test'
+    });
+  }
 }));
 
 // Apply error handling middleware

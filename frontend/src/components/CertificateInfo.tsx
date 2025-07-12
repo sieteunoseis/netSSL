@@ -1,9 +1,8 @@
 import { useState, useEffect } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Shield, Calendar, AlertCircle, CheckCircle, RefreshCw, Info } from "lucide-react";
+import { Shield, Calendar, AlertCircle, CheckCircle, RefreshCw, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiCall } from "@/lib/api";
 
@@ -32,9 +31,10 @@ interface CertificateInfo {
 interface CertificateInfoProps {
   connectionId: number;
   hostname: string;
+  onRenewCertificate?: () => void;
 }
 
-const CertificateInfoComponent: React.FC<CertificateInfoProps> = ({ connectionId, hostname }) => {
+const CertificateInfoComponent: React.FC<CertificateInfoProps> = ({ connectionId, onRenewCertificate }) => {
   const { toast } = useToast();
   const [certInfo, setCertInfo] = useState<CertificateInfo | null>(null);
   const [loading, setLoading] = useState(false);
@@ -128,20 +128,36 @@ const CertificateInfoComponent: React.FC<CertificateInfoProps> = ({ connectionId
 
   return (
     <div className="mt-4">
+      {/* Top level with certificate info and renew button */}
+      <div className="flex items-center justify-between w-full mb-2">
+        <div className="flex items-center space-x-2">
+          <Shield className="w-4 h-4" />
+          <span className="text-sm font-medium">Certificate Information</span>
+          <Badge className={status.color}>
+            <StatusIcon className="w-3 h-3 mr-1" />
+            {status.status === "valid" && "Valid"}
+            {status.status === "expiring" && "Expiring"}
+            {status.status === "expired" && "Expired"}
+            {status.status === "invalid" && "Invalid"}
+            {status.status === "unknown" && "Unknown"}
+          </Badge>
+        </div>
+        {onRenewCertificate && (
+          <div
+            onClick={onRenewCertificate}
+            className="flex items-center space-x-1 px-3 py-1 text-sm border border-input bg-background hover:bg-accent hover:text-accent-foreground rounded-md cursor-pointer transition-colors"
+          >
+            <FileText className="w-4 h-4" />
+            <span>Renew Certificate</span>
+          </div>
+        )}
+      </div>
+      
+      {/* Accordion for detailed certificate info */}
       <Accordion type="single" collapsible>
         <AccordionItem value="certificate-info">
           <AccordionTrigger className="text-sm">
-            <div className="flex items-center space-x-2">
-              <Shield className="w-4 h-4" />
-              <span>Certificate Information</span>
-              <Badge className={status.color}>
-                <StatusIcon className="w-3 h-3 mr-1" />
-                {status.status === "valid" && `Valid for ${certInfo.daysUntilExpiry} days`}
-                {status.status === "expiring" && `Expires in ${certInfo.daysUntilExpiry} days`}
-                {status.status === "expired" && "Expired"}
-                {status.status === "invalid" && "Invalid"}
-              </Badge>
-            </div>
+            <span>View Certificate Details</span>
           </AccordionTrigger>
           <AccordionContent>
             <div className="space-y-4">

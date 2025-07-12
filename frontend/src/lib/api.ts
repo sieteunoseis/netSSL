@@ -1,12 +1,16 @@
 // API configuration for both development and production
 const getApiUrl = (): string => {
+  // In development, use relative URLs (handled by Vite proxy)
+  if (import.meta.env.DEV) {
+    return '/api';
+  }
+  
   // In production build, use the defined API URL
   if (typeof __API_URL__ !== 'undefined') {
     return __API_URL__;
   }
   
-  // In development, use relative URLs (handled by Vite proxy)
-  return '';
+  return '/api';
 };
 
 export const API_BASE_URL = getApiUrl();

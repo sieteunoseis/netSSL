@@ -4,8 +4,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Settings, Key, Check, X, Eye, EyeOff, ChevronLeft, ChevronRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiCall } from "@/lib/api";
@@ -28,23 +29,95 @@ interface ProviderSettings {
 const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
   const { toast } = useToast();
   const [isOpen, setIsOpen] = useState(false);
-  const [settings, setSettings] = useState<Setting[]>([]);
+  const [, setSettings] = useState<Setting[]>([]);
   const [providerSettings, setProviderSettings] = useState<Record<string, ProviderSettings>>({});
-  const [loading, setLoading] = useState(false);
+  const [, setLoading] = useState(false);
   const [visibleKeys, setVisibleKeys] = useState<Record<string, boolean>>({});
   const [showLeftScroll, setShowLeftScroll] = useState(false);
   const [showRightScroll, setShowRightScroll] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const providers = [
-    { id: 'letsencrypt', name: 'Let\'s Encrypt', keys: ['LETSENCRYPT_EMAIL'] },
-    { id: 'zerossl', name: 'ZeroSSL', keys: ['ZEROSSL_KEY', 'MXTOOLBOX_KEY'] },
-    { id: 'cloudflare', name: 'Cloudflare', keys: ['CF_KEY', 'CF_ZONE'] },
-    { id: 'digitalocean', name: 'DigitalOcean', keys: ['DO_KEY'] },
-    { id: 'route53', name: 'AWS Route53', keys: ['AWS_ACCESS_KEY', 'AWS_SECRET_KEY', 'AWS_ZONE_ID'] },
-    { id: 'azure', name: 'Azure DNS', keys: ['AZURE_SUBSCRIPTION_ID', 'AZURE_RESOURCE_GROUP', 'AZURE_ZONE_NAME'] },
-    { id: 'google', name: 'Google Cloud DNS', keys: ['GOOGLE_PROJECT_ID', 'GOOGLE_ZONE_NAME'] },
-    { id: 'custom', name: 'Custom DNS', keys: ['CUSTOM_DNS_SERVER_1', 'CUSTOM_DNS_SERVER_2'] }
+    { 
+      id: 'letsencrypt', 
+      name: 'Let\'s Encrypt', 
+      keys: ['LETSENCRYPT_EMAIL'],
+      description: 'Free SSL certificate provider',
+      keyInfo: {
+        'LETSENCRYPT_EMAIL': 'Email for account registration and renewal notifications'
+      }
+    },
+    { 
+      id: 'zerossl', 
+      name: 'ZeroSSL', 
+      keys: ['ZEROSSL_KEY', 'MXTOOLBOX_KEY'],
+      description: 'SSL certificate provider with DNS verification via MXTOOLBOX',
+      keyInfo: {
+        'ZEROSSL_KEY': 'API key from ZeroSSL Dashboard > Developer > API Keys',
+        'MXTOOLBOX_KEY': 'API key from MXTOOLBOX for DNS record verification'
+      }
+    },
+    { 
+      id: 'cloudflare', 
+      name: 'Cloudflare', 
+      keys: ['CF_KEY', 'CF_ZONE'],
+      description: 'DNS provider for automatic DNS validation',
+      keyInfo: {
+        'CF_KEY': 'Global API Key from My Profile > API Tokens',
+        'CF_ZONE': 'Zone ID from domain overview page'
+      }
+    },
+    { 
+      id: 'digitalocean', 
+      name: 'DigitalOcean', 
+      keys: ['DO_KEY'],
+      description: 'DNS provider for automatic DNS validation',
+      keyInfo: {
+        'DO_KEY': 'Personal Access Token from API > Generate New Token'
+      }
+    },
+    { 
+      id: 'route53', 
+      name: 'AWS Route53', 
+      keys: ['AWS_ACCESS_KEY', 'AWS_SECRET_KEY', 'AWS_ZONE_ID'],
+      description: 'DNS provider for automatic DNS validation',
+      keyInfo: {
+        'AWS_ACCESS_KEY': 'IAM user access key with Route53 permissions',
+        'AWS_SECRET_KEY': 'Secret access key for the IAM user',
+        'AWS_ZONE_ID': 'Hosted zone ID from Route53 console'
+      }
+    },
+    { 
+      id: 'azure', 
+      name: 'Azure DNS', 
+      keys: ['AZURE_SUBSCRIPTION_ID', 'AZURE_RESOURCE_GROUP', 'AZURE_ZONE_NAME'],
+      description: 'DNS provider for automatic DNS validation',
+      keyInfo: {
+        'AZURE_SUBSCRIPTION_ID': 'Azure subscription containing DNS zones',
+        'AZURE_RESOURCE_GROUP': 'Resource group containing DNS zone',
+        'AZURE_ZONE_NAME': 'DNS zone name (e.g., example.com)'
+      }
+    },
+    { 
+      id: 'google', 
+      name: 'Google Cloud DNS', 
+      keys: ['GOOGLE_PROJECT_ID', 'GOOGLE_ZONE_NAME'],
+      description: 'DNS provider for automatic DNS validation',
+      keyInfo: {
+        'GOOGLE_PROJECT_ID': 'GCP project ID containing Cloud DNS zones',
+        'GOOGLE_ZONE_NAME': 'Cloud DNS zone name'
+      }
+    },
+    { 
+      id: 'custom', 
+      name: 'Custom DNS', 
+      keys: ['CUSTOM_DNS_SERVER_1', 'CUSTOM_DNS_SERVER_2'],
+      description: 'Manual DNS configuration for custom setups',
+      keyInfo: {
+        'CUSTOM_DNS_SERVER_1': 'Primary DNS server IP address',
+        'CUSTOM_DNS_SERVER_2': 'Secondary DNS server IP address (optional)'
+      }
+    }
   ];
 
   const fetchSettings = async () => {
@@ -215,40 +288,49 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
             <TabsTrigger value="configure">Configure</TabsTrigger>
           </TabsList>
           
-          <TabsContent value="overview" className="space-y-4">
-            <div className="grid gap-4">
+          <TabsContent value="overview" className="space-y-2">
+            <Accordion type="single" collapsible className="w-full">
               {providers.map(provider => {
                 const status = getProviderStatus(provider.id);
                 return (
-                  <Card key={provider.id}>
-                    <CardHeader className="pb-3">
-                      <div className="flex items-center justify-between">
-                        <CardTitle className="text-lg">{provider.name}</CardTitle>
-                        <Badge variant={status.configured ? "default" : "secondary"}>
+                  <AccordionItem key={provider.id} value={provider.id}>
+                    <AccordionTrigger className="py-2 hover:no-underline">
+                      <div className="flex items-center justify-between w-full pr-2">
+                        <span className="text-sm font-medium">{provider.name}</span>
+                        <Badge variant={status.configured ? "default" : "secondary"} className="ml-2">
                           {status.configured ? (
                             <><Check className="w-3 h-3 mr-1" /> Configured</>
                           ) : (
-                            <><X className="w-3 h-3 mr-1" /> Missing Keys</>
+                            <><X className="w-3 h-3 mr-1" /> Not Configured</>
                           )}
                         </Badge>
                       </div>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-2">
-                        <p className="text-sm text-muted-foreground">
-                          Required keys: {provider.keys.join(', ')}
-                        </p>
+                    </AccordionTrigger>
+                    <AccordionContent>
+                      <div className="text-sm text-muted-foreground space-y-3">
+                        <p className="text-xs">{provider.description}</p>
+                        
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Required Keys:</p>
+                          <div className="space-y-2">
+                            {provider.keys.map(key => (
+                              <div key={key} className="bg-muted/50 p-2 rounded">
+                                <code className="text-xs font-mono text-foreground">{key}</code>
+                                <p className="text-xs mt-1">{provider.keyInfo[key]}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        
                         {status.missing.length > 0 && (
-                          <p className="text-sm text-red-600">
-                            Missing: {status.missing.join(', ')}
-                          </p>
+                          <p className="text-red-600 font-medium">Missing: {status.missing.join(', ')}</p>
                         )}
                       </div>
-                    </CardContent>
-                  </Card>
+                    </AccordionContent>
+                  </AccordionItem>
                 );
               })}
-            </div>
+            </Accordion>
           </TabsContent>
           
           <TabsContent value="configure" className="space-y-4">

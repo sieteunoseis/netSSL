@@ -22,6 +22,7 @@
   {
     "name": "version",
     "type": "TEXT",
-    "validator": { "name": "isDecimal", "options": { "force_decimal": true, "decimal_digits": "1,1", "locale": "en-US" } }
+    "validator": { "name": "isDecimal", "options": { "force_decimal": false, "decimal_digits": "1,2", "locale": "en-US" } },
+    "optional": true
   }
 ]

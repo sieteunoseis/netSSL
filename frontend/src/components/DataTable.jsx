@@ -2,15 +2,18 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { useConfig } from '../config/ConfigContext';
 import { apiCall } from '../lib/api';
-import { ChevronDown, ChevronUp, Trash2, Eye, EyeOff, Edit } from 'lucide-react';
+import { ChevronDown, ChevronUp, Trash2, Eye, EyeOff, Edit, Terminal } from 'lucide-react';
 import EditConnectionModal from './EditConnectionModal';
+import { useToast } from "@/hooks/use-toast";
 
 const DataTable = ({ data, onDataChange }) => {
   const config = useConfig();
+  const { toast } = useToast();
   const [jsonData, setData] = useState([]);
   const [expandedRows, setExpandedRows] = useState(new Set());
   const [visiblePasswords, setVisiblePasswords] = useState(new Set());
   const [editingRecord, setEditingRecord] = useState(null);
+  const [testingSSH, setTestingSSH] = useState(new Set());
 
   useEffect(() => {
     const fetchData = async () => {
@@ -28,6 +31,55 @@ const DataTable = ({ data, onDataChange }) => {
       onDataChange();
     } catch (error) {
       console.error("Error deleting data:", error);
+    }
+  };
+
+  const handleSSHTest = async (record) => {
+    const newTesting = new Set(testingSSH);
+    newTesting.add(record.id);
+    setTestingSSH(newTesting);
+
+    try {
+      // Construct FQDN by combining hostname and domain
+      const fqdn = record.domain ? `${record.hostname}.${record.domain}` : record.hostname;
+      
+      const response = await apiCall('/ssh/test', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          hostname: fqdn,
+          username: record.username,
+          password: record.password,
+        }),
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        toast({
+          title: "SSH Test Successful",
+          description: "Successfully connected to Cisco VOS CLI",
+        });
+      } else {
+        toast({
+          title: "SSH Test Failed",
+          description: result.error || "Unable to connect to server",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Error testing SSH:', error);
+      toast({
+        title: "Connection Error",
+        description: "Failed to test SSH connection. Please check your network.",
+        variant: "destructive",
+      });
+    } finally {
+      const newTesting = new Set(testingSSH);
+      newTesting.delete(record.id);
+      setTestingSSH(newTesting);
     }
   };
 
@@ -57,8 +109,8 @@ const DataTable = ({ data, onDataChange }) => {
       .replace(/[^a-zA-Z]+/g, ' ')
       .split(' ')
       .map(word => {
-        // Keep SSL and DNS in uppercase
-        if (word.toLowerCase() === 'ssl' || word.toLowerCase() === 'dns') {
+        // Keep SSL, DNS, and SSH in uppercase
+        if (word.toLowerCase() === 'ssl' || word.toLowerCase() === 'dns' || word.toLowerCase() === 'ssh') {
           return word.toUpperCase();
         }
         return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
@@ -69,6 +121,33 @@ const DataTable = ({ data, onDataChange }) => {
   const formatColumnValue = (columnName, value, recordId = null) => {
     if (columnName === "password") {
       return value; // Return actual value, we'll handle masking in the render
+    }
+    
+    // Handle boolean fields
+    if (columnName === "enable_ssh" || columnName === "auto_restart_service" || columnName === "auto_renew") {
+      return value === true || value === 1 || value === "1" ? "Yes" : "No";
+    }
+    
+    // Handle auto-renewal status
+    if (columnName === "auto_renew_status") {
+      const statusMap = {
+        'success': '✅ Success',
+        'failed': '❌ Failed', 
+        'in_progress': '🔄 In Progress',
+        'timeout': '⏰ Timeout'
+      };
+      return statusMap[value] || value || "—";
+    }
+    
+    // Handle auto-renewal last attempt timestamp
+    if (columnName === "auto_renew_last_attempt") {
+      if (!value) return "—";
+      try {
+        const date = new Date(value);
+        return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+      } catch {
+        return value;
+      }
     }
     
     if (columnName === "ssl_provider") {
@@ -124,6 +203,20 @@ const DataTable = ({ data, onDataChange }) => {
               </div>
               
               <div className="flex items-center space-x-2 ml-4">
+                {record.application_type === 'vos' && record.enable_ssh && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleSSHTest(record)}
+                    disabled={testingSSH.has(record.id)}
+                    className="flex items-center space-x-1"
+                    title="Test SSH Connection"
+                  >
+                    <Terminal className="w-4 h-4" />
+                    {testingSSH.has(record.id) ? 'Testing...' : 'SSH Test'}
+                  </Button>
+                )}
+                
                 <Button
                   variant="outline"
                   size="sm"

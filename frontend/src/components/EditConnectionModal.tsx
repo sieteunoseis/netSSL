@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import validator from "validator";
 import { apiCall } from '../lib/api';
@@ -15,12 +16,13 @@ interface Column {
   optional?: boolean;
   label?: string;
   placeholder?: string;
-  default?: string;
+  default?: string | boolean;
+  description?: string;
   options?: { value: string; label: string }[];
   allowCustom?: boolean;
   conditional?: {
     field: string;
-    value: string;
+    value: string | boolean;
   };
   validator: {
     name: keyof typeof validator;
@@ -44,7 +46,7 @@ const EditConnectionModal: React.FC<EditConnectionModalProps> = ({
   const { toast } = useToast();
   const [data, setData] = useState<Column[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [formData, setFormData] = useState<Record<string, string>>({});
+  const [formData, setFormData] = useState<Record<string, string | boolean>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -188,8 +190,8 @@ const EditConnectionModal: React.FC<EditConnectionModalProps> = ({
       .replace(/[^a-zA-Z]+/g, " ") // Replace non-letter characters with spaces
       .split(' ')
       .map(word => {
-        // Keep SSL and DNS in uppercase
-        if (word.toLowerCase() === 'ssl' || word.toLowerCase() === 'dns') {
+        // Keep SSL, DNS, and SSH in uppercase
+        if (word.toLowerCase() === 'ssl' || word.toLowerCase() === 'dns' || word.toLowerCase() === 'ssh') {
           return word.toUpperCase();
         }
         return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
@@ -208,8 +210,8 @@ const EditConnectionModal: React.FC<EditConnectionModalProps> = ({
             Update the connection details for {record.name || 'this connection'}.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4 mt-4" autoComplete="off">
-          {data.map((col, index) => {
+        <form onSubmit={handleSubmit} className="space-y-4 mt-4 pl-1" autoComplete="off">
+          {data.map((col) => {
             const formValue = formData[col.name];
             const isOptional = col.optional === true;
             const label = col.label || formatColumnName(col.name);
@@ -229,11 +231,11 @@ const EditConnectionModal: React.FC<EditConnectionModalProps> = ({
               
             return (
               <div key={col.name} className="space-y-2">
-                <Label>{label}</Label>
+                {col.type !== "SWITCH" && <Label>{label}</Label>}
                 
                 {col.type === "SELECT" ? (
                   <Select 
-                    value={formValue || col.default || ""} 
+                    value={String(formValue || col.default || "")} 
                     onValueChange={(value) => handleSelectChange(col.name, value, col.validator, isOptional)}
                   >
                     <SelectTrigger>
@@ -247,12 +249,40 @@ const EditConnectionModal: React.FC<EditConnectionModalProps> = ({
                       ))}
                     </SelectContent>
                   </Select>
+                ) : col.type === "SWITCH" ? (
+                  <div className="space-y-2">
+                    <div className="flex items-start space-x-3">
+                      <Switch
+                        id={col.name}
+                        checked={Boolean(formValue)}
+                        onCheckedChange={(checked) => {
+                          setFormData(prev => ({ ...prev, [col.name]: checked }));
+                          setErrors(prev => {
+                            const newErrors = { ...prev };
+                            delete newErrors[col.name];
+                            return newErrors;
+                          });
+                        }}
+                        className="mt-1"
+                      />
+                      <div className="space-y-1">
+                        <Label htmlFor={col.name} className="text-sm font-medium cursor-pointer">
+                          {label}
+                        </Label>
+                        {col.description && (
+                          <p className="text-xs text-muted-foreground">
+                            {col.description}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 ) : col.type === "TEXTAREA" ? (
                   <Textarea
                     required={!isOptional || isConditionallyRequired}
                     name={col.name}
                     placeholder={placeholder}
-                    value={formValue || ""}
+                    value={String(formValue || "")}
                     rows={6}
                     autoComplete="off"
                     data-lpignore="true"
@@ -268,7 +298,7 @@ const EditConnectionModal: React.FC<EditConnectionModalProps> = ({
                     type={col.name === "password" || col.name === "pw" ? "password" : "text"}
                     name={col.name}
                     placeholder={placeholder}
-                    value={formValue || ""}
+                    value={String(formValue || "")}
                     autoComplete="off"
                     data-lpignore="true"
                     data-form-type="other"
