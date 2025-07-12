@@ -23,9 +23,13 @@ interface Column {
     field: string;
     value: string | boolean;
   };
-  validator: {
+  conditionalMultiple?: {
+    field: string;
+    values: (string | boolean)[];
+  }[];
+  validator?: {
     name: keyof typeof validator;
-    options?: any;
+    options?: unknown;
   };
 }
 
@@ -47,6 +51,7 @@ const DataForm: React.FC<DataFormProps> = ({
   const { toast } = useToast();
   const [data, setData] = useState<Column[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
   const object = data.reduce((obj: Record<string, string | boolean>, value) => {
     obj[value.name] = value.default || (value.type === "SWITCH" ? false : "");
     return obj;
@@ -87,12 +92,16 @@ const DataForm: React.FC<DataFormProps> = ({
     const { name, value } = e.target;
     const newErrors: Record<string, string> = {};
 
-    // Validate - skip validation if field is optional and empty
-    if (value.trim() !== '' || !isOptional) {
+    // Validate - skip validation if field is optional and empty or if no validator is provided
+    if (options && (value.trim() !== '' || !isOptional)) {
       try {
-        const validatorFn = validator[options.name] as any;
+        const validatorFn = validator[options.name] as (value: string, options?: unknown) => boolean;
         if (validatorFn && !validatorFn(value, options.options)) {
-          newErrors[name] = "Invalid value";
+          if (name === 'hostname') {
+            newErrors[name] = "Invalid hostname - use hostname only, no dots or domain names";
+          } else {
+            newErrors[name] = "Invalid value";
+          }
         } else {
           newErrors[name] = "";
         }
@@ -119,9 +128,9 @@ const DataForm: React.FC<DataFormProps> = ({
   const handleSelectChange = (name: string, value: string, options: Column['validator'], isOptional = false) => {
     const newErrors: Record<string, string> = {};
 
-    // Validate - skip validation if field is optional and empty
-    if (value.trim() !== '' || !isOptional) {
-      const validatorFn = validator[options.name] as any;
+    // Validate - skip validation if field is optional and empty or if no validator is provided
+    if (options && (value.trim() !== '' || !isOptional)) {
+      const validatorFn = validator[options.name] as (value: string, options?: unknown) => boolean;
       if (!validatorFn(value, options.options)) {
         newErrors[name] = "Invalid value";
       } else {
@@ -154,8 +163,8 @@ const DataForm: React.FC<DataFormProps> = ({
       } else {
         newErrors[name] = "";
       }
-    } else if (value.trim() !== '' || !isOptional) {
-      const validatorFn = validator[options.name] as any;
+    } else if (options && (value.trim() !== '' || !isOptional)) {
+      const validatorFn = validator[options.name] as (value: string, options?: unknown) => boolean;
       if (!validatorFn(value, options.options)) {
         newErrors[name] = "Invalid value";
       } else {
@@ -237,7 +246,15 @@ const DataForm: React.FC<DataFormProps> = ({
           : label);
 
         // Check if field should be shown based on conditional logic
-        const shouldShow = !col.conditional || formData[col.conditional.field] === col.conditional.value;
+        let shouldShow = true;
+        
+        if (col.conditional) {
+          shouldShow = formData[col.conditional.field] === col.conditional.value;
+        } else if (col.conditionalMultiple) {
+          shouldShow = col.conditionalMultiple.some(condition => 
+            condition.values.includes(formData[condition.field])
+          );
+        }
         
         // For conditional fields like custom_csr, make them required when their condition is met
         const isConditionallyRequired = col.conditional && formData[col.conditional.field] === col.conditional.value && col.name === 'custom_csr';
@@ -260,10 +277,10 @@ const DataForm: React.FC<DataFormProps> = ({
                 value={String(formValue || col.default || "")} 
                 onValueChange={(value) => handleSelectChange(col.name, value, col.validator, isOptional)}
               >
-                <SelectTrigger tabIndex={0}>
+                <SelectTrigger>
                   <SelectValue placeholder={placeholder} />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent position="item-aligned">
                   {col.options?.map((option) => (
                     <SelectItem key={option.value} value={option.value}>
                       {option.label}
@@ -271,6 +288,12 @@ const DataForm: React.FC<DataFormProps> = ({
                   ))}
                 </SelectContent>
               </Select>
+            ) : col.type === "INFO" ? (
+              <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-md p-3">
+                <p className="text-sm text-blue-800 dark:text-blue-200">
+                  {col.description}
+                </p>
+              </div>
             ) : col.type === "SWITCH" ? (
               <div className="space-y-2">
                 <div className="flex items-start space-x-3">
@@ -312,7 +335,6 @@ const DataForm: React.FC<DataFormProps> = ({
                 data-lpignore="true"
                 data-form-type="other"
                 data-1p-ignore="true"
-                tabIndex={0}
                 onChange={(e) => {
                   handleTextareaChange(e, col.validator, isOptional && !isConditionallyRequired);
                 }}
@@ -329,14 +351,13 @@ const DataForm: React.FC<DataFormProps> = ({
                 data-form-type="other"
                 data-1p-ignore="true"
                 autoFocus={index === 0}
-                tabIndex={0}
                 onChange={(e) => {
                   handleChange(e, col.validator, isOptional && !isConditionallyRequired);
                 }}
               />
             )}
             
-            {errors[col.name] && <span className="text-red-500 font-semibold">{errors[col.name]}</span>}
+            {errors[col.name] && <span className="text-red-500 text-xs">{errors[col.name]}</span>}
           </div>
         );
         } catch (error) {
@@ -348,7 +369,7 @@ const DataForm: React.FC<DataFormProps> = ({
           );
         }
       })}
-      {!isPartOfTabbedForm && <Button type="submit" tabIndex={0}>Add Connection</Button>}
+      {!isPartOfTabbedForm && <Button type="submit">Add Connection</Button>}
     </form>
   );
 };

@@ -2,39 +2,76 @@
   {
     "name": "application_type",
     "type": "SELECT",
-    "validator": { "name": "isIn", "options": ["vos", "general"] },
+    "validator": { "name": "isIn", "options": ["vos", "ise", "general"] },
     "label": "Application Type",
     "options": [
-      { "value": "vos", "label": "Cisco VOS Application (CUCM/CER/CUC)" },
-      { "value": "general", "label": "General Application (ESXi, etc.)" }
+      { "value": "vos", "label": "Cisco VOS Application" },
+      { "value": "ise", "label": "Cisco ISE Guest Portal" },
+      { "value": "general", "label": "General Application" }
     ],
     "default": "vos"
+  },
+  {
+    "name": "application_type_info",
+    "type": "INFO",
+    "conditional": {
+      "field": "application_type",
+      "value": "vos"
+    },
+    "description": "Includes: CUCM, CUC, IM&P, and other VOS-based systems. Uses API to automatically generate CSR and upload certificate after obtaining from SSL provider. Note: Without SSH enabled, users will need to manually restart Tomcat service after certificate installation."
+  },
+  {
+    "name": "application_type_info_ise",
+    "type": "INFO",
+    "conditional": {
+      "field": "application_type",
+      "value": "ise"
+    },
+    "description": "Includes: Cisco Identity Services Engine for Guest and Sponsor portals. Requires manual CSR generation and certificate installation through ISE admin interface."
+  },
+  {
+    "name": "application_type_info_general",
+    "type": "INFO",
+    "conditional": {
+      "field": "application_type",
+      "value": "general"
+    },
+    "description": "Includes: ESXi, other non-Cisco applications, or any system requiring certificate management. Requires manual CSR generation and certificate installation."
   },
   {
     "name": "name",
     "type": "TEXT",
     "validator": { "name": "isAscii", "options": "" },
     "label": "Connection Name",
-    "placeholder": "e.g., CUCM Primary"
+    "placeholder": "e.g., CUCM Primary, ISE Primary, ESXi Host"
   },
   {
     "name": "hostname",
     "type": "TEXT",
-    "validator": { "name": "isAscii", "options": "" },
+    "validator": { "name": "matches", "options": "^[a-zA-Z0-9]([a-zA-Z0-9\\-]{0,61}[a-zA-Z0-9])?$" },
     "label": "Server Hostname",
-    "placeholder": "e.g., cucm01-pub"
+    "placeholder": "e.g., cucm01-pub, ise01-admin, esxi01",
+    "description": "Hostname only - do not include domain name (e.g., 'server01' not 'server01.domain.com')",
+    "conditionalMultiple": [
+      {
+        "field": "application_type",
+        "values": ["vos", "general"]
+      }
+    ]
   },
   {
     "name": "username",
     "type": "TEXT",
     "validator": { "name": "isAscii", "options": "" },
     "label": "Username",
-    "placeholder": "e.g., administrator, ccmadmin, root, admin",
+    "placeholder": "VOS: administrator, ccmadmin | ISE: admin, iseadmin",
     "default": "administrator",
-    "conditional": {
-      "field": "application_type",
-      "value": "vos"
-    }
+    "conditionalMultiple": [
+      {
+        "field": "application_type",
+        "values": ["vos", "ise"]
+      }
+    ]
   },
   {
     "name": "password",
@@ -42,26 +79,99 @@
     "validator": { "name": "isAscii", "options": "" },
     "label": "Password",
     "placeholder": "Server password",
-    "conditional": {
-      "field": "application_type",
-      "value": "vos"
-    }
+    "conditionalMultiple": [
+      {
+        "field": "application_type",
+        "values": ["vos", "ise"]
+      }
+    ]
   },
   {
     "name": "domain",
     "type": "TEXT",
     "validator": { "name": "isFQDN", "options": { "allow_numeric_tld": true } },
     "label": "Domain Name",
-    "placeholder": "e.g., automate.builders"
+    "placeholder": "e.g., automate.builders",
+    "conditionalMultiple": [
+      {
+        "field": "application_type",
+        "values": ["vos", "general"]
+      }
+    ]
+  },
+  {
+    "name": "portal_url",
+    "type": "TEXT",
+    "validator": { "name": "matches", "options": "^(\\*\\.)?[a-zA-Z0-9]([a-zA-Z0-9\\-]{0,61}[a-zA-Z0-9])?(\\.[a-zA-Z0-9]([a-zA-Z0-9\\-]{0,61}[a-zA-Z0-9])?)*$" },
+    "label": "Portal URL (Guest or Sponsor)",
+    "placeholder": "e.g., sponsor.automate.builder, guest1.automate.builder, *.automate.builder",
+    "required": false,
+    "optional": false,
+    "conditional": {
+      "field": "application_type",
+      "value": "ise"
+    }
+  },
+  {
+    "name": "ise_nodes",
+    "type": "TEXT",
+    "validator": { "name": "isAscii", "options": "" },
+    "label": "ISE Nodes (for certificate installation)",
+    "placeholder": "e.g., ise01.automate.builder, ise02.automate.builder (comma-separated)",
+    "required": false,
+    "optional": false,
+    "conditional": {
+      "field": "application_type",
+      "value": "ise"
+    }
+  },
+  {
+    "name": "ise_certificate",
+    "type": "TEXTAREA",
+    "validator": { "name": "isAscii", "options": "" },
+    "label": "CSR (PEM Format)",
+    "placeholder": "-----BEGIN CERTIFICATE REQUEST-----\nPaste your Certificate Signing Request here\n-----END CERTIFICATE REQUEST-----",
+    "required": false,
+    "optional": false,
+    "conditional": {
+      "field": "application_type",
+      "value": "ise"
+    }
+  },
+  {
+    "name": "ise_private_key",
+    "type": "TEXTAREA",
+    "validator": { "name": "isAscii", "options": "" },
+    "label": "Private Key (PEM Format)",
+    "placeholder": "-----BEGIN PRIVATE KEY-----\nPaste your private key here\n-----END PRIVATE KEY-----",
+    "required": false,
+    "optional": false,
+    "conditional": {
+      "field": "application_type",
+      "value": "ise"
+    }
   },
   {
     "name": "custom_csr",
     "type": "TEXTAREA",
     "validator": { "name": "isAscii", "options": "" },
-    "label": "Custom CSR (Required for General Applications)",
-    "placeholder": "-----BEGIN CERTIFICATE REQUEST-----\nPaste your Certificate Signing Request here\n-----END CERTIFICATE REQUEST-----\n\nOptional: Include your private key below the CSR\n-----BEGIN PRIVATE KEY----- or -----BEGIN RSA PRIVATE KEY-----\nYour private key content\n-----END PRIVATE KEY----- or -----END RSA PRIVATE KEY-----",
+    "label": "CSR (Required for General Applications)",
+    "placeholder": "-----BEGIN CERTIFICATE REQUEST-----\nPaste your Certificate Signing Request here\n-----END CERTIFICATE REQUEST-----",
     "required": false,
-    "optional": true,
+    "optional": false,
+    "conditional": {
+      "field": "application_type",
+      "value": "general"
+    }
+  },
+  {
+    "name": "general_private_key",
+    "type": "TEXTAREA",
+    "validator": { "name": "isAscii", "options": "" },
+    "label": "Private Key (PEM Format)",
+    "placeholder": "-----BEGIN PRIVATE KEY-----\nPaste your private key here\n-----END PRIVATE KEY-----",
+    "required": false,
+    "optional": false,
     "conditional": {
       "field": "application_type",
       "value": "general"
@@ -109,17 +219,19 @@
     "label": "Allow SSH",
     "description": "For testing and service management",
     "default": false,
-    "conditional": {
-      "field": "application_type",
-      "value": "vos"
-    }
+    "conditionalMultiple": [
+      {
+        "field": "application_type",
+        "values": ["vos"]
+      }
+    ]
   },
   {
     "name": "auto_restart_service",
     "type": "SWITCH",
     "validator": { "name": "isAscii", "options": "" },
-    "label": "Auto Restart Tomcat Service",
-    "description": "Automatically restart 'Cisco Tomcat' service after certificate installation",
+    "label": "Auto Restart Services",
+    "description": "VOS: Restart 'Cisco Tomcat' | ISE: Restart application services after certificate installation",
     "default": false,
     "conditional": {
       "field": "enable_ssh",
@@ -133,9 +245,11 @@
     "label": "Auto Renew Certificate",
     "description": "Automatically renew certificate 7 days before expiration at midnight",
     "default": false,
-    "conditional": {
-      "field": "application_type",
-      "value": "vos"
-    }
+    "conditionalMultiple": [
+      {
+        "field": "application_type",
+        "values": ["vos", "ise"]
+      }
+    ]
   }
 ]

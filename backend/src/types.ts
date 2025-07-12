@@ -7,10 +7,15 @@ export interface ConnectionRecord {
   domain: string;
   ssl_provider: string;
   dns_provider: string;
-  application_type?: 'vos' | 'general';
+  application_type?: 'vos' | 'ise' | 'general';
   version?: string;
   alt_names?: string;
   custom_csr?: string;
+  general_private_key?: string;
+  portal_url?: string;
+  ise_nodes?: string;
+  ise_certificate?: string;
+  ise_private_key?: string;
   enable_ssh?: boolean;
   auto_restart_service?: boolean;
   auto_renew?: boolean;

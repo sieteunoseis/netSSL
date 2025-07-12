@@ -26,12 +26,12 @@ interface Column {
   };
   validator: {
     name: keyof typeof validator;
-    options?: any;
+    options?: unknown;
   };
 }
 
 interface EditConnectionModalProps {
-  record: any;
+  record: Record<string, string | boolean>;
   isOpen: boolean;
   onClose: () => void;
   onConnectionUpdated: () => void;
@@ -62,7 +62,7 @@ const EditConnectionModal: React.FC<EditConnectionModalProps> = ({
   useEffect(() => {
     if (record && data.length > 0) {
       // Initialize form data with record values
-      const initialData = data.reduce((obj: Record<string, string>, col) => {
+      const initialData = data.reduce((obj: Record<string, string | boolean>, col) => {
         obj[col.name] = record[col.name] || col.default || "";
         return obj;
       }, {});
@@ -76,7 +76,7 @@ const EditConnectionModal: React.FC<EditConnectionModalProps> = ({
 
     // Validate - skip validation if field is optional and empty
     if (value.trim() !== '' || !isOptional) {
-      const validatorFn = validator[options.name] as any;
+      const validatorFn = validator[options.name] as (value: string, options?: unknown) => boolean;
       if (!validatorFn(value, options.options)) {
         newErrors[name] = "Invalid value";
       } else {
@@ -101,7 +101,7 @@ const EditConnectionModal: React.FC<EditConnectionModalProps> = ({
 
     // Validate - skip validation if field is optional and empty
     if (value.trim() !== '' || !isOptional) {
-      const validatorFn = validator[options.name] as any;
+      const validatorFn = validator[options.name] as (value: string, options?: unknown) => boolean;
       if (!validatorFn(value, options.options)) {
         newErrors[name] = "Invalid value";
       } else {
@@ -133,7 +133,7 @@ const EditConnectionModal: React.FC<EditConnectionModalProps> = ({
         newErrors[name] = "";
       }
     } else if (value.trim() !== '' || !isOptional) {
-      const validatorFn = validator[options.name] as any;
+      const validatorFn = validator[options.name] as (value: string, options?: unknown) => boolean;
       if (!validatorFn(value, options.options)) {
         newErrors[name] = "Invalid value";
       } else {
@@ -203,14 +203,16 @@ const EditConnectionModal: React.FC<EditConnectionModalProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
+      <DialogContent className="max-w-4xl w-[95vw] sm:w-[90vw] max-h-[90vh] h-[90vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>Edit Connection</DialogTitle>
           <DialogDescription>
             Update the connection details for {record.name || 'this connection'}.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4 mt-4 pl-1" autoComplete="off">
+        
+        <div className="flex-1 overflow-y-auto pl-1 pr-2 mt-4 pb-4 min-h-0 scroll-smooth scrollbar-styled">
+          <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
           {data.map((col) => {
             const formValue = formData[col.name];
             const isOptional = col.optional === true;
@@ -241,7 +243,7 @@ const EditConnectionModal: React.FC<EditConnectionModalProps> = ({
                     <SelectTrigger>
                       <SelectValue placeholder={placeholder} />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent position="item-aligned">
                       {col.options?.map((option) => (
                         <SelectItem key={option.value} value={option.value}>
                           {option.label}
@@ -313,16 +315,26 @@ const EditConnectionModal: React.FC<EditConnectionModalProps> = ({
               </div>
             );
           })}
-          
-          <div className="flex justify-end space-x-2 pt-4">
-            <Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? 'Updating...' : 'Update Connection'}
-            </Button>
-          </div>
-        </form>
+          </form>
+        </div>
+        
+        <div className="flex justify-end space-x-2 pt-4 border-t flex-shrink-0 bg-background">
+          <Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting}>
+            Cancel
+          </Button>
+          <Button 
+            onClick={() => {
+              // Trigger form submission
+              const form = document.querySelector('form') as HTMLFormElement;
+              if (form) {
+                form.requestSubmit();
+              }
+            }}
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? 'Updating...' : 'Update Connection'}
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
   );

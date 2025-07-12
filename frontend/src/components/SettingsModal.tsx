@@ -274,7 +274,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
       <DialogTrigger asChild>
         {trigger || defaultTrigger}
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[1000px] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[700px] max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>API Keys & Settings</DialogTitle>
           <DialogDescription>
@@ -282,13 +282,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
           </DialogDescription>
         </DialogHeader>
         
-        <Tabs defaultValue="overview" className="w-full">
+        <Tabs defaultValue="overview" className="w-full flex flex-col flex-1">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="configure">Configure</TabsTrigger>
           </TabsList>
           
-          <TabsContent value="overview" className="space-y-2">
+          <TabsContent value="overview" className="space-y-2 flex-1 overflow-y-auto">
             <Accordion type="single" collapsible className="w-full">
               {providers.map(provider => {
                 const status = getProviderStatus(provider.id);
@@ -333,8 +333,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
             </Accordion>
           </TabsContent>
           
-          <TabsContent value="configure" className="space-y-4">
-            <Tabs defaultValue={providers[0].id} orientation="vertical">
+          <TabsContent value="configure" className="space-y-4 flex-1 flex flex-col">
+            <Tabs defaultValue={providers[0].id} orientation="vertical" className="flex flex-col flex-1">
               <div className="relative group">
                 {/* Left scroll button */}
                 {showLeftScroll && (
@@ -388,8 +388,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
                 )}
               </div>
               
+              <div className="flex-1 overflow-y-auto">
               {providers.map(provider => (
-                <TabsContent key={provider.id} value={provider.id} className="space-y-4">
+                <TabsContent key={provider.id} value={provider.id} className="space-y-4 mt-0">
                   <Card>
                     <CardHeader>
                       <CardTitle className="flex items-center space-x-2">
@@ -454,6 +455,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
                   </Card>
                 </TabsContent>
               ))}
+              </div>
             </Tabs>
           </TabsContent>
         </Tabs>

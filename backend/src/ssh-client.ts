@@ -26,6 +26,100 @@ export interface SSHCommandResult {
 }
 
 export class SSHClient {
+  private client: Client | null = null;
+  private isConnected = false;
+
+  /**
+   * Connect to an SSH server (instance method)
+   * @param config Connection configuration
+   */
+  async connect(config: { host: string; username: string; password: string; port?: number; algorithms?: any }): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.client = new Client();
+      
+      this.client.on('ready', () => {
+        this.isConnected = true;
+        resolve();
+      });
+
+      this.client.on('error', (err) => {
+        this.isConnected = false;
+        reject(err);
+      });
+
+      this.client.on('close', () => {
+        this.isConnected = false;
+      });
+
+      this.client.connect({
+        host: config.host,
+        port: config.port || 22,
+        username: config.username,
+        password: config.password,
+        algorithms: config.algorithms,
+        readyTimeout: 30000,
+        keepaliveInterval: 5000
+      });
+    });
+  }
+
+  /**
+   * Execute a command on the connected SSH server (instance method)
+   * @param command Command to execute
+   * @returns Command output
+   */
+  async executeCommand(command: string): Promise<string> {
+    if (!this.client || !this.isConnected) {
+      throw new Error('SSH client is not connected');
+    }
+
+    return new Promise((resolve, reject) => {
+      this.client!.exec(command, (err, stream) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+
+        let stdout = '';
+        let stderr = '';
+
+        stream.on('close', (code: number) => {
+          if (code !== 0) {
+            reject(new Error(`Command failed with exit code ${code}: ${stderr}`));
+          } else {
+            resolve(stdout);
+          }
+        });
+
+        stream.on('data', (data: Buffer) => {
+          stdout += data.toString();
+        });
+
+        stream.stderr.on('data', (data: Buffer) => {
+          stderr += data.toString();
+        });
+      });
+    });
+  }
+
+  /**
+   * Disconnect from the SSH server (instance method)
+   */
+  async disconnect(): Promise<void> {
+    if (this.client && this.isConnected) {
+      this.client.end();
+      this.isConnected = false;
+      this.client = null;
+    }
+  }
+
+  /**
+   * Check if client is connected (instance method)
+   */
+  isClientConnected(): boolean {
+    return this.isConnected;
+  }
+
   /**
    * Test SSH connection to a Cisco VOS server
    * @param params Connection parameters

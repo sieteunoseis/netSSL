@@ -10,19 +10,25 @@ export const validateConnectionData = (data: any): { isValid: boolean; errors: s
     errors.push('Name must contain only ASCII characters');
   }
 
-  if (!data.hostname || typeof data.hostname !== 'string') {
-    errors.push('Hostname is required and must be a string');
-  } else if (!validator.isAscii(data.hostname)) {
-    errors.push('Hostname must contain only ASCII characters');
+  // Hostname is not required for ISE applications
+  if (data.application_type !== 'ise') {
+    if (!data.hostname || typeof data.hostname !== 'string') {
+      errors.push('Hostname is required and must be a string');
+    } else if (!validator.isAscii(data.hostname)) {
+      errors.push('Hostname must contain only ASCII characters');
+    }
   }
 
-  if (!data.domain || typeof data.domain !== 'string') {
-    errors.push('Domain is required and must be a string');
-  } else if (!validator.isFQDN(data.domain, { allow_numeric_tld: true })) {
-    errors.push('Domain must be a valid FQDN');
+  // Domain is not required for ISE applications (they use portal_url instead)
+  if (data.application_type !== 'ise') {
+    if (!data.domain || typeof data.domain !== 'string') {
+      errors.push('Domain is required and must be a string');
+    } else if (!validator.isFQDN(data.domain, { allow_numeric_tld: true })) {
+      errors.push('Domain must be a valid FQDN');
+    }
   }
 
-  // Username and password are only required for VOS applications
+  // Username and password are required for VOS applications only
   const isVosApplication = data.application_type === 'vos' || !data.application_type; // Default to VOS if not specified
   
   if (isVosApplication) {
@@ -35,6 +41,46 @@ export const validateConnectionData = (data: any): { isValid: boolean; errors: s
     if (!data.password || typeof data.password !== 'string') {
       errors.push('Password is required and must be a string for VOS applications');
     } else if (!validator.isAscii(data.password)) {
+      errors.push('Password must contain only ASCII characters');
+    }
+  } else if (data.application_type === 'ise') {
+    // ISE-specific validations
+    if (data.portal_url && typeof data.portal_url === 'string' && data.portal_url.trim() !== '') {
+      // Use same regex pattern as frontend for consistency
+      const portalUrlPattern = /^(\*\.)?[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$/;
+      if (!portalUrlPattern.test(data.portal_url)) {
+        errors.push('Guest Portal URL must be a valid FQDN or wildcard domain');
+      }
+    }
+
+    if (data.ise_nodes && typeof data.ise_nodes === 'string' && data.ise_nodes.trim() !== '') {
+      if (!validator.isAscii(data.ise_nodes)) {
+        errors.push('ISE Node FQDNs must contain only ASCII characters');
+      }
+    }
+
+    if (data.ise_certificate && typeof data.ise_certificate === 'string' && data.ise_certificate.trim() !== '') {
+      if (!data.ise_certificate.includes('-----BEGIN CERTIFICATE REQUEST-----')) {
+        errors.push('CSR must be in PEM format');
+      }
+    }
+
+    if (data.ise_private_key && typeof data.ise_private_key === 'string' && data.ise_private_key.trim() !== '') {
+      if (!data.ise_private_key.includes('-----BEGIN PRIVATE KEY-----') && !data.ise_private_key.includes('-----BEGIN RSA PRIVATE KEY-----')) {
+        errors.push('Private Key must be in PEM format');
+      }
+    }
+
+    // Username and password are optional for ISE
+    if (data.username && typeof data.username !== 'string') {
+      errors.push('Username must be a string');
+    } else if (data.username && !validator.isAscii(data.username)) {
+      errors.push('Username must contain only ASCII characters');
+    }
+
+    if (data.password && typeof data.password !== 'string') {
+      errors.push('Password must be a string');
+    } else if (data.password && !validator.isAscii(data.password)) {
       errors.push('Password must contain only ASCII characters');
     }
   } else {
@@ -75,8 +121,8 @@ export const validateConnectionData = (data: any): { isValid: boolean; errors: s
 
   // Application type is optional, defaults to 'vos'
   if (data.application_type !== undefined && data.application_type !== null && data.application_type !== '') {
-    if (!validator.isIn(data.application_type, ['vos', 'general'])) {
-      errors.push('Application type must be either "vos" or "general"');
+    if (!validator.isIn(data.application_type, ['vos', 'ise', 'general'])) {
+      errors.push('Application type must be one of "vos", "ise", or "general"');
     }
   }
 
@@ -89,9 +135,16 @@ export const validateConnectionData = (data: any): { isValid: boolean; errors: s
     }
   }
 
-  // For general applications, custom CSR is required
-  if (data.application_type === 'general' && (!data.custom_csr || data.custom_csr.trim() === '')) {
-    errors.push('Custom CSR is required for general applications');
+  // For general applications, custom CSR and private key are required
+  if (data.application_type === 'general') {
+    if (!data.custom_csr || data.custom_csr.trim() === '') {
+      errors.push('CSR is required for general applications');
+    }
+    if (!data.general_private_key || data.general_private_key.trim() === '') {
+      errors.push('Private key is required for general applications');
+    } else if (!data.general_private_key.includes('-----BEGIN PRIVATE KEY-----') && !data.general_private_key.includes('-----BEGIN RSA PRIVATE KEY-----')) {
+      errors.push('Private key must be in PEM format');
+    }
   }
 
   // Alt names is optional
@@ -120,14 +173,19 @@ export const validateConnectionData = (data: any): { isValid: boolean; errors: s
 export const sanitizeConnectionData = (data: any): Partial<ConnectionRecord> => {
   const sanitized: Partial<ConnectionRecord> = {
     name: validator.escape(String(data.name || '')),
-    hostname: validator.escape(String(data.hostname || '')),
-    domain: validator.escape(String(data.domain || '')),
+    hostname: data.hostname ? validator.escape(String(data.hostname)) : undefined,
+    domain: data.domain ? validator.escape(String(data.domain)) : undefined,
     ssl_provider: validator.escape(String(data.ssl_provider || '')),
     dns_provider: validator.escape(String(data.dns_provider || '')),
-    application_type: (data.application_type === 'general' ? 'general' : 'vos') as 'vos' | 'general',
+    application_type: (['vos', 'ise', 'general'].includes(data.application_type) ? data.application_type : 'vos') as 'vos' | 'ise' | 'general',
     version: validator.escape(String(data.version || '')),
     alt_names: validator.escape(String(data.alt_names || '')),
-    custom_csr: data.custom_csr ? String(data.custom_csr) : undefined // Don't escape CSR content
+    custom_csr: data.custom_csr ? String(data.custom_csr) : undefined, // Don't escape CSR content
+    general_private_key: data.general_private_key ? String(data.general_private_key) : undefined, // Don't escape private key content
+    portal_url: data.portal_url ? validator.escape(String(data.portal_url)) : undefined,
+    ise_nodes: data.ise_nodes ? validator.escape(String(data.ise_nodes)) : undefined,
+    ise_certificate: data.ise_certificate ? String(data.ise_certificate) : undefined, // Don't escape certificate content
+    ise_private_key: data.ise_private_key ? String(data.ise_private_key) : undefined // Don't escape private key content
   };
 
   // Only include username and password if they are provided (for general applications they are optional)

@@ -71,4 +71,28 @@
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
+  
+  /* Custom scrollbar styles */
+  .scrollbar-styled {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground)) hsl(var(--background));
+  }
+  
+  .scrollbar-styled::-webkit-scrollbar {
+    width: 8px;
+  }
+  
+  .scrollbar-styled::-webkit-scrollbar-track {
+    background: hsl(var(--muted));
+    border-radius: 4px;
+  }
+  
+  .scrollbar-styled::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground));
+    border-radius: 4px;
+  }
+  
+  .scrollbar-styled::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--foreground) / 0.7);
+  }
 }

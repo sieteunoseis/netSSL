@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { useConfig } from '../config/ConfigContext';
 import { apiCall } from '../lib/api';
 import { ChevronDown, ChevronUp, Trash2, Eye, EyeOff, Edit, Terminal } from 'lucide-react';
-import EditConnectionModal from './EditConnectionModal';
+import EditConnectionModal from './EditConnectionModalTabbed';
 import { useToast } from "@/hooks/use-toast";
 
 const DataTable = ({ data, onDataChange }) => {
@@ -165,16 +166,69 @@ const DataTable = ({ data, onDataChange }) => {
       return providers[value] || value;
     }
     
+    if (columnName === "application_type") {
+      const types = {
+        "vos": "Cisco VOS",
+        "ise": "Cisco ISE Guest Portal",
+        "general": "General Application"
+      };
+      return types[value] || value;
+    }
+    
     return value || "—";
   };
 
 
-  const getMainDisplayColumns = () => {
-    return ["name", "hostname", "domain"];
+  const getMainDisplayColumns = (record) => {
+    const baseColumns = ["application_type", "name"];
+    
+    if (record && record.application_type === "ise") {
+      return [...baseColumns, "portal_url", "ise_nodes"];
+    } else {
+      return [...baseColumns, "hostname", "domain"];
+    }
   };
 
-  const getDetailColumns = () => {
-    return jsonData.filter(col => !getMainDisplayColumns().includes(col.name) && col.name !== 'custom_csr');
+  const getDetailColumns = (record) => {
+    // Get all columns except main display columns and application type info fields
+    const excludedFields = [...getMainDisplayColumns(record), 'application_type_info', 'application_type_info_ise', 'application_type_info_general'];
+    const allColumns = jsonData.filter(col => !excludedFields.includes(col.name));
+    
+    // Filter columns based on conditional logic
+    const filteredColumns = allColumns.filter(col => {
+      // If no conditional logic, always show
+      if (!col.conditional && !col.conditionalMultiple) return true;
+      
+      // Check single conditional
+      if (col.conditional) {
+        return record[col.conditional.field] === col.conditional.value;
+      }
+      
+      // Check multiple conditionals (any match)
+      if (col.conditionalMultiple) {
+        return col.conditionalMultiple.some(condition => 
+          condition.values.includes(record[condition.field])
+        );
+      }
+      
+      return true;
+    });
+    
+    // Define the top fields (3 key fields now that application_type is in main bar)
+    const topFields = ["ssl_provider", "dns_provider", "version"];
+    
+    // Get remaining fields, with enable_ssh always last
+    const remainingFields = filteredColumns.filter(col => !topFields.includes(col.name) && col.name !== "enable_ssh");
+    const enableSSHField = filteredColumns.find(col => col.name === "enable_ssh");
+    
+    // Combine: top fields first, then remaining fields, then enable_ssh last
+    const orderedColumns = [
+      ...topFields.map(name => filteredColumns.find(col => col.name === name)).filter(Boolean),
+      ...remainingFields,
+      ...(enableSSHField ? [enableSSHField] : [])
+    ];
+    
+    return orderedColumns;
   };
 
   return (
@@ -184,8 +238,8 @@ const DataTable = ({ data, onDataChange }) => {
           <div key={record.id} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm overflow-hidden">
             {/* Main Row */}
             <div className="p-4 flex items-center justify-between">
-              <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4">
-                {getMainDisplayColumns().map((colName) => {
+              <div className="flex-1 grid grid-cols-1 md:grid-cols-4 gap-4">
+                {getMainDisplayColumns(record).map((colName) => {
                   const col = jsonData.find(c => c.name === colName);
                   if (!col) return null;
                   
@@ -203,20 +257,6 @@ const DataTable = ({ data, onDataChange }) => {
               </div>
               
               <div className="flex items-center space-x-2 ml-4">
-                {record.application_type === 'vos' && record.enable_ssh && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleSSHTest(record)}
-                    disabled={testingSSH.has(record.id)}
-                    className="flex items-center space-x-1"
-                    title="Test SSH Connection"
-                  >
-                    <Terminal className="w-4 h-4" />
-                    {testingSSH.has(record.id) ? 'Testing...' : 'SSH Test'}
-                  </Button>
-                )}
-                
                 <Button
                   variant="outline"
                   size="sm"
@@ -255,7 +295,7 @@ const DataTable = ({ data, onDataChange }) => {
             {expandedRows.has(record.id) && (
               <div className="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 p-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {getDetailColumns().map((col) => {
+                  {getDetailColumns(record).map((col) => {
                     const columnName = col.name.trim();
                     const cellValue = record[columnName];
                     
@@ -283,6 +323,52 @@ const DataTable = ({ data, onDataChange }) => {
                                 )}
                               </Button>
                             </div>
+                          ) : columnName === "enable_ssh" ? (
+                            <div className="flex items-center">
+                              {record.enable_ssh ? (
+                                <div className="flex items-center">
+                                  {(record.application_type === 'vos' || record.application_type === 'ise') ? (
+                                    // Split button design when SSH testing is available
+                                    <div className="flex items-center rounded-md overflow-hidden border border-gray-300 dark:border-gray-600">
+                                      <div className="bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 px-2 py-1 text-xs font-medium">
+                                        SSH Enabled
+                                      </div>
+                                      <button
+                                        onClick={() => handleSSHTest(record)}
+                                        disabled={testingSSH.has(record.id)}
+                                        className="bg-blue-50 dark:bg-blue-900 hover:bg-blue-100 dark:hover:bg-blue-800 text-blue-700 dark:text-blue-200 px-2 py-1 text-xs font-medium border-l border-gray-300 dark:border-gray-600 flex items-center space-x-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        title="Test SSH Connection"
+                                      >
+                                        <Terminal className="w-3 h-3" />
+                                        <span>{testingSSH.has(record.id) ? 'Testing...' : 'Test'}</span>
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    // Simple badge when no SSH testing available
+                                    <Badge variant="default" className="bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200">
+                                      SSH Enabled
+                                    </Badge>
+                                  )}
+                                </div>
+                              ) : (
+                                <Badge variant="secondary" className="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">
+                                  SSH Disabled
+                                </Badge>
+                              )}
+                            </div>
+                          ) : columnName === "custom_csr" || columnName === "general_private_key" || columnName === "ise_certificate" || columnName === "ise_private_key" ? (
+                            // Show status for certificate and key fields instead of content
+                            <div className="flex items-center">
+                              {cellValue && cellValue.trim() !== "" ? (
+                                <Badge variant="default" className="bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200">
+                                  Present
+                                </Badge>
+                              ) : (
+                                <Badge variant="secondary" className="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">
+                                  Not Set
+                                </Badge>
+                              )}
+                            </div>
                           ) : (
                             formatColumnValue(columnName, cellValue)
                           )}
@@ -290,15 +376,6 @@ const DataTable = ({ data, onDataChange }) => {
                       </div>
                     );
                   })}
-                  
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                      Connection ID
-                    </div>
-                    <div className="text-sm text-gray-900 dark:text-gray-100">
-                      #{record.id}
-                    </div>
-                  </div>
                 </div>
               </div>
             )}

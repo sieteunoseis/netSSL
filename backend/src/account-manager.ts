@@ -51,16 +51,27 @@ export class AccountManager {
   }
 
   private getAccountPath(domain: string, provider: string): string {
-    // Add staging/production suffix based on environment variable
+    // Create domain directory structure with staging/prod subdirectories
     const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
-    const suffix = isStaging ? 'staging' : 'prod';
-    return path.join(this.accountsDir, `${domain}_${provider}_${suffix}.json`);
+    const envDir = isStaging ? 'staging' : 'prod';
+    const domainDir = path.join(this.accountsDir, domain, envDir);
+    this.ensureDirectoryExists(domainDir);
+    return path.join(domainDir, `${provider}.json`);
   }
 
   private getDomainDir(domain: string): string {
     const domainDir = path.join(this.accountsDir, domain);
     this.ensureDirectoryExists(domainDir);
     return domainDir;
+  }
+
+  private getDomainEnvDir(domain: string): string {
+    // Get domain directory with environment subdirectory for certificates/CSRs
+    const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
+    const envDir = isStaging ? 'staging' : 'prod';
+    const domainEnvDir = path.join(this.accountsDir, domain, envDir);
+    this.ensureDirectoryExists(domainEnvDir);
+    return domainEnvDir;
   }
 
   async saveAccount(domain: string, provider: 'letsencrypt' | 'zerossl', accountData: any): Promise<void> {
@@ -124,14 +135,16 @@ export class AccountManager {
 
   async saveCertificate(domain: string, certificate: string, privateKey: string): Promise<void> {
     try {
-      const domainDir = this.getDomainDir(domain);
-      const certPath = path.join(domainDir, 'certificate.pem');
-      const keyPath = path.join(domainDir, 'private_key.pem');
+      const domainEnvDir = this.getDomainEnvDir(domain);
+      const certPath = path.join(domainEnvDir, 'certificate.pem');
+      const keyPath = path.join(domainEnvDir, 'private_key.pem');
 
       await fs.promises.writeFile(certPath, certificate);
       await fs.promises.writeFile(keyPath, privateKey);
       
-      Logger.info(`Saved certificate and private key for domain: ${domain}`);
+      const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
+      const envType = isStaging ? 'staging' : 'production';
+      Logger.info(`Saved certificate and private key for domain: ${domain} (${envType})`);
     } catch (error) {
       Logger.error(`Failed to save certificate for ${domain}:`, error);
       throw error;
@@ -140,19 +153,21 @@ export class AccountManager {
 
   async loadCertificate(domain: string): Promise<{ certificate: string; privateKey: string } | null> {
     try {
-      const domainDir = this.getDomainDir(domain);
-      const certPath = path.join(domainDir, 'certificate.pem');
-      const keyPath = path.join(domainDir, 'private_key.pem');
+      const domainEnvDir = this.getDomainEnvDir(domain);
+      const certPath = path.join(domainEnvDir, 'certificate.pem');
+      const keyPath = path.join(domainEnvDir, 'private_key.pem');
 
       if (!fs.existsSync(certPath) || !fs.existsSync(keyPath)) {
-        Logger.debug(`Certificate files not found for domain: ${domain}`);
+        Logger.debug(`Certificate files not found for domain: ${domain} in current environment`);
         return null;
       }
 
       const certificate = await fs.promises.readFile(certPath, 'utf8');
       const privateKey = await fs.promises.readFile(keyPath, 'utf8');
       
-      Logger.info(`Loaded certificate and private key for domain: ${domain}`);
+      const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
+      const envType = isStaging ? 'staging' : 'production';
+      Logger.info(`Loaded certificate and private key for domain: ${domain} (${envType})`);
       return { certificate, privateKey };
     } catch (error) {
       Logger.error(`Failed to load certificate for ${domain}:`, error);
@@ -162,11 +177,14 @@ export class AccountManager {
 
   async saveCSR(domain: string, csr: string): Promise<void> {
     try {
-      const domainDir = this.getDomainDir(domain);
-      const csrPath = path.join(domainDir, 'certificate.csr');
+      const domainEnvDir = this.getDomainEnvDir(domain);
+      const csrPath = path.join(domainEnvDir, 'certificate.csr');
 
       await fs.promises.writeFile(csrPath, csr);
-      Logger.info(`Saved CSR for domain: ${domain}`);
+      
+      const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
+      const envType = isStaging ? 'staging' : 'production';
+      Logger.info(`Saved CSR for domain: ${domain} (${envType})`);
     } catch (error) {
       Logger.error(`Failed to save CSR for ${domain}:`, error);
       throw error;
@@ -175,16 +193,19 @@ export class AccountManager {
 
   async loadCSR(domain: string): Promise<string | null> {
     try {
-      const domainDir = this.getDomainDir(domain);
-      const csrPath = path.join(domainDir, 'certificate.csr');
+      const domainEnvDir = this.getDomainEnvDir(domain);
+      const csrPath = path.join(domainEnvDir, 'certificate.csr');
 
       if (!fs.existsSync(csrPath)) {
-        Logger.debug(`CSR file not found for domain: ${domain}`);
+        Logger.debug(`CSR file not found for domain: ${domain} in current environment`);
         return null;
       }
 
       const csr = await fs.promises.readFile(csrPath, 'utf8');
-      Logger.info(`Loaded CSR for domain: ${domain}`);
+      
+      const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
+      const envType = isStaging ? 'staging' : 'production';
+      Logger.info(`Loaded CSR for domain: ${domain} (${envType})`);
       return csr;
     } catch (error) {
       Logger.error(`Failed to load CSR for ${domain}:`, error);
@@ -225,18 +246,27 @@ export class AccountManager {
 
   async listAccountsByDomain(domain: string): Promise<string[]> {
     try {
-      const files = await fs.promises.readdir(this.accountsDir);
-      const accountFiles = files.filter(file => 
-        file.startsWith(`${domain}_`) && file.endsWith('.json')
-      );
+      const domainDir = path.join(this.accountsDir, domain);
+      if (!fs.existsSync(domainDir)) {
+        return [];
+      }
+
+      const providers = new Set<string>();
       
-      return accountFiles.map(file => {
-        // Remove domain_ prefix and .json suffix, then remove staging/prod suffix
-        const withoutDomain = file.replace(`${domain}_`, '').replace('.json', '');
-        const parts = withoutDomain.split('_');
-        // Return provider name without staging/prod suffix
-        return parts.slice(0, -1).join('_');
-      });
+      // Check both staging and prod directories
+      for (const envDir of ['staging', 'prod']) {
+        const envPath = path.join(domainDir, envDir);
+        if (fs.existsSync(envPath)) {
+          const files = await fs.promises.readdir(envPath);
+          const accountFiles = files.filter(file => file.endsWith('.json'));
+          accountFiles.forEach(file => {
+            const provider = file.replace('.json', '');
+            providers.add(provider);
+          });
+        }
+      }
+      
+      return Array.from(providers);
     } catch (error) {
       Logger.error(`Failed to list accounts for ${domain}:`, error);
       return [];
@@ -273,25 +303,38 @@ export class AccountManager {
 
   async getAccountStats(): Promise<{ totalAccounts: number; domains: string[]; providers: string[] }> {
     try {
-      const files = await fs.promises.readdir(this.accountsDir);
-      const accountFiles = files.filter(file => file.endsWith('.json'));
-      
+      let totalAccounts = 0;
       const domains = new Set<string>();
       const providers = new Set<string>();
       
-      accountFiles.forEach(file => {
-        const parts = file.replace('.json', '').split('_');
-        if (parts.length >= 3) {
-          // Format: domain_provider_suffix (e.g., example.com_letsencrypt_staging)
-          const domain = parts.slice(0, -2).join('_');
-          const provider = parts[parts.length - 2];
-          domains.add(domain);
-          providers.add(provider);
+      const domainDirs = await fs.promises.readdir(this.accountsDir);
+      
+      for (const domainDir of domainDirs) {
+        const domainPath = path.join(this.accountsDir, domainDir);
+        const stat = await fs.promises.stat(domainPath);
+        
+        if (stat.isDirectory()) {
+          domains.add(domainDir);
+          
+          // Check staging and prod directories
+          for (const envDir of ['staging', 'prod']) {
+            const envPath = path.join(domainPath, envDir);
+            if (fs.existsSync(envPath)) {
+              const files = await fs.promises.readdir(envPath);
+              const accountFiles = files.filter(file => file.endsWith('.json'));
+              totalAccounts += accountFiles.length;
+              
+              accountFiles.forEach(file => {
+                const provider = file.replace('.json', '');
+                providers.add(provider);
+              });
+            }
+          }
         }
-      });
+      }
 
       return {
-        totalAccounts: accountFiles.length,
+        totalAccounts,
         domains: Array.from(domains),
         providers: Array.from(providers)
       };

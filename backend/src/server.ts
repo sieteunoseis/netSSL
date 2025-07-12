@@ -13,6 +13,9 @@ import { accountManager } from './account-manager';
 import { getAccountsDirectoryStructure, getAccountsSize, formatBytes } from './accounts-utils';
 import { SSHClient } from './ssh-client';
 import { autoRenewalCron } from './auto-renewal-cron';
+import { LetsEncryptAccountChecker } from './letsencrypt-account-check';
+import { getDomainFromConnection } from './utils/domain-utils';
+import { migrateAccountFiles } from './migrate-accounts';
 
 dotenv.config({ path: '../.env' });
 
@@ -621,13 +624,20 @@ app.get('/api/data/:id/certificate', asyncHandler(async (req: Request, res: Resp
     return res.status(404).json({ error: 'Connection not found' });
   }
 
-  const fullFQDN = `${connection.hostname}.${connection.domain}`;
-  const certInfo = await getCertificateInfoWithFallback(fullFQDN);
+  const domain = getDomainFromConnection(connection);
+  if (!domain) {
+    return res.status(400).json({ 
+      error: 'Invalid connection configuration',
+      details: 'Missing hostname/domain or portal_url for certificate lookup'
+    });
+  }
+
+  const certInfo = await getCertificateInfoWithFallback(domain);
   
   if (!certInfo) {
     return res.status(404).json({ 
       error: 'Certificate not found',
-      details: `Unable to retrieve certificate information for ${fullFQDN}`
+      details: `Unable to retrieve certificate information for ${domain}`
     });
   }
 
@@ -730,9 +740,17 @@ process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
 
 // Start server
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, '0.0.0.0', async () => {
   Logger.info(`Server running on port ${PORT}`);
   Logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  
+  // Migrate account files to new structure
+  const accountsDir = process.env.ACCOUNTS_DIR || './accounts';
+  await migrateAccountFiles(accountsDir);
+  
+  // Check and create Let's Encrypt accounts on startup
+  const accountChecker = new LetsEncryptAccountChecker(database);
+  await accountChecker.checkAndCreateAccounts();
 });
 
 export default app;

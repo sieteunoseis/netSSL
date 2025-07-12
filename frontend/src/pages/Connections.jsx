@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import DataTable from "@/components/DataTable";
 import BackgroundLogo from "@/components/BackgroundLogo";
-import AddConnectionModal from "@/components/AddConnectionModal";
+import AddConnectionModal from "@/components/AddConnectionModalTabbed";
 import SettingsModal from "@/components/SettingsModal";
 import { apiCall } from '../lib/api';
 

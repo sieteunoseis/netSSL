@@ -250,18 +250,20 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         await this.updateStatus(status, 'uploading_certificate', 'Certificate ready for download', 90);
         status.logs.push(`Certificate generated and ready for manual installation on ${connection.name}`);
         await accountManager.saveRenewalLog(fullFQDN, `Certificate generated and ready for manual installation on ${connection.name}`);
-        await accountManager.saveRenewalLog(fullFQDN, `Certificate files available in: ./accounts/${fullFQDN}/`);
+        const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
+        const envDir = isStaging ? 'staging' : 'prod';
+        await accountManager.saveRenewalLog(fullFQDN, `Certificate files available in: ./accounts/${fullFQDN}/${envDir}/`);
         
         // Create CRT and KEY files for easier ESXi import
         try {
-          const domainDir = path.join(accountManager['accountsDir'], fullFQDN);
-          const certPath = path.join(domainDir, 'certificate.pem');
-          const privateKeyPath = path.join(domainDir, 'private_key.pem');
+          const domainEnvDir = path.join(accountManager['accountsDir'], fullFQDN, envDir);
+          const certPath = path.join(domainEnvDir, 'certificate.pem');
+          const privateKeyPath = path.join(domainEnvDir, 'private_key.pem');
           
           // Create .crt file from certificate.pem
           if (fs.existsSync(certPath)) {
             const certContent = await fs.promises.readFile(certPath, 'utf8');
-            const crtPath = path.join(domainDir, `${fullFQDN}.crt`);
+            const crtPath = path.join(domainEnvDir, `${fullFQDN}.crt`);
             await fs.promises.writeFile(crtPath, certContent);
             status.logs.push(`Created ${fullFQDN}.crt file for ESXi import`);
             await accountManager.saveRenewalLog(fullFQDN, `Created ${fullFQDN}.crt file for ESXi import`);
@@ -271,7 +273,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
           if (fs.existsSync(privateKeyPath)) {
             const keyContent = await fs.promises.readFile(privateKeyPath, 'utf8');
             if (keyContent.trim()) { // Only create if not empty
-              const keyPath = path.join(domainDir, `${fullFQDN}.key`);
+              const keyPath = path.join(domainEnvDir, `${fullFQDN}.key`);
               await fs.promises.writeFile(keyPath, keyContent);
               status.logs.push(`Created ${fullFQDN}.key file for ESXi import`);
               await accountManager.saveRenewalLog(fullFQDN, `Created ${fullFQDN}.key file for ESXi import`);
@@ -314,8 +316,30 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
 
   private async getExistingCertificate(domain: string): Promise<string | null> {
     try {
-      const fullChainPath = path.join(process.env.ACCOUNTS_DIR || './accounts', domain, 'fullchain.pem');
+      // Use environment-specific directory structure
+      const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
+      const envDir = isStaging ? 'staging' : 'prod';
+      const fullChainPath = path.join(process.env.ACCOUNTS_DIR || './accounts', domain, envDir, 'fullchain.pem');
+      
       if (!fs.existsSync(fullChainPath)) {
+        // Try to find certificate.pem as fallback
+        const certPath = path.join(process.env.ACCOUNTS_DIR || './accounts', domain, envDir, 'certificate.pem');
+        if (!fs.existsSync(certPath)) {
+          return null;
+        }
+        
+        const certificateData = await fs.promises.readFile(certPath, 'utf8');
+        const cert = new crypto.X509Certificate(certificateData);
+
+        const thirtyDaysFromNow = new Date();
+        thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
+
+        if (new Date(cert.validTo) > thirtyDaysFromNow) {
+          const envType = isStaging ? 'staging' : 'production';
+          Logger.info(`Found existing certificate for ${domain} that is valid for more than 30 days (${envType}).`);
+          return certificateData;
+        }
+
         return null;
       }
 
@@ -326,7 +350,8 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
 
       if (new Date(cert.validTo) > thirtyDaysFromNow) {
-        Logger.info(`Found existing certificate for ${domain} that is valid for more than 30 days.`);
+        const envType = isStaging ? 'staging' : 'production';
+        Logger.info(`Found existing certificate for ${domain} that is valid for more than 30 days (${envType}).`);
         return certificateData;
       }
 
@@ -524,19 +549,34 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       
       await this.updateStatus(status, 'creating_account', 'Setting up Let\'s Encrypt account', 20);
       
-      // Get or create ACME account
-      let account = await acmeClient.loadAccount(fullFQDN);
+      // Load existing ACME account
+      const account = await acmeClient.loadAccount(fullFQDN);
       if (!account) {
-        Logger.info('No existing account found, creating new account');
-        await accountManager.saveRenewalLog(fullFQDN, `No existing account found, creating new account`);
+        const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
+        const envType = isStaging ? 'STAGING' : 'PRODUCTION';
+        const errorMsg = `No Let's Encrypt account found for ${fullFQDN} in ${envType} mode. The account should have been created during server startup. Please restart the server to create missing accounts.`;
+        
+        Logger.error(errorMsg);
+        await accountManager.saveRenewalLog(fullFQDN, `ERROR: ${errorMsg}`);
+        
+        // Try to create account as fallback
         const email = settings.find(s => s.key_name === 'LETSENCRYPT_EMAIL')?.key_value;
         if (!email) {
           throw new Error('Let\'s Encrypt email not configured in settings. Please add LETSENCRYPT_EMAIL to your settings.');
         }
-        Logger.info(`Creating new Let's Encrypt account with email: ${email}`);
-        await accountManager.saveRenewalLog(fullFQDN, `Creating new Let's Encrypt account with email: ${email}`);
-        account = await acmeClient.createAccount(email, fullFQDN);
-        await accountManager.saveRenewalLog(fullFQDN, `Account created successfully`);
+        
+        Logger.info(`Attempting to create account as fallback with email: ${email}`);
+        await accountManager.saveRenewalLog(fullFQDN, `Attempting to create account as fallback with email: ${email}`);
+        
+        try {
+          const newAccount = await acmeClient.createAccount(email, fullFQDN);
+          await accountManager.saveRenewalLog(fullFQDN, `Account created successfully as fallback`);
+          await accountManager.saveRenewalLog(fullFQDN, `Account URL: ${newAccount.accountUrl}`);
+        } catch (accountError) {
+          Logger.error(`Failed to create account as fallback:`, accountError);
+          await accountManager.saveRenewalLog(fullFQDN, `Failed to create account: ${accountError instanceof Error ? accountError.message : 'Unknown error'}`);
+          throw new Error(`Failed to create Let's Encrypt account for ${fullFQDN}. ${accountError instanceof Error ? accountError.message : 'Unknown error'}`);
+        }
       } else {
         Logger.info(`Using existing account for domain: ${fullFQDN}`);
         await accountManager.saveRenewalLog(fullFQDN, `Using existing account for domain: ${fullFQDN}`);

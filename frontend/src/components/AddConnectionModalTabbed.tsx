@@ -1,9 +1,28 @@
 import { useState, useEffect } from "react";
+import { flushSync } from "react-dom";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus } from "lucide-react";
 import DataForm from "./DataForm";
+
+interface FieldCondition {
+  field: string;
+  value: string | boolean;
+}
+
+interface FieldConditionMultiple {
+  field: string;
+  values: (string | boolean)[];
+}
+
+interface FormField {
+  name: string;
+  type: string;
+  default?: string | boolean;
+  conditional?: FieldCondition;
+  conditionalMultiple?: FieldConditionMultiple[];
+}
 
 interface AddConnectionModalTabbedProps {
   onConnectionAdded: () => void;
@@ -12,9 +31,9 @@ interface AddConnectionModalTabbedProps {
 
 // Define the field groups
 const FIELD_GROUPS = {
-  basic: ["name", "hostname", "application_type"],
+  basic: ["name", "hostname", "application_type", "application_type_info", "application_type_info_ise", "application_type_info_general"],
   authentication: ["username", "password"],
-  certificate: ["domain", "ssl_provider", "dns_provider", "alt_names", "custom_csr"],
+  certificate: ["domain", "ssl_provider", "dns_provider", "alt_names", "custom_csr", "general_private_key", "portal_url", "ise_nodes", "ise_certificate", "ise_private_key"],
   advanced: ["enable_ssh", "auto_restart_service", "auto_renew"]
 };
 
@@ -24,8 +43,8 @@ const AddConnectionModalTabbed: React.FC<AddConnectionModalTabbedProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("basic");
-  const [formData, setFormData] = useState<Record<string, any>>({});
-  const [data, setData] = useState<any[]>([]);
+  const [formData, setFormData] = useState<Record<string, string | boolean>>({});
+  const [data, setData] = useState<FormField[]>([]);
 
   // Fetch configuration data
   useEffect(() => {
@@ -35,7 +54,7 @@ const AddConnectionModalTabbed: React.FC<AddConnectionModalTabbedProps> = ({
       setData(jsonData);
       
       // Initialize form data with default values
-      const initialData = jsonData.reduce((obj: Record<string, any>, value: any) => {
+      const initialData = jsonData.reduce((obj: Record<string, string | boolean>, value: FormField) => {
         obj[value.name] = value.default !== undefined ? value.default : (value.type === "SWITCH" ? false : "");
         return obj;
       }, {});
@@ -57,6 +76,17 @@ const AddConnectionModalTabbed: React.FC<AddConnectionModalTabbedProps> = ({
     setFormData({});
   };
 
+  // Handle form data changes without focus issues
+  const handleFormDataChange = (newFormData: Record<string, string | boolean>) => {
+    // Use flushSync to ensure atomic updates and prevent focus issues
+    flushSync(() => {
+      setFormData(prevData => ({
+        ...prevData,
+        ...newFormData
+      }));
+    });
+  };
+
   const defaultTrigger = (
     <Button className="flex items-center space-x-2">
       <Plus className="w-4 h-4" />
@@ -70,8 +100,19 @@ const AddConnectionModalTabbed: React.FC<AddConnectionModalTabbedProps> = ({
     return fields.some(fieldName => {
       const field = data.find(f => f.name === fieldName);
       if (!field) return false;
-      if (!field.conditional) return true;
-      return formData[field.conditional.field] === field.conditional.value;
+      if (!field.conditional && !field.conditionalMultiple) return true;
+      
+      if (field.conditional) {
+        return formData[field.conditional.field] === field.conditional.value;
+      }
+      
+      if (field.conditionalMultiple) {
+        return field.conditionalMultiple.some((condition: FieldConditionMultiple) => 
+          condition.values.includes(formData[condition.field])
+        );
+      }
+      
+      return true;
     });
   };
 
@@ -80,8 +121,20 @@ const AddConnectionModalTabbed: React.FC<AddConnectionModalTabbedProps> = ({
     const fieldNames = FIELD_GROUPS[tabName as keyof typeof FIELD_GROUPS];
     return data.filter(field => {
       if (!fieldNames.includes(field.name)) return false;
-      if (!field.conditional) return true;
-      return formData[field.conditional.field] === field.conditional.value;
+      
+      if (!field.conditional && !field.conditionalMultiple) return true;
+      
+      if (field.conditional) {
+        return formData[field.conditional.field] === field.conditional.value;
+      }
+      
+      if (field.conditionalMultiple) {
+        return field.conditionalMultiple.some((condition: FieldConditionMultiple) => 
+          condition.values.includes(formData[condition.field])
+        );
+      }
+      
+      return true;
     });
   };
 
@@ -90,16 +143,18 @@ const AddConnectionModalTabbed: React.FC<AddConnectionModalTabbedProps> = ({
       <DialogTrigger asChild>
         {trigger || defaultTrigger}
       </DialogTrigger>
-      <DialogContent tabIndex={-1} className="max-w-4xl max-h-[90vh] flex flex-col">
+      <DialogContent
+        className="max-w-4xl w-[95vw] sm:w-[90vw] max-h-[90vh] h-[90vh] flex flex-col overflow-hidden"
+      >
         <DialogHeader>
           <DialogTitle>Add New Connection</DialogTitle>
           <DialogDescription>
-            Add a new Cisco UC server connection for certificate management.
+            Add a new Cisco application connection for certificate management.
           </DialogDescription>
         </DialogHeader>
         
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
-          <TabsList className="grid w-full grid-cols-4">
+        <Tabs key="modal-tabs" value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
+          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 flex-shrink-0">
             <TabsTrigger value="basic">Basic Info</TabsTrigger>
             {shouldShowTab("authentication") && (
               <TabsTrigger value="authentication">Authentication</TabsTrigger>
@@ -110,12 +165,12 @@ const AddConnectionModalTabbed: React.FC<AddConnectionModalTabbedProps> = ({
             )}
           </TabsList>
           
-          <div className="flex-1 overflow-y-auto pl-1 pr-2 mt-4 pb-4">
+          <div className="flex-1 overflow-y-auto pl-1 pr-2 mt-4 pb-4 min-h-0 scroll-smooth scrollbar-styled">
             <TabsContent value="basic" className="mt-0">
               <DataForm 
                 onDataAdded={handleConnectionAdded}
                 fields={getTabFields("basic")}
-                onFormDataChange={setFormData}
+                onFormDataChange={handleFormDataChange}
                 sharedFormData={formData}
                 isPartOfTabbedForm={true}
               />
@@ -126,7 +181,7 @@ const AddConnectionModalTabbed: React.FC<AddConnectionModalTabbedProps> = ({
                 <DataForm 
                   onDataAdded={handleConnectionAdded}
                   fields={getTabFields("authentication")}
-                  onFormDataChange={setFormData}
+                  onFormDataChange={handleFormDataChange}
                   sharedFormData={formData}
                   isPartOfTabbedForm={true}
                 />
@@ -137,7 +192,7 @@ const AddConnectionModalTabbed: React.FC<AddConnectionModalTabbedProps> = ({
               <DataForm 
                 onDataAdded={handleConnectionAdded}
                 fields={getTabFields("certificate")}
-                onFormDataChange={setFormData}
+                onFormDataChange={handleFormDataChange}
                 sharedFormData={formData}
                 isPartOfTabbedForm={true}
               />
@@ -148,7 +203,7 @@ const AddConnectionModalTabbed: React.FC<AddConnectionModalTabbedProps> = ({
                 <DataForm 
                   onDataAdded={handleConnectionAdded}
                   fields={getTabFields("advanced")}
-                  onFormDataChange={setFormData}
+                  onFormDataChange={handleFormDataChange}
                   sharedFormData={formData}
                   isPartOfTabbedForm={true}
                 />
@@ -156,7 +211,7 @@ const AddConnectionModalTabbed: React.FC<AddConnectionModalTabbedProps> = ({
             )}
           </div>
           
-          <div className="flex justify-end pt-4 border-t">
+          <div className="flex justify-end pt-4 border-t flex-shrink-0 bg-background">
             <Button 
               onClick={() => {
                 // Trigger form submission
