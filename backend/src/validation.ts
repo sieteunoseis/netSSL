@@ -217,5 +217,10 @@ export const sanitizeConnectionData = (data: any): Partial<ConnectionRecord> => 
     sanitized.auto_renew_last_attempt = validator.escape(String(data.auto_renew_last_attempt || ''));
   }
 
+  // Handle is_enabled field - defaults to true if not provided
+  if (data.is_enabled !== undefined) {
+    sanitized.is_enabled = Boolean(data.is_enabled);
+  }
+
   return sanitized;
 };

@@ -384,11 +384,23 @@ app.delete('/api/data/:id', asyncHandler(async (req: Request, res: Response) => 
   return res.status(204).send();
 }));
 
-// Issue certificate for connection
+// Issue certificate for connection with WebSocket support
 app.post('/api/data/:id/issue-cert', asyncHandler(async (req: Request, res: Response) => {
   const id = parseInt(req.params.id);
   if (isNaN(id)) {
     return res.status(400).json({ error: 'Invalid ID parameter' });
+  }
+
+  // Check for existing certificate renewal operation
+  const existingOperation = await operationManager.checkActiveOperation(id, 'certificate_renewal');
+  if (existingOperation) {
+    return res.json({
+      operationId: existingOperation.id,
+      status: 'already_running',
+      message: 'Certificate renewal already in progress',
+      progress: existingOperation.progress,
+      startedAt: existingOperation.startedAt.toISOString()
+    });
   }
 
   // Check if connection exists
@@ -397,15 +409,25 @@ app.post('/api/data/:id/issue-cert', asyncHandler(async (req: Request, res: Resp
     return res.status(404).json({ error: 'Connection not found' });
   }
 
-  // Start certificate renewal process
-  const renewalStatus = await certificateRenewalService.renewCertificate(id, database);
-  
-  return res.json({ 
-    message: 'Certificate renewal initiated', 
-    connectionId: id,
-    renewalId: renewalStatus.id,
-    status: renewalStatus.status
-  });
+  try {
+    // Start certificate renewal process with operation manager
+    const renewalStatus = await certificateRenewalService.renewCertificate(id, database, operationManager);
+    
+    return res.json({ 
+      operationId: renewalStatus.id,
+      status: 'started',
+      message: 'Certificate renewal initiated',
+      connectionId: id,
+      renewalId: renewalStatus.id, // For backward compatibility
+      estimatedDuration: 180000 // 3 minutes
+    });
+  } catch (error: any) {
+    Logger.error(`Error starting certificate renewal for connection ${id}: ${error.message}`);
+    return res.status(500).json({
+      error: 'Failed to start certificate renewal',
+      details: error.message
+    });
+  }
 }));
 
 // Get renewal status

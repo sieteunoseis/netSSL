@@ -7,6 +7,7 @@ import { DatabaseManager } from './database';
 import { ConnectionRecord } from './types';
 import { accountManager } from './account-manager';
 import { SSHClient } from './ssh-client';
+import { OperationStatusManager } from './services/operation-status-manager';
 
 export interface RenewalStatus {
   id: string;
@@ -27,7 +28,7 @@ export interface RenewalStatus {
 }
 
 export interface CertificateRenewalService {
-  renewCertificate(connectionId: number, database: DatabaseManager): Promise<RenewalStatus>;
+  renewCertificate(connectionId: number, database: DatabaseManager, operationManager: OperationStatusManager): Promise<RenewalStatus>;
   getRenewalStatus(renewalId: string): Promise<RenewalStatus | null>;
 }
 
@@ -42,13 +43,35 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     this.database = database;
   }
 
-  async renewCertificate(connectionId: number, database: DatabaseManager): Promise<RenewalStatus> {
+  async renewCertificate(connectionId: number, database: DatabaseManager, operationManager?: OperationStatusManager): Promise<RenewalStatus> {
     // Check if there's already an active renewal for this connection
-    if (this.activeRenewals.has(connectionId)) {
-      throw new Error('A certificate renewal is already in progress for this connection');
+    if (operationManager) {
+      const existingOperation = await operationManager.checkActiveOperation(connectionId, 'certificate_renewal');
+      if (existingOperation) {
+        throw new Error('A certificate renewal is already in progress for this connection');
+      }
+    } else {
+      // Check in-memory cache for legacy support
+      if (this.activeRenewals.has(connectionId)) {
+        throw new Error('A certificate renewal is already in progress for this connection');
+      }
     }
 
-    const renewalId = crypto.randomUUID();
+    let renewalId: string;
+    
+    if (operationManager) {
+      // Start the operation using the operation manager
+      const operation = await operationManager.startOperation(connectionId, 'certificate_renewal', 'user', {
+        hostname: 'pending', // Will be updated in performRenewal
+        renewal_type: 'certificate'
+      });
+      renewalId = operation.id;
+    } else {
+      // Use legacy approach for cron jobs
+      renewalId = crypto.randomUUID();
+      this.activeRenewals.add(connectionId);
+    }
+
     const status: RenewalStatus = {
       id: renewalId,
       connectionId,
@@ -60,14 +83,13 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     };
 
     this.renewalStatuses.set(renewalId, status);
-    this.activeRenewals.add(connectionId); // Mark as active
     Logger.info(`Created renewal status with ID: ${renewalId} for connection ${connectionId}`);
 
-    // Save to database
+    // Save to database (legacy support)
     await database.saveRenewalStatus(renewalId, connectionId, status.status, undefined, status.message, undefined, status.logs);
 
     // Start the renewal process asynchronously with comprehensive error handling
-    this.performRenewal(renewalId, connectionId, database).catch(async error => {
+    this.performRenewal(renewalId, connectionId, database, operationManager).catch(async error => {
       try {
         Logger.error(`Certificate renewal failed for connection ${connectionId}:`, error);
         status.status = 'failed';
@@ -76,7 +98,19 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         status.endTime = new Date();
         status.logs.push(`ERROR: ${status.error}`);
         
-        // Save failed status to database
+        // Update operation status if available
+        if (operationManager) {
+          await operationManager.updateOperation(renewalId, {
+            status: 'failed',
+            progress: 100,
+            error: status.error,
+            metadata: {
+              logs: status.logs
+            }
+          });
+        }
+        
+        // Save failed status to database (legacy support)
         if (database) {
           await database.saveRenewalStatus(
             renewalId,
@@ -94,7 +128,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         Logger.error(`Error during renewal cleanup for connection ${connectionId}:`, cleanupError);
       }
     }).finally(() => {
-      // Always remove from active renewals when done
+      // Always remove from active renewals when done (legacy support)
       this.activeRenewals.delete(connectionId);
     });
 
@@ -153,13 +187,17 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     return progressMap[status] || 0;
   }
 
-  private async performRenewal(renewalId: string, connectionId: number, database: DatabaseManager): Promise<void> {
+  private async performRenewal(renewalId: string, connectionId: number, database: DatabaseManager, operationManager?: OperationStatusManager): Promise<void> {
     const status = this.renewalStatuses.get(renewalId)!;
     
     // Ensure database is set for this renewal
     if (!this.database) {
       this.database = database;
     }
+    
+    // Helper method to update status with operationManager
+    const updateStatusWithOp = (newStatus: RenewalStatus['status'], message: string, progress: number) => 
+      this.updateStatus(status, newStatus, message, progress, operationManager);
     
     try {
       // Get connection details
@@ -174,17 +212,22 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       const existingCert = await this.getExistingCertificate(fullFQDN);
       if (existingCert) {
         if (connection.application_type === 'general') {
-          await this.updateStatus(status, 'uploading_certificate', 'Existing certificate available for download', 80);
+          await updateStatusWithOp('uploading_certificate', 'Existing certificate available for download', 80);
           status.logs.push(`Existing valid certificate available for ${connection.name}`);
         } else {
-          await this.updateStatus(status, 'uploading_certificate', 'Using existing valid certificate', 80);
+          await updateStatusWithOp('uploading_certificate', 'Using existing valid certificate', 80);
           await this.uploadCertificateToCUCM(connection, existingCert, status);
+        }
+        
+        // Notify user about service restart attempt
+        if (connection.enable_ssh && connection.auto_restart_service) {
+          await updateStatusWithOp('uploading_certificate', 'Certificate ready. Now attempting to restart Cisco Tomcat service...', 91);
         }
         
         // Handle service restart if enabled
         await this.handleServiceRestart(connection, status);
         
-        await this.updateStatus(status, 'completed', 'Certificate renewal completed successfully', 100);
+        await updateStatusWithOp('completed', 'Certificate renewal completed successfully', 100);
         status.endTime = new Date();
         return;
       }
@@ -193,7 +236,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       let csr: string;
       if (connection.application_type === 'general') {
         // For general applications, use the provided custom CSR
-        await this.updateStatus(status, 'generating_csr', 'Processing custom CSR for general application', 10);
+        await updateStatusWithOp('generating_csr', 'Processing custom CSR for general application', 10);
         
         if (!connection.custom_csr) {
           throw new Error('Custom CSR is required for general applications');
@@ -236,18 +279,18 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         }
       } else {
         // For VOS applications (CUCM, CER, CUC), generate CSR from API
-        await this.updateStatus(status, 'generating_csr', 'Generating CSR from VOS application API', 10);
+        await updateStatusWithOp('generating_csr', 'Generating CSR from VOS application API', 10);
         csr = await this.generateCSRFromCUCM(connection, status);
       }
       
       // Now continue with Let's Encrypt certificate request
-      await this.updateStatus(status, 'requesting_certificate', 'Requesting certificate from Let\'s Encrypt', 20);
-      const certificate = await this.requestCertificate(connection, csr, database, status);
+      await updateStatusWithOp('requesting_certificate', 'Requesting certificate from Let\'s Encrypt', 20);
+      const certificate = await this.requestCertificate(connection, csr, database, status, operationManager);
       
       // Step 4: Handle certificate installation based on application type
       if (connection.application_type === 'general') {
         // For general applications, just make certificate available for download
-        await this.updateStatus(status, 'uploading_certificate', 'Certificate ready for download', 90);
+        await updateStatusWithOp('uploading_certificate', 'Certificate ready for download', 90);
         status.logs.push(`Certificate generated and ready for manual installation on ${connection.name}`);
         await accountManager.saveRenewalLog(fullFQDN, `Certificate generated and ready for manual installation on ${connection.name}`);
         const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
@@ -285,14 +328,19 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         }
       } else {
         // For VOS applications, upload via API
-        await this.updateStatus(status, 'uploading_certificate', 'Uploading certificate to VOS application', 90);
+        await updateStatusWithOp('uploading_certificate', 'Uploading certificate to VOS application', 90);
         await this.uploadCertificateToCUCM(connection, certificate, status);
+      }
+      
+      // Notify user about service restart attempt
+      if (connection.enable_ssh && connection.auto_restart_service) {
+        await updateStatusWithOp('uploading_certificate', 'Certificate uploaded. Now attempting to restart Cisco Tomcat service...', 91);
       }
       
       // Handle service restart if enabled
       await this.handleServiceRestart(connection, status);
       
-      await this.updateStatus(status, 'completed', 'Certificate renewal completed successfully', 100);
+      await updateStatusWithOp('completed', 'Certificate renewal completed successfully', 100);
       status.endTime = new Date();
       
       // Save the renewal completion info
@@ -362,14 +410,27 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     }
   }
 
-  private async updateStatus(status: RenewalStatus, newStatus: RenewalStatus['status'], message: string, progress: number): Promise<void> {
+  private async updateStatus(status: RenewalStatus, newStatus: RenewalStatus['status'], message: string, progress: number, operationManager?: OperationStatusManager): Promise<void> {
     status.status = newStatus;
     status.message = message;
     status.progress = progress;
     status.logs.push(`${new Date().toISOString()}: ${message}`);
     Logger.info(`Renewal ${status.id}: ${message}`);
     
-    // Save to database if available
+    // Update operation status - this will automatically emit WebSocket events
+    if (operationManager) {
+      await operationManager.updateOperation(status.id, {
+        status: newStatus === 'completed' ? 'completed' : newStatus === 'failed' ? 'failed' : 'in_progress',
+        progress: progress,
+        message: message,
+        metadata: {
+          logs: status.logs,
+          renewal_status: newStatus
+        }
+      });
+    }
+    
+    // Save to database if available (legacy support)
     if (this.database) {
       await this.database.saveRenewalStatus(
         status.id,
@@ -514,21 +575,21 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     });
   }
 
-  private async requestCertificate(connection: ConnectionRecord, csr: string, database: DatabaseManager, status: RenewalStatus): Promise<string> {
+  private async requestCertificate(connection: ConnectionRecord, csr: string, database: DatabaseManager, status: RenewalStatus, operationManager?: OperationStatusManager): Promise<string> {
     // Get SSL provider settings
     const sslProvider = connection.ssl_provider || 'letsencrypt';
     const settings = await database.getSettingsByProvider(sslProvider);
     
     if (sslProvider === 'letsencrypt') {
-      return this.requestLetsEncryptCertificate(connection, csr, settings, database, status);
+      return this.requestLetsEncryptCertificate(connection, csr, settings, database, status, operationManager);
     } else if (sslProvider === 'zerossl') {
-      return this.requestZeroSSLCertificate(connection, csr, settings, status);
+      return this.requestZeroSSLCertificate(connection, csr, settings, status, operationManager);
     } else {
       throw new Error(`Unsupported SSL provider: ${sslProvider}`);
     }
   }
 
-  private async requestLetsEncryptCertificate(connection: ConnectionRecord, csr: string, settings: any[], database: DatabaseManager, status: RenewalStatus): Promise<string> {
+  private async requestLetsEncryptCertificate(connection: ConnectionRecord, csr: string, settings: any[], database: DatabaseManager, status: RenewalStatus, operationManager?: OperationStatusManager): Promise<string> {
     try {
       const { acmeClient } = await import('./acme-client');
       const CloudflareProvider = (await import('./dns-providers/cloudflare')).default;
@@ -733,7 +794,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     }
   }
 
-  private async requestZeroSSLCertificate(connection: ConnectionRecord, csr: string, _settings: any[], status: RenewalStatus): Promise<string> {
+  private async requestZeroSSLCertificate(connection: ConnectionRecord, csr: string, _settings: any[], status: RenewalStatus, operationManager?: OperationStatusManager): Promise<string> {
     try {
       const { ZeroSSLProvider } = await import('./ssl-providers/zerossl');
       const { MXToolboxService } = await import('./services/mxtoolbox');
@@ -1488,7 +1549,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       Logger.info(`Starting Cisco Tomcat service restart for ${fqdn}`);
       
       status.logs.push(`Restarting Cisco Tomcat service on ${fqdn}`);
-      await this.updateStatus(status, 'uploading_certificate', 'Restarting Cisco Tomcat service via SSH', 95);
+      await this.updateStatus(status, 'uploading_certificate', 'Attempting to restart Cisco Tomcat service (if enabled)', 92);
 
       // Test SSH connection first
       const sshTest = await SSHClient.testConnection({
@@ -1504,13 +1565,24 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         return;
       }
 
-      // Execute service restart command with extended timeout (5 minutes)
-      const restartResult = await SSHClient.executeCommand({
+      // Update status to show we're starting the service restart
+      await this.updateStatus(status, 'uploading_certificate', 'Starting Cisco Tomcat service restart...', 94);
+
+      // Execute service restart command with streaming support and extended timeout (5 minutes)
+      const restartResult = await SSHClient.executeCommandWithStream({
         hostname: fqdn,
         username: connection.username!,
         password: connection.password!,
         command: 'utils service restart Cisco Tomcat',
-        timeout: 300000 // 5 minutes for service restart
+        timeout: 300000, // 5 minutes for service restart
+        onData: async (chunk: string, totalOutput: string) => {
+          // Check for [STARTING] pattern and update progress to 97%
+          if (chunk.includes('[STARTING]') || totalOutput.includes('Cisco Tomcat[STARTING]')) {
+            Logger.info(`Detected Cisco Tomcat [STARTING] for ${fqdn} during certificate renewal`);
+            await this.updateStatus(status, 'uploading_certificate', 'Cisco Tomcat service is starting...', 97);
+            status.logs.push(`🔄 Cisco Tomcat service is starting on ${fqdn}`);
+          }
+        }
       });
 
       if (restartResult.success) {
