@@ -9,6 +9,7 @@ import AddConnectionModal from "@/components/AddConnectionModalTabbed";
 import SettingsModal from "@/components/SettingsModal";
 import CertificateInfo from "@/components/CertificateInfo";
 import RenewalStatus from "@/components/RenewalStatus";
+import ServiceRestartButton from "@/components/ServiceRestartButton";
 import { apiCall } from "@/lib/api";
 import templateConfig from "../../template.config.json";
 import { 
@@ -255,55 +256,6 @@ const Home = () => {
     return providers[provider] || provider;
   };
 
-  const handleServiceRestart = async (connection, confirmed = false) => {
-    // If not confirmed, show confirmation dialog
-    if (!confirmed) {
-      setConfirmRestart({ id: connection.id, name: connection.name });
-      return;
-    }
-
-    // Close confirmation dialog
-    setConfirmRestart(null);
-
-    const newRestarting = new Set(restartingService);
-    newRestarting.add(connection.id);
-    setRestartingService(newRestarting);
-
-    try {
-      const response = await apiCall(`/data/${connection.id}/restart-service`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      const result = await response.json();
-      
-      if (result.success) {
-        toast({
-          title: "Service Restart Successful",
-          description: "Cisco Tomcat service has been restarted successfully",
-        });
-      } else {
-        toast({
-          title: "Service Restart Failed",
-          description: result.error || "Unable to restart service",
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      console.error('Error restarting service:', error);
-      toast({
-        title: "Restart Error",
-        description: "Failed to restart service. Please check your connection.",
-        variant: "destructive",
-      });
-    } finally {
-      const newRestarting = new Set(restartingService);
-      newRestarting.delete(connection.id);
-      setRestartingService(newRestarting);
-    }
-  };
 
   const getOverallStatus = () => {
     if (connectionState.connections.length === 0) return { total: 0, valid: 0, expiring: 0, expired: 0 };
@@ -486,24 +438,10 @@ const Home = () => {
                   {/* VOS Service Restart Button - only show for VOS apps with SSH enabled */}
                   {connection.application_type === 'vos' && connection.enable_ssh && (
                     <div className="flex justify-end pt-4">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleServiceRestart(connection)}
-                        disabled={restartingService.has(connection.id)}
-                        className="flex items-center space-x-2 text-orange-600 hover:text-orange-700 disabled:opacity-50"
-                        title="Restart Cisco Tomcat Service"
-                      >
-                        <Server className="w-4 h-4" />
-                        {restartingService.has(connection.id) ? (
-                          <>
-                            <RotateCcw className="w-4 h-4 animate-spin" />
-                            <span>Restarting...</span>
-                          </>
-                        ) : (
-                          <span>Restart Service</span>
-                        )}
-                      </Button>
+                      <ServiceRestartButton 
+                        connection={connection}
+                        onConfirmRestart={(conn) => setConfirmRestart({ id: conn.id, name: conn.name })}
+                      />
                     </div>
                   )}
                   
@@ -552,8 +490,8 @@ const Home = () => {
                 <Button
                   variant="default"
                   onClick={() => {
-                    const connection = connectionState.connections.find(c => c.id === confirmRestart.id);
-                    if (connection) handleServiceRestart(connection, true);
+                    ServiceRestartButton.startRestart(confirmRestart.id, toast);
+                    setConfirmRestart(null);
                   }}
                   className="bg-orange-600 hover:bg-orange-700 text-white"
                 >

@@ -121,6 +121,47 @@ export class DatabaseManager {
         Logger.info('Database renewal_status table created');
       }
     });
+
+    const createActiveOperationsTableQuery = `
+      CREATE TABLE IF NOT EXISTS active_operations (
+        id TEXT PRIMARY KEY,
+        connection_id INTEGER NOT NULL,
+        operation_type TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        completed_at DATETIME,
+        progress INTEGER DEFAULT 0,
+        message TEXT,
+        error TEXT,
+        metadata TEXT,
+        created_by TEXT DEFAULT 'user',
+        FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE CASCADE
+      )
+    `;
+
+    this.db.run(createActiveOperationsTableQuery, [], (err: any) => {
+      if (err) {
+        Logger.error('Failed to create active_operations table:', err);
+        throw err;
+      } else {
+        Logger.info('Database active_operations table created');
+        
+        // Create indexes for better performance
+        const indexes = [
+          'CREATE INDEX IF NOT EXISTS idx_active_operations_connection ON active_operations(connection_id)',
+          'CREATE INDEX IF NOT EXISTS idx_active_operations_status ON active_operations(status)',
+          'CREATE INDEX IF NOT EXISTS idx_active_operations_type_status ON active_operations(operation_type, status)'
+        ];
+        
+        indexes.forEach(indexQuery => {
+          this.db.run(indexQuery, [], (indexErr: any) => {
+            if (indexErr) {
+              Logger.error('Failed to create index:', indexErr);
+            }
+          });
+        });
+      }
+    });
   }
 
   private createTable(): void {
@@ -588,6 +629,250 @@ export class DatabaseManager {
           reject(err);
         } else {
           Logger.debug(`Cleaned up renewal statuses older than ${hoursOld} hours`);
+          resolve();
+        }
+      });
+    });
+  }
+
+  // Active Operations Management
+  async saveActiveOperation(
+    id: string,
+    connectionId: number,
+    operationType: string,
+    status: string = 'pending',
+    progress: number = 0,
+    message?: string,
+    error?: string,
+    metadata?: any,
+    createdBy: string = 'user'
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const query = `
+        INSERT OR REPLACE INTO active_operations 
+        (id, connection_id, operation_type, status, progress, message, error, metadata, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `;
+      
+      const metadataJson = metadata ? JSON.stringify(metadata) : null;
+      
+      this.db.run(query, [id, connectionId, operationType, status, progress, message, error, metadataJson, createdBy], (err: any) => {
+        if (err) {
+          Logger.error('Failed to save active operation:', err);
+          reject(err);
+        } else {
+          Logger.debug(`Saved active operation: ${id}`);
+          resolve();
+        }
+      });
+    });
+  }
+
+  async updateActiveOperation(
+    id: string,
+    updates: {
+      status?: string;
+      progress?: number;
+      message?: string;
+      error?: string;
+      metadata?: any;
+      completedAt?: Date;
+    }
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const fields: string[] = [];
+      const values: any[] = [];
+      
+      if (updates.status !== undefined) {
+        fields.push('status = ?');
+        values.push(updates.status);
+      }
+      
+      if (updates.progress !== undefined) {
+        fields.push('progress = ?');
+        values.push(updates.progress);
+      }
+      
+      if (updates.message !== undefined) {
+        fields.push('message = ?');
+        values.push(updates.message);
+      }
+      
+      if (updates.error !== undefined) {
+        fields.push('error = ?');
+        values.push(updates.error);
+      }
+      
+      if (updates.metadata !== undefined) {
+        fields.push('metadata = ?');
+        values.push(JSON.stringify(updates.metadata));
+      }
+      
+      if (updates.completedAt) {
+        fields.push('completed_at = ?');
+        values.push(updates.completedAt.toISOString());
+      }
+      
+      if (updates.status === 'completed' || updates.status === 'failed') {
+        fields.push('completed_at = ?');
+        values.push(new Date().toISOString());
+      }
+      
+      values.push(id);
+      
+      const query = `UPDATE active_operations SET ${fields.join(', ')} WHERE id = ?`;
+      
+      this.db.run(query, values, (err: any) => {
+        if (err) {
+          Logger.error('Failed to update active operation:', err);
+          reject(err);
+        } else {
+          Logger.debug(`Updated active operation: ${id}`);
+          resolve();
+        }
+      });
+    });
+  }
+
+  async getActiveOperation(id: string): Promise<any> {
+    return new Promise((resolve, reject) => {
+      this.db.get('SELECT * FROM active_operations WHERE id = ?', [id], (err: any, row: any) => {
+        if (err) {
+          Logger.error('Failed to get active operation:', err);
+          reject(err);
+        } else if (row) {
+          // Parse metadata from JSON
+          if (row.metadata) {
+            try {
+              row.metadata = JSON.parse(row.metadata);
+            } catch (e) {
+              row.metadata = null;
+            }
+          }
+          resolve(row);
+        } else {
+          resolve(null);
+        }
+      });
+    });
+  }
+
+  async getActiveOperationsByConnection(connectionId: number, operationType?: string): Promise<any[]> {
+    return new Promise((resolve, reject) => {
+      let query = 'SELECT * FROM active_operations WHERE connection_id = ?';
+      const params: any[] = [connectionId];
+      
+      if (operationType) {
+        query += ' AND operation_type = ?';
+        params.push(operationType);
+      }
+      
+      query += ' ORDER BY started_at DESC';
+      
+      this.db.all(query, params, (err: any, rows: any[]) => {
+        if (err) {
+          Logger.error('Failed to get active operations by connection:', err);
+          reject(err);
+        } else {
+          const operations = rows.map(row => {
+            if (row.metadata) {
+              try {
+                row.metadata = JSON.parse(row.metadata);
+              } catch (e) {
+                row.metadata = null;
+              }
+            }
+            // Transform snake_case to camelCase for frontend compatibility
+            return {
+              id: row.id,
+              connectionId: row.connection_id,
+              type: row.operation_type,
+              status: row.status,
+              progress: row.progress,
+              message: row.message,
+              error: row.error,
+              startedAt: row.started_at,
+              completedAt: row.completed_at,
+              metadata: row.metadata,
+              createdBy: row.created_by
+            };
+          });
+          resolve(operations);
+        }
+      });
+    });
+  }
+
+  async getActiveOperationsByType(connectionId: number, operationType: string, activeOnly: boolean = true): Promise<any[]> {
+    return new Promise((resolve, reject) => {
+      let query = 'SELECT * FROM active_operations WHERE connection_id = ? AND operation_type = ?';
+      const params: any[] = [connectionId, operationType];
+      
+      if (activeOnly) {
+        query += ' AND status IN (?, ?)';
+        params.push('pending', 'in_progress');
+      }
+      
+      query += ' ORDER BY started_at DESC';
+      
+      this.db.all(query, params, (err: any, rows: any[]) => {
+        if (err) {
+          Logger.error('Failed to get active operations by type:', err);
+          reject(err);
+        } else {
+          const operations = rows.map(row => {
+            if (row.metadata) {
+              try {
+                row.metadata = JSON.parse(row.metadata);
+              } catch (e) {
+                row.metadata = null;
+              }
+            }
+            // Transform snake_case to camelCase for frontend compatibility
+            return {
+              id: row.id,
+              connectionId: row.connection_id,
+              type: row.operation_type,
+              status: row.status,
+              progress: row.progress,
+              message: row.message,
+              error: row.error,
+              startedAt: row.started_at,
+              completedAt: row.completed_at,
+              metadata: row.metadata,
+              createdBy: row.created_by
+            };
+          });
+          resolve(operations);
+        }
+      });
+    });
+  }
+
+  async deleteActiveOperation(id: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.db.run('DELETE FROM active_operations WHERE id = ?', [id], (err: any) => {
+        if (err) {
+          Logger.error('Failed to delete active operation:', err);
+          reject(err);
+        } else {
+          Logger.debug(`Deleted active operation: ${id}`);
+          resolve();
+        }
+      });
+    });
+  }
+
+  async cleanupOldActiveOperations(hoursOld: number = 24): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const query = `DELETE FROM active_operations WHERE completed_at < datetime('now', '-${hoursOld} hours')`;
+      
+      this.db.run(query, [], (err: any) => {
+        if (err) {
+          Logger.error('Failed to cleanup old active operations:', err);
+          reject(err);
+        } else {
+          Logger.debug(`Cleaned up active operations older than ${hoursOld} hours`);
           resolve();
         }
       });

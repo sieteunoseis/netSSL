@@ -25,6 +25,14 @@ export interface SSHCommandResult {
   error?: string;
 }
 
+export interface SSHStreamCommandParams extends SSHCommandParams {
+  onData?: (chunk: string, totalOutput: string) => void;
+}
+
+export interface SSHStreamCommandResult extends SSHCommandResult {
+  output: string;
+}
+
 export class SSHClient {
   private client: Client | null = null;
   private isConnected = false;
@@ -446,6 +454,187 @@ export class SSHClient {
         resolveResult({
           success: false,
           error: `Failed to initiate connection: ${err.message}`
+        });
+      }
+    });
+  }
+
+  /**
+   * Execute a command on a Cisco VOS server via SSH with streaming output
+   * @param params Connection parameters, command to execute, and optional callback
+   * @returns Command result with output or error
+   */
+  static async executeCommandWithStream(params: SSHStreamCommandParams): Promise<SSHStreamCommandResult> {
+    const { hostname, username, password, command, port = 22, timeout: commandTimeout = 60000, onData } = params;
+    const conn = new Client();
+
+    return new Promise((resolve) => {
+      let commandOutput = '';
+      let resolved = false;
+
+      const cleanup = () => {
+        if (!resolved) {
+          resolved = true;
+          conn.end();
+        }
+      };
+
+      const resolveResult = (result: SSHStreamCommandResult) => {
+        cleanup();
+        resolve(result);
+      };
+
+      // Set a timeout for the entire operation
+      const timeout = setTimeout(() => {
+        resolveResult({
+          success: false,
+          error: `Command execution timeout after ${commandTimeout / 1000} seconds`,
+          output: commandOutput
+        });
+      }, commandTimeout);
+
+      conn.on('ready', () => {
+        Logger.info(`SSH connection established to ${hostname} for command execution`);
+        
+        conn.shell((err, stream) => {
+          if (err) {
+            clearTimeout(timeout);
+            resolveResult({
+              success: false,
+              error: `Failed to start shell: ${err.message}`,
+              output: ''
+            });
+            return;
+          }
+
+          Logger.info(`Executing command on ${hostname}: ${command}`);
+
+          stream.on('close', () => {
+            clearTimeout(timeout);
+            cleanup();
+          });
+
+          stream.on('data', (data: Buffer) => {
+            const chunk = data.toString();
+            commandOutput += chunk;
+            
+            Logger.info(`Command output from ${hostname}:`, {
+              chunk: chunk.trim(),
+              totalLength: commandOutput.length
+            });
+
+            // Call the onData callback if provided
+            if (onData) {
+              onData(chunk, commandOutput);
+            }
+
+            // Check if command execution is complete
+            // For service restart commands, look for specific completion patterns
+            if (command.includes('service restart') && command.includes('Cisco Tomcat')) {
+              // Look for service restart completion patterns
+              if (commandOutput.includes('[STARTING]')) {
+                // Don't resolve yet, just notify via callback
+                Logger.info(`Cisco Tomcat service is starting on ${hostname}`);
+              }
+              if (commandOutput.includes('[STARTED]') && chunk.includes('admin:')) {
+                clearTimeout(timeout);
+                Logger.info(`Cisco Tomcat service restart completed for ${hostname}`);
+                resolveResult({
+                  success: true,
+                  output: commandOutput
+                });
+              } else if (commandOutput.includes('[FAILED]') || commandOutput.includes('ERROR')) {
+                clearTimeout(timeout);
+                Logger.error(`Cisco Tomcat service restart failed for ${hostname}`);
+                resolveResult({
+                  success: false,
+                  error: 'Service restart failed',
+                  output: commandOutput
+                });
+              }
+            } else {
+              // For other commands, look for the admin prompt again after command execution
+              if (chunk.includes('admin:') && commandOutput.includes(command)) {
+                clearTimeout(timeout);
+                Logger.info(`Command execution completed for ${hostname}`);
+                resolveResult({
+                  success: true,
+                  output: commandOutput
+                });
+              }
+            }
+          });
+
+          stream.stderr.on('data', (data: Buffer) => {
+            Logger.error(`SSH command stderr from ${hostname}: ${data.toString()}`);
+            commandOutput += data.toString();
+          });
+
+          // Wait for the admin prompt first, then send the command
+          setTimeout(() => {
+            if (!resolved) {
+              Logger.info(`Sending command to ${hostname}: ${command}`);
+              stream.write(`${command}\r\n`);
+              
+              // Set a timeout for command completion (use remaining time from main timeout)
+              const remainingTime = Math.max(commandTimeout - 10000, 30000); // At least 30 seconds, or remaining time minus 10s buffer
+              setTimeout(() => {
+                if (!resolved) {
+                  clearTimeout(timeout);
+                  resolveResult({
+                    success: false,
+                    error: `Command execution timeout - no response from server after ${remainingTime / 1000} seconds`,
+                    output: commandOutput
+                  });
+                }
+              }, remainingTime);
+            }
+          }, 5000); // Wait 5 seconds for initial prompt
+        });
+      });
+
+      conn.on('error', (err) => {
+        clearTimeout(timeout);
+        Logger.error(`SSH command execution error for ${hostname}: ${err.message}`);
+        resolveResult({
+          success: false,
+          error: `Connection error: ${err.message}`,
+          output: ''
+        });
+      });
+
+      conn.on('close', () => {
+        clearTimeout(timeout);
+        if (!resolved) {
+          resolveResult({
+            success: false,
+            error: 'Connection closed unexpectedly',
+            output: commandOutput
+          });
+        }
+      });
+
+      // Attempt connection
+      try {
+        conn.connect({
+          host: hostname,
+          port,
+          username,
+          password,
+          readyTimeout: 20000,
+          algorithms: {
+            kex: ['diffie-hellman-group-exchange-sha256', 'diffie-hellman-group14-sha256', 'diffie-hellman-group-exchange-sha1', 'diffie-hellman-group14-sha1'],
+            cipher: ['aes256-ctr', 'aes192-ctr', 'aes128-ctr', 'aes256-cbc', 'aes192-cbc', 'aes128-cbc', '3des-cbc'],
+            serverHostKey: ['ssh-rsa', 'ssh-dss', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521'],
+            hmac: ['hmac-sha2-256', 'hmac-sha2-512', 'hmac-sha1']
+          }
+        });
+      } catch (err: any) {
+        clearTimeout(timeout);
+        resolveResult({
+          success: false,
+          error: `Failed to initiate connection: ${err.message}`,
+          output: ''
         });
       }
     });

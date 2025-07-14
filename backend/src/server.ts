@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
+import { createServer } from 'http';
 import { DatabaseManager } from './database';
 import { validateConnectionData, sanitizeConnectionData } from './validation';
 import { Logger } from './logger';
@@ -16,6 +17,8 @@ import { autoRenewalCron } from './auto-renewal-cron';
 import { LetsEncryptAccountChecker } from './letsencrypt-account-check';
 import { getDomainFromConnection } from './utils/domain-utils';
 import { migrateAccountFiles } from './migrate-accounts';
+import { initializeWebSocket } from './websocket-server';
+import { OperationStatusManager } from './services/operation-status-manager';
 
 dotenv.config({ path: '../.env' });
 
@@ -29,6 +32,9 @@ console.log('Processed TABLE_COLUMNS:', TABLE_COLUMNS);
 
 // Initialize database
 const database = new DatabaseManager('./db/database.db', TABLE_COLUMNS);
+
+// Initialize operation status manager
+const operationManager = new OperationStatusManager(database);
 
 // Set database on certificate renewal service
 (certificateRenewalService as any).setDatabase(database);
@@ -710,11 +716,23 @@ app.post('/api/ssh/test', asyncHandler(async (req: Request, res: Response) => {
   }
 }));
 
-// Manual service restart endpoint for VOS applications
+// Manual service restart endpoint for VOS applications with WebSocket support
 app.post('/api/data/:id/restart-service', asyncHandler(async (req: Request, res: Response) => {
   const id = parseInt(req.params.id);
   if (isNaN(id)) {
     return res.status(400).json({ error: 'Invalid ID parameter' });
+  }
+
+  // Check for existing service restart operation
+  const existingOperation = await operationManager.checkActiveOperation(id, 'service_restart');
+  if (existingOperation) {
+    return res.json({
+      operationId: existingOperation.id,
+      status: 'already_running',
+      message: 'Service restart already in progress',
+      progress: existingOperation.progress,
+      startedAt: existingOperation.startedAt.toISOString()
+    });
   }
 
   // Get the connection
@@ -750,6 +768,42 @@ app.post('/api/data/:id/restart-service', asyncHandler(async (req: Request, res:
   Logger.info(`Manual Cisco Tomcat service restart requested for ${fqdn}`);
 
   try {
+    // Start the operation
+    const operation = await operationManager.startOperation(id, 'service_restart', 'user', {
+      hostname: fqdn,
+      command: 'utils service restart Cisco Tomcat'
+    });
+
+    // Return immediately with operation details
+    res.json({
+      operationId: operation.id,
+      status: 'started',
+      message: 'Service restart initiated',
+      estimatedDuration: 300000 // 5 minutes
+    });
+
+    // Perform the restart asynchronously
+    performServiceRestart(operation.id, connection, fqdn);
+
+  } catch (error: any) {
+    Logger.error(`Error starting service restart operation for ${fqdn}: ${error.message}`);
+    return res.status(500).json({
+      error: 'Failed to start service restart operation',
+      details: error.message
+    });
+  }
+}));
+
+// Async function to perform service restart with real-time updates
+async function performServiceRestart(operationId: string, connection: any, fqdn: string) {
+  try {
+    // Update to in_progress
+    await operationManager.updateOperation(operationId, {
+      status: 'in_progress',
+      progress: 10,
+      message: 'Testing SSH connection...'
+    });
+
     // Test SSH connection first
     const sshTest = await SSHClient.testConnection({
       hostname: fqdn,
@@ -758,47 +812,82 @@ app.post('/api/data/:id/restart-service', asyncHandler(async (req: Request, res:
     });
 
     if (!sshTest.success) {
-      return res.status(500).json({
-        success: false,
-        error: 'SSH connection failed',
-        details: sshTest.error
+      await operationManager.updateOperation(operationId, {
+        status: 'failed',
+        progress: 100,
+        error: `SSH connection failed: ${sshTest.error}`
       });
+      return;
     }
 
-    // Execute service restart command with extended timeout (5 minutes)
-    const restartResult = await SSHClient.executeCommand({
+    await operationManager.updateOperation(operationId, {
+      progress: 30,
+      message: 'SSH connection successful. Starting Cisco Tomcat service restart...'
+    });
+
+    // Execute service restart command with progress updates
+    // Start with progress at 50% since we're beginning the actual restart
+    await operationManager.updateOperation(operationId, {
+      progress: 50,
+      message: 'Executing Cisco Tomcat service restart command...'
+    });
+
+    // Use the streaming version to get real-time updates
+    const restartResult = await SSHClient.executeCommandWithStream({
       hostname: fqdn,
       username: connection.username,
       password: connection.password,
       command: 'utils service restart Cisco Tomcat',
-      timeout: 300000 // 5 minutes for service restart
+      timeout: 300000, // 5 minutes
+      onData: async (chunk: string, totalOutput: string) => {
+        // Check for [STARTING] pattern and update progress to 75%
+        if (chunk.includes('[STARTING]') || totalOutput.includes('Cisco Tomcat[STARTING]')) {
+          Logger.info(`Detected Cisco Tomcat [STARTING] for ${fqdn}`);
+          await operationManager.updateOperation(operationId, {
+            progress: 75,
+            message: 'Cisco Tomcat service is starting...'
+          });
+        }
+      }
+    });
+
+    // Update progress to 90% while processing results
+    await operationManager.updateOperation(operationId, {
+      progress: 90,
+      message: 'Processing restart results...'
     });
 
     if (restartResult.success) {
-      Logger.info(`Successfully restarted Cisco Tomcat service for ${fqdn}`);
-      return res.json({
-        success: true,
+      await operationManager.updateOperation(operationId, {
+        status: 'completed',
+        progress: 100,
         message: 'Cisco Tomcat service restart completed successfully',
-        output: restartResult.output || 'Service restart command executed'
+        metadata: {
+          output: restartResult.output || 'Service restart command executed'
+        }
       });
+      Logger.info(`Successfully restarted Cisco Tomcat service for ${fqdn}`);
     } else {
-      Logger.error(`Failed to restart Cisco Tomcat service for ${fqdn}: ${restartResult.error}`);
-      return res.status(500).json({
-        success: false,
-        error: 'Service restart failed',
-        details: restartResult.error
+      await operationManager.updateOperation(operationId, {
+        status: 'failed',
+        progress: 100,
+        error: `Service restart failed: ${restartResult.error}`,
+        metadata: {
+          output: restartResult.output
+        }
       });
+      Logger.error(`Failed to restart Cisco Tomcat service for ${fqdn}: ${restartResult.error}`);
     }
 
   } catch (error: any) {
-    Logger.error(`Error during manual service restart for ${fqdn}: ${error.message}`);
-    return res.status(500).json({
-      success: false,
-      error: 'Internal server error during service restart',
-      details: error.message
+    await operationManager.updateOperation(operationId, {
+      status: 'failed',
+      progress: 100,
+      error: `Internal error during service restart: ${error.message}`
     });
+    Logger.error(`Error during service restart operation ${operationId} for ${fqdn}: ${error.message}`);
   }
-}));
+}
 
 // Apply error handling middleware
 app.use(errorHandler);
@@ -829,10 +918,18 @@ process.on('unhandledRejection', (reason, promise) => {
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
 
+// Create HTTP server
+const httpServer = createServer(app);
+
+// Initialize WebSocket server
+const io = initializeWebSocket(httpServer, database);
+operationManager.setSocketServer(io);
+
 // Start server
-app.listen(PORT, '0.0.0.0', async () => {
+httpServer.listen(PORT, '0.0.0.0', async () => {
   Logger.info(`Server running on port ${PORT}`);
   Logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  Logger.info('WebSocket server initialized');
   
   // Migrate account files to new structure
   const accountsDir = process.env.ACCOUNTS_DIR || './accounts';
