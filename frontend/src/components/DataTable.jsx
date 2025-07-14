@@ -3,9 +3,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useConfig } from '../config/ConfigContext';
 import { apiCall } from '../lib/api';
-import { ChevronDown, ChevronUp, Trash2, Eye, EyeOff, Edit, Terminal, RotateCcw, Server } from 'lucide-react';
+import { ChevronDown, ChevronUp, Trash2, Eye, EyeOff, Edit, Terminal, Server, Wrench, Power } from 'lucide-react';
 import EditConnectionModal from './EditConnectionModalTabbed';
 import { useToast } from "@/hooks/use-toast";
+import { isConnectionEnabled } from '../lib/connection-utils';
 
 const DataTable = ({ data, onDataChange }) => {
   const config = useConfig();
@@ -15,8 +16,7 @@ const DataTable = ({ data, onDataChange }) => {
   const [visiblePasswords, setVisiblePasswords] = useState(new Set());
   const [editingRecord, setEditingRecord] = useState(null);
   const [testingSSH, setTestingSSH] = useState(new Set());
-  const [restartingService, setRestartingService] = useState(new Set());
-  const [confirmRestart, setConfirmRestart] = useState(null); // {id, name} for confirmation dialog
+  const [toggling, setToggling] = useState(new Set());
 
   useEffect(() => {
     const fetchData = async () => {
@@ -86,53 +86,58 @@ const DataTable = ({ data, onDataChange }) => {
     }
   };
 
-  const handleServiceRestart = async (record, confirmed = false) => {
-    // If not confirmed, show confirmation dialog
-    if (!confirmed) {
-      setConfirmRestart({ id: record.id, name: record.name });
-      return;
-    }
-
-    // Close confirmation dialog
-    setConfirmRestart(null);
-
-    const newRestarting = new Set(restartingService);
-    newRestarting.add(record.id);
-    setRestartingService(newRestarting);
+  const handleToggleEnabled = async (record) => {
+    const newToggling = new Set(toggling);
+    newToggling.add(record.id);
+    setToggling(newToggling);
 
     try {
-      const response = await apiCall(`/data/${record.id}/restart-service`, {
-        method: 'POST',
+      // Use utility function to check current state
+      const currentEnabledState = isConnectionEnabled(record);
+      const newEnabledState = !currentEnabledState;
+      
+      console.log('Toggle Debug:', {
+        recordId: record.id,
+        recordName: record.name,
+        currentIsEnabled: record.is_enabled,
+        currentEnabledState,
+        newEnabledState
+      });
+      
+      const updateData = {
+        ...record,
+        is_enabled: newEnabledState
+      };
+      
+      console.log('Sending update data:', updateData);
+      
+      await apiCall(`/data/${record.id}`, {
+        method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify(updateData),
       });
 
-      const result = await response.json();
-      
-      if (result.success) {
-        toast({
-          title: "Service Restart Successful",
-          description: "Cisco Tomcat service has been restarted successfully",
-        });
-      } else {
-        toast({
-          title: "Service Restart Failed",
-          description: result.error || "Unable to restart service",
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      console.error('Error restarting service:', error);
       toast({
-        title: "Restart Error",
-        description: "Failed to restart service. Please check your connection.",
+        title: `Connection ${newEnabledState ? 'Enabled' : 'Disabled'}`,
+        description: `${record.name} has been ${newEnabledState ? 'enabled' : 'disabled'}. ${newEnabledState ? 'It will appear on the dashboard.' : 'It will be hidden from the dashboard.'}`,
+        duration: 3000,
+      });
+
+      onDataChange();
+    } catch (error) {
+      console.error('Error toggling connection status:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update connection status. Please try again.",
         variant: "destructive",
+        duration: 3000,
       });
     } finally {
-      const newRestarting = new Set(restartingService);
-      newRestarting.delete(record.id);
-      setRestartingService(newRestarting);
+      const newToggling = new Set(toggling);
+      newToggling.delete(record.id);
+      setToggling(newToggling);
     }
   };
 
@@ -176,7 +181,7 @@ const DataTable = ({ data, onDataChange }) => {
     }
     
     // Handle boolean fields
-    if (columnName === "enable_ssh" || columnName === "auto_restart_service" || columnName === "auto_renew") {
+    if (columnName === "enable_ssh" || columnName === "auto_restart_service" || columnName === "auto_renew" || columnName === "is_enabled") {
       return value === true || value === 1 || value === "1" ? "Yes" : "No";
     }
     
@@ -286,10 +291,15 @@ const DataTable = ({ data, onDataChange }) => {
     <div className="mt-4 w-full space-y-2">
       {data.length > 0 ? (
         data.map((record) => (
-          <div key={record.id} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm overflow-hidden">
+          <div key={record.id} className={`bg-white dark:bg-gray-800 border rounded-lg shadow-sm overflow-hidden ${
+            !isConnectionEnabled(record)
+              ? 'border-gray-300 dark:border-gray-600 opacity-60' 
+              : 'border-gray-200 dark:border-gray-700'
+          }`}>
             {/* Main Row */}
             <div className="p-4 flex items-center justify-between">
-              <div className="flex-1 grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="flex-1">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 {getMainDisplayColumns(record).map((colName) => {
                   const col = jsonData.find(c => c.name === colName);
                   if (!col) return null;
@@ -305,9 +315,33 @@ const DataTable = ({ data, onDataChange }) => {
                     </div>
                   );
                 })}
+                </div>
               </div>
               
               <div className="flex items-center space-x-2 ml-4">
+                {/* Enable/Disable Switch */}
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                    {toggling.has(record.id) ? 'Updating...' : (isConnectionEnabled(record) ? 'Enabled' : 'Disabled')}
+                  </span>
+                  <button
+                    onClick={() => handleToggleEnabled(record)}
+                    disabled={toggling.has(record.id)}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 ${
+                      isConnectionEnabled(record)
+                        ? 'bg-green-500 hover:bg-green-600'
+                        : 'bg-red-500 hover:bg-red-600'
+                    }`}
+                    title={!isConnectionEnabled(record) ? 'Enable connection' : 'Disable connection'}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        isConnectionEnabled(record) ? 'translate-x-6' : 'translate-x-1'
+                      } ${toggling.has(record.id) ? 'animate-pulse' : ''}`}
+                    />
+                  </button>
+                </div>
+
                 <Button
                   variant="outline"
                   size="sm"
@@ -317,20 +351,6 @@ const DataTable = ({ data, onDataChange }) => {
                   <Edit className="w-4 h-4" />
                 </Button>
                 
-                {/* VOS Service Restart Button - only show for VOS apps with SSH enabled */}
-                {record.application_type === 'vos' && record.enable_ssh && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleServiceRestart(record)}
-                    disabled={restartingService.has(record.id)}
-                    className="flex items-center space-x-1 text-orange-600 hover:text-orange-700 disabled:opacity-50"
-                    title="Restart Cisco Tomcat Service"
-                  >
-                    <Server className="w-4 h-4" />
-                    {restartingService.has(record.id) && <RotateCcw className="w-3 h-3 animate-spin" />}
-                  </Button>
-                )}
                 
                 <Button
                   variant="outline"
@@ -389,49 +409,15 @@ const DataTable = ({ data, onDataChange }) => {
                                 )}
                               </Button>
                             </div>
-                          ) : columnName === "enable_ssh" ? (
+                          ) : columnName === "enable_ssh" || columnName === "is_enabled" ? (
                             <div className="flex items-center">
-                              {record.enable_ssh ? (
-                                <div className="flex items-center">
-                                  {(record.application_type === 'vos' || record.application_type === 'ise') ? (
-                                    // Split button design when SSH testing is available
-                                    <div className="flex items-center space-x-2">
-                                      <div className="flex items-center rounded-md overflow-hidden border border-gray-300 dark:border-gray-600">
-                                        <div className="bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 px-2 py-1 text-xs font-medium">
-                                          SSH Enabled
-                                        </div>
-                                        <button
-                                          onClick={() => handleSSHTest(record)}
-                                          disabled={testingSSH.has(record.id)}
-                                          className="bg-blue-50 dark:bg-blue-900 hover:bg-blue-100 dark:hover:bg-blue-800 text-blue-700 dark:text-blue-200 px-2 py-1 text-xs font-medium border-l border-gray-300 dark:border-gray-600 flex items-center space-x-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                                          title="Test SSH Connection"
-                                        >
-                                          <Terminal className="w-3 h-3" />
-                                          <span>{testingSSH.has(record.id) ? 'Testing...' : 'Test'}</span>
-                                        </button>
-                                      </div>
-                                      {record.application_type === 'vos' && (
-                                        <button
-                                          onClick={() => handleServiceRestart(record)}
-                                          disabled={restartingService.has(record.id)}
-                                          className="bg-orange-50 dark:bg-orange-900 hover:bg-orange-100 dark:hover:bg-orange-800 text-orange-700 dark:text-orange-200 px-2 py-1 text-xs font-medium rounded-md border border-orange-300 dark:border-orange-600 flex items-center space-x-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                                          title="Restart Cisco Tomcat Service"
-                                        >
-                                          <RotateCcw className="w-3 h-3" />
-                                          <span>{restartingService.has(record.id) ? 'Restarting...' : 'Restart'}</span>
-                                        </button>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    // Simple badge when no SSH testing available
-                                    <Badge variant="default" className="bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200">
-                                      SSH Enabled
-                                    </Badge>
-                                  )}
-                                </div>
+                              {(columnName === "enable_ssh" ? record.enable_ssh : isConnectionEnabled(record)) ? (
+                                <Badge variant="default" className="bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200">
+                                  Yes
+                                </Badge>
                               ) : (
                                 <Badge variant="secondary" className="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">
-                                  SSH Disabled
+                                  No
                                 </Badge>
                               )}
                             </div>
@@ -456,6 +442,31 @@ const DataTable = ({ data, onDataChange }) => {
                     );
                   })}
                 </div>
+                
+                {/* Tools Section */}
+                <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center space-x-2">
+                      <Wrench className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Tools</span>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {/* SSH Test Button - show only for VOS applications with SSH enabled */}
+                    {record.enable_ssh && record.application_type === 'vos' && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleSSHTest(record)}
+                        disabled={testingSSH.has(record.id)}
+                        className="text-blue-600 hover:text-blue-700 border-blue-300 hover:border-blue-400"
+                      >
+                        <Terminal className="mr-2 h-4 w-4" />
+                        {testingSSH.has(record.id) ? 'Testing SSH...' : 'Test SSH'}
+                      </Button>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -468,41 +479,6 @@ const DataTable = ({ data, onDataChange }) => {
         </div>
       )}
       
-      {/* Service Restart Confirmation Dialog */}
-      {confirmRestart && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
-            <div className="flex items-center mb-4">
-              <Server className="w-6 h-6 text-orange-600 mr-3" />
-              <h3 className="text-lg font-semibold">Confirm Service Restart</h3>
-            </div>
-            <p className="text-gray-600 dark:text-gray-300 mb-6">
-              Are you sure you want to restart the Cisco Tomcat service on <strong>{confirmRestart.name}</strong>?
-              <br /><br />
-              This will temporarily interrupt access to the VOS application while the service restarts.
-            </p>
-            <div className="flex justify-end space-x-3">
-              <Button
-                variant="outline"
-                onClick={() => setConfirmRestart(null)}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="default"
-                onClick={() => {
-                  const record = data.find(r => r.id === confirmRestart.id);
-                  if (record) handleServiceRestart(record, true);
-                }}
-                className="bg-orange-600 hover:bg-orange-700 text-white"
-              >
-                <Server className="w-4 h-4 mr-2" />
-                Restart Service
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Edit Modal */}
       <EditConnectionModal

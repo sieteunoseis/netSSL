@@ -5,6 +5,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Shield, Calendar, AlertCircle, CheckCircle, RefreshCw, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiCall } from "@/lib/api";
+import { useCertificateRenewal } from "@/contexts/WebSocketContext";
 
 interface CertificateInfo {
   subject: {
@@ -39,6 +40,16 @@ const CertificateInfoComponent: React.FC<CertificateInfoProps> = ({ connectionId
   const [certInfo, setCertInfo] = useState<CertificateInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // Use WebSocket hook for real-time renewal updates
+  const { 
+    isRenewing, 
+    progress, 
+    message, 
+    error: renewalError, 
+    status: renewalStatus,
+    renewalStatus: detailedRenewalStatus 
+  } = useCertificateRenewal(connectionId);
 
   const fetchCertificateInfo = async () => {
     try {
@@ -70,6 +81,28 @@ const CertificateInfoComponent: React.FC<CertificateInfoProps> = ({ connectionId
   useEffect(() => {
     fetchCertificateInfo();
   }, [connectionId]);
+
+  // Handle renewal completion and error states
+  useEffect(() => {
+    if (renewalStatus === 'completed' && !isRenewing) {
+      toast({
+        title: "Certificate Renewed",
+        description: "Certificate has been successfully renewed.",
+        duration: 5000,
+      });
+      // Refresh certificate info after successful renewal
+      fetchCertificateInfo();
+    }
+    
+    if (renewalStatus === 'failed' && renewalError) {
+      toast({
+        title: "Certificate Renewal Failed",
+        description: renewalError,
+        variant: "destructive",
+        duration: 7000,
+      });
+    }
+  }, [renewalStatus, isRenewing, renewalError, toast]);
 
   const getCertificateStatus = () => {
     if (!certInfo) return { status: "unknown", color: "bg-gray-100 text-gray-800", icon: AlertCircle };
@@ -144,14 +177,52 @@ const CertificateInfoComponent: React.FC<CertificateInfoProps> = ({ connectionId
         </div>
         {onRenewCertificate && (
           <div
-            onClick={onRenewCertificate}
-            className="flex items-center space-x-1 px-3 py-1 text-sm border border-input bg-background hover:bg-accent hover:text-accent-foreground rounded-md cursor-pointer transition-colors"
+            onClick={isRenewing ? undefined : onRenewCertificate}
+            className={`flex items-center space-x-1 px-3 py-1 text-sm border border-input bg-background rounded-md transition-colors ${
+              isRenewing 
+                ? 'cursor-not-allowed opacity-75' 
+                : 'hover:bg-accent hover:text-accent-foreground cursor-pointer'
+            }`}
           >
-            <FileText className="w-4 h-4" />
-            <span>Renew Certificate</span>
+            {isRenewing ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <FileText className="w-4 h-4" />
+            )}
+            <span>
+              {isRenewing ? `Renewing... (${progress}%)` : 'Renew Certificate'}
+            </span>
           </div>
         )}
       </div>
+      
+      {/* Real-time renewal progress */}
+      {isRenewing && (
+        <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+          <div className="flex items-center space-x-2 mb-2">
+            <RefreshCw className="w-4 h-4 text-blue-600 animate-spin" />
+            <span className="text-sm font-medium text-blue-800 dark:text-blue-200">
+              Certificate Renewal in Progress
+            </span>
+          </div>
+          <div className="space-y-2">
+            <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-2">
+              <div 
+                className="bg-blue-600 h-2 rounded-full transition-all duration-300 ease-out"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <div className="text-sm text-blue-700 dark:text-blue-300">
+              {message} ({progress}%)
+            </div>
+            {detailedRenewalStatus && detailedRenewalStatus !== 'pending' && (
+              <div className="text-xs text-blue-600 dark:text-blue-400">
+                Status: {detailedRenewalStatus.replace(/_/g, ' ')}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       
       {/* Accordion for detailed certificate info */}
       <Accordion type="single" collapsible>

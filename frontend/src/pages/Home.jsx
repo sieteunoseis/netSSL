@@ -10,7 +10,10 @@ import SettingsModal from "@/components/SettingsModal";
 import CertificateInfo from "@/components/CertificateInfo";
 import RenewalStatus from "@/components/RenewalStatus";
 import ServiceRestartButton from "@/components/ServiceRestartButton";
+import CertificateRenewalButton from "@/components/CertificateRenewalButton";
+import CertificateDownloadButton from "@/components/CertificateDownloadButton";
 import { apiCall } from "@/lib/api";
+import { filterEnabledConnections } from "@/lib/connection-utils";
 import templateConfig from "../../template.config.json";
 import { 
   FileText, 
@@ -24,7 +27,8 @@ import {
   Globe,
   Terminal,
   RotateCcw,
-  Settings
+  Settings,
+  Wrench
 } from "lucide-react";
 
 const Home = () => {
@@ -47,9 +51,10 @@ const Home = () => {
 
   const [restartingService, setRestartingService] = useState(new Set());
   const [confirmRestart, setConfirmRestart] = useState(null); // {id, name} for confirmation dialog
+  const [confirmCertRenewal, setConfirmCertRenewal] = useState(null); // {id, name} for confirmation dialog
 
-  // Fetch initial connections
-  useEffect(() => {
+  // Fetch connections data
+  const fetchConnectionsData = async () => {
     if (!templateConfig.useBackend) {
       // Skip API call if backend is disabled
       setConnectionState((prev) => ({
@@ -59,64 +64,60 @@ const Home = () => {
       return;
     }
 
-    const fetchResults = async () => {
-      try {
-        const response = await apiCall('/data');
-        const data = await response.json();
-        setConnectionState((prev) => ({
-          ...prev,
-          connections: data,
-          isLoading: false,
-        }));
+    try {
+      const response = await apiCall('/data');
+      const data = await response.json();
+      
+      setConnectionState((prev) => ({
+        ...prev,
+        connections: data,
+        isLoading: false,
+      }));
 
-        // Fetch certificate information for all connections
-        await fetchCertificateStatuses(data);
+      // Fetch certificate information only for enabled connections
+      const enabledConnections = filterEnabledConnections(data);
+      await fetchCertificateStatuses(enabledConnections);
 
-        if (data.length === 0) {
-          toast({
-            title: "No connections found",
-            description: "Use the 'Add Connection' button to create your first server connection.",
-            variant: "destructive",
-            duration: 3000,
-          });
-        }
-      } catch (error) {
-        console.error(error);
-        navigate("/error");
+      if (data.length === 0) {
+        toast({
+          title: "No connections found",
+          description: "Use the 'Add Connection' button to create your first server connection.",
+          variant: "destructive",
+          duration: 3000,
+        });
+      }
+    } catch (error) {
+      console.error(error);
+      navigate("/error");
+    }
+  };
+
+  // Fetch initial connections
+  useEffect(() => {
+    fetchConnectionsData();
+  }, [navigate, toast]);
+
+  // Refresh data when the page becomes visible (e.g., returning from Connections page)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        fetchConnectionsData();
       }
     };
 
-    fetchResults();
-  }, [navigate, toast]);
+    const handleFocus = () => {
+      fetchConnectionsData();
+    };
 
-  const handleRenewCertificate = async (connectionId) => {
-    try {
-      const response = await apiCall(`/data/${connectionId}/issue-cert`, { method: "POST" });
-      const data = await response.json();
-      
-      // Show renewal status modal
-      setRenewalState({
-        activeRenewal: true,
-        renewalId: data.renewalId,
-        connectionId: connectionId
-      });
-      
-      toast({
-        title: "Certificate Renewal Initiated",
-        description: "Certificate renewal process has been started.",
-        duration: 3000,
-      });
-      
-    } catch (error) {
-      console.error("Error renewing certificate:", error);
-      toast({
-        title: "Renewal Failed",
-        description: "Failed to initiate certificate renewal.",
-        variant: "destructive",
-        duration: 5000,
-      });
-    }
-  };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, []);
+
 
   const handleRenewalClose = () => {
     setRenewalState({
@@ -126,23 +127,7 @@ const Home = () => {
     });
     
     // Refresh connections data after renewal
-    const fetchConnections = async () => {
-      try {
-        const response = await apiCall('/data');
-        const data = await response.json();
-        setConnectionState((prev) => ({
-          ...prev,
-          connections: data,
-        }));
-        
-        // Fetch certificate information for each connection
-        await fetchCertificateStatuses(data);
-      } catch (error) {
-        console.error("Error refreshing connections:", error);
-      }
-    };
-    
-    fetchConnections();
+    fetchConnectionsData();
   };
 
   const fetchCertificateStatuses = async (connections) => {
@@ -168,25 +153,13 @@ const Home = () => {
   };
 
   const handleConnectionAdded = async () => {
-    try {
-      const response = await apiCall('/data');
-      const data = await response.json();
-      setConnectionState((prev) => ({
-        ...prev,
-        connections: data,
-      }));
-      
-      // Fetch certificate information for new connections
-      await fetchCertificateStatuses(data);
-      
-      toast({
-        title: "Connection Added",
-        description: "New server connection has been added successfully.",
-        duration: 3000,
-      });
-    } catch (error) {
-      console.error("Error refreshing connections:", error);
-    }
+    await fetchConnectionsData();
+    
+    toast({
+      title: "Connection Added",
+      description: "New server connection has been added successfully.",
+      duration: 3000,
+    });
   };
 
   const getCertificateStatus = (connection) => {
@@ -258,9 +231,12 @@ const Home = () => {
 
 
   const getOverallStatus = () => {
-    if (connectionState.connections.length === 0) return { total: 0, valid: 0, expiring: 0, expired: 0 };
+    // Filter to only enabled connections
+    const enabledConnections = filterEnabledConnections(connectionState.connections);
     
-    const summary = connectionState.connections.reduce((acc, conn) => {
+    if (enabledConnections.length === 0) return { total: 0, valid: 0, expiring: 0, expired: 0 };
+    
+    const summary = enabledConnections.reduce((acc, conn) => {
       const status = getCertificateStatus(conn);
       acc.total++;
       if (status.status === "valid") acc.valid++;
@@ -349,7 +325,7 @@ const Home = () => {
 
         {/* Server Details */}
         <div className="space-y-4">
-          {connectionState.connections.map((connection) => {
+          {filterEnabledConnections(connectionState.connections).map((connection) => {
             const certStatus = getCertificateStatus(connection);
             const StatusIcon = certStatus.icon;
 
@@ -435,20 +411,39 @@ const Home = () => {
 
                   </div>
 
-                  {/* VOS Service Restart Button - only show for VOS apps with SSH enabled */}
-                  {connection.application_type === 'vos' && connection.enable_ssh && (
-                    <div className="flex justify-end pt-4">
-                      <ServiceRestartButton 
+                  {/* Tools Section */}
+                  <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center space-x-2">
+                        <Wrench className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Tools</span>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {/* Service Restart Button - only show for VOS apps with SSH enabled */}
+                      {connection.application_type === 'vos' && connection.enable_ssh && (
+                        <ServiceRestartButton 
+                          connection={connection}
+                          onConfirmRestart={(conn) => setConfirmRestart({ id: conn.id, name: conn.name })}
+                        />
+                      )}
+                      
+                      {/* Certificate Renewal Button */}
+                      <CertificateRenewalButton 
                         connection={connection}
-                        onConfirmRestart={(conn) => setConfirmRestart({ id: conn.id, name: conn.name })}
+                        onConfirmRenew={() => setConfirmCertRenewal({ id: connection.id, name: connection.name })}
+                      />
+                      
+                      {/* Certificate Download Button */}
+                      <CertificateDownloadButton 
+                        connection={connection}
                       />
                     </div>
-                  )}
+                  </div>
                   
                   <CertificateInfo 
                     connectionId={connection.id} 
                     hostname={`${connection.hostname}.${connection.domain}`}
-                    onRenewCertificate={() => handleRenewCertificate(connection.id)}
                   />
                 </CardContent>
               </Card>
@@ -456,7 +451,7 @@ const Home = () => {
           })}
         </div>
 
-        {connectionState.connections.length === 0 && (
+        {filterEnabledConnections(connectionState.connections).length === 0 && (
           <div className="text-center py-12">
             <Server className="w-12 h-12 text-gray-400 mx-auto mb-4" />
             <h3 className="text-lg font-semibold text-gray-900 mb-2">No servers configured</h3>
@@ -497,6 +492,40 @@ const Home = () => {
                 >
                   <Server className="w-4 h-4 mr-2" />
                   Restart Service
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Certificate Renewal Confirmation Dialog */}
+        {confirmCertRenewal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
+              <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-gray-100">
+                Confirm Certificate Renewal
+              </h3>
+              <p className="text-gray-600 dark:text-gray-300 mb-6">
+                Are you sure you want to renew the certificate for <strong>{confirmCertRenewal.name}</strong>? 
+                This process may take several minutes and will automatically upload the new certificate to the server.
+              </p>
+              <div className="flex justify-end space-x-3">
+                <Button
+                  variant="outline"
+                  onClick={() => setConfirmCertRenewal(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="default"
+                  onClick={() => {
+                    CertificateRenewalButton.startRenewal(confirmCertRenewal.id, toast);
+                    setConfirmCertRenewal(null);
+                  }}
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  <Shield className="w-4 h-4 mr-2" />
+                  Renew Certificate
                 </Button>
               </div>
             </div>

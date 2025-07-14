@@ -241,3 +241,39 @@ export const useServiceRestart = (connectionId: number) => {
     status: activeOperation?.status || 'idle'
   };
 };
+
+// Specific hook for certificate renewal operations
+export const useCertificateRenewal = (connectionId: number) => {
+  const { getActiveOperation, hasActiveOperation, subscribeToConnection, unsubscribeFromConnection, connected, operations } = useWebSocket();
+
+  useEffect(() => {
+    if (connectionId && connected) {
+      debugLog(`useCertificateRenewal: Subscribing to connection ${connectionId}`);
+      subscribeToConnection(connectionId);
+      return () => {
+        debugLog(`useCertificateRenewal: Unsubscribing from connection ${connectionId}`);
+        unsubscribeFromConnection(connectionId);
+      };
+    }
+  }, [connectionId, connected, subscribeToConnection, unsubscribeFromConnection]);
+
+  const activeOperation = getActiveOperation(connectionId, 'certificate_renewal');
+  const isRenewing = hasActiveOperation(connectionId, 'certificate_renewal');
+
+  debugLog(`useCertificateRenewal hook for connection ${connectionId}:`, {
+    activeOperation: activeOperation ? { id: activeOperation.id, status: activeOperation.status, progress: activeOperation.progress } : null,
+    isRenewing,
+    totalOperations: Array.from(operations.values()).length,
+    connectionOperations: Array.from(operations.values()).filter(op => op.connectionId === connectionId).length
+  });
+
+  return {
+    activeOperation,
+    isRenewing,
+    progress: activeOperation?.progress || 0,
+    message: activeOperation?.message || '',
+    error: activeOperation?.error,
+    status: activeOperation?.status || 'idle',
+    renewalStatus: activeOperation?.metadata?.renewal_status || 'pending'
+  };
+};

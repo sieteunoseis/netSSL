@@ -251,5 +251,13 @@
         "values": ["vos", "ise"]
       }
     ]
+  },
+  {
+    "name": "is_enabled",
+    "type": "SWITCH",
+    "validator": { "name": "isAscii", "options": "" },
+    "label": "Enable Connection",
+    "description": "When disabled, connection will be hidden from dashboard but can still be managed",
+    "default": true
   }
 ]

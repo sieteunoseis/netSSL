@@ -7,6 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { RefreshCw, CheckCircle, XCircle, Clock, AlertCircle, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiCall } from "@/lib/api";
+import { useCertificateRenewal } from "@/contexts/WebSocketContext";
 
 interface RenewalStatus {
   id: string;
@@ -44,6 +45,16 @@ const RenewalStatusComponent: React.FC<RenewalStatusProps> = ({ connectionId, re
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [certificateFiles, setCertificateFiles] = useState<CertificateFile[]>([]);
+  
+  // Use WebSocket hook for real-time updates
+  const { 
+    isRenewing, 
+    progress: wsProgress, 
+    message: wsMessage, 
+    error: wsError,
+    renewalStatus: wsRenewalStatus,
+    activeOperation
+  } = useCertificateRenewal(connectionId);
 
   const fetchStatus = async () => {
     try {
@@ -94,15 +105,37 @@ const RenewalStatusComponent: React.FC<RenewalStatusProps> = ({ connectionId, re
   useEffect(() => {
     fetchStatus();
     
-    // Poll for status updates if the renewal is still in progress
-    const intervalId = setInterval(() => {
-      if (status && status.status !== 'completed' && status.status !== 'failed') {
+    // Only use polling as fallback if WebSocket is not providing updates
+    let intervalId: NodeJS.Timeout | null = null;
+    
+    if (!isRenewing && status && status.status !== 'completed' && status.status !== 'failed') {
+      intervalId = setInterval(() => {
         fetchStatus();
-      }
-    }, 2000);
+      }, 5000); // Reduced frequency since WebSocket provides real-time updates
+    }
 
-    return () => clearInterval(intervalId);
-  }, [connectionId, renewalId, status?.status]);
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [connectionId, renewalId, status?.status, isRenewing]);
+
+  // Update local status with WebSocket data when available
+  useEffect(() => {
+    if (activeOperation && activeOperation.id === renewalId) {
+      setStatus(prevStatus => ({
+        ...prevStatus,
+        id: renewalId,
+        connectionId: connectionId,
+        status: wsRenewalStatus as RenewalStatus['status'],
+        message: wsMessage,
+        progress: wsProgress,
+        startTime: prevStatus?.startTime || new Date().toISOString(),
+        error: wsError,
+        logs: activeOperation.metadata?.logs || prevStatus?.logs || []
+      } as RenewalStatus));
+      setLoading(false);
+    }
+  }, [activeOperation, renewalId, connectionId, wsRenewalStatus, wsMessage, wsProgress, wsError]);
 
   const getStatusIcon = () => {
     if (!status) return <Clock className="w-4 h-4" />;
