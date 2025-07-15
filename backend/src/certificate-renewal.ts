@@ -1282,7 +1282,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       }
       const customDNS = await CustomDNSProvider.create(this.database, fullFQDN);
       
-      await this.updateStatus(status, 'waiting_dns_propagation', 'Manual DNS entry required - waiting for admin', 60);
+      await this.updateStatus(status, 'waiting_manual_dns', 'Manual DNS entry required - waiting for admin', 60);
       
       // Get the challenges that were created in the renewal flow
       const challenges = status.challenges || [];
