@@ -117,6 +117,35 @@ Backend requires environment variables matching `dbSetup.json` field names. Set 
 - `LETSENCRYPT_STAGING`: Set to `false` for production certificates, `true` or unset for staging (default: `true`)
 - Account files are saved with staging/production suffix: `domain_letsencrypt_staging.json` or `domain_letsencrypt_prod.json`
 
+### Let's Encrypt Certificate Behavior
+
+#### Duplicate Certificates
+Let's Encrypt will create a new certificate every time you request one, even if you just requested one for the same domain. It doesn't return the previously issued certificate - each request generates a brand new certificate with:
+- New serial number
+- New expiration date (90 days from issuance)
+- New private key (if generated)
+- New certificate chain
+
+#### Rate Limits
+Let's Encrypt has several rate limits to prevent abuse:
+
+1. **Certificates per Registered Domain**: 50 certificates per week for a registered domain
+   - For `automate.builders`, this includes all subdomains
+   - `ecp.automate.builders`, `cucm01.automate.builders`, etc. all count toward this limit
+
+2. **Duplicate Certificate Limit**: 5 per week
+   - This is for the exact same set of domains
+   - If you request `ecp.automate.builders` again, you can only get 5 certificates per week with that exact domain
+
+3. **Failed Validation Limit**: 5 failures per hour per domain
+   - Failed DNS challenges count toward this
+
+#### Best Practices
+- Use staging environment (`LETSENCRYPT_STAGING=true`) for testing to avoid hitting production rate limits
+- Monitor certificate expiration and renew before 30 days remaining
+- Keep track of renewal frequency to stay within duplicate certificate limits
+- Failed DNS challenges count toward rate limits, so ensure DNS records are correct before attempting renewal
+
 ## Template Configuration
 
 This is a configurable template repository. Configure for your project needs:

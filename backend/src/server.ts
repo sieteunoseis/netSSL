@@ -534,6 +534,12 @@ app.delete('/api/operations/:operationId', asyncHandler(async (req: Request, res
       return res.status(404).json({ error: 'Operation not found' });
     }
 
+    // If it's a certificate renewal, cancel it in the renewal service
+    if (operation.type === 'certificate_renewal') {
+      await certificateRenewalService.cancelRenewal(operationId);
+      Logger.info(`Certificate renewal ${operationId} cancelled`);
+    }
+
     // Delete from database
     await database.deleteActiveOperation(operationId);
     
@@ -615,37 +621,44 @@ app.get('/api/data/:id/certificates/:type', asyncHandler(async (req: Request, re
   const domain = `${connection.hostname}.${connection.domain}`;
   const accountsPath = path.join(__dirname, '..', 'accounts', domain);
   
-  let filePath: string;
+  let baseFilename: string;
   let filename: string;
   let contentType: string = 'application/x-pem-file';
 
   switch (certType) {
     case 'certificate':
-      filePath = path.join(accountsPath, 'certificate.pem');
+      baseFilename = 'certificate.pem';
       filename = `${domain}_certificate.pem`;
       break;
     case 'private_key':
-      filePath = path.join(accountsPath, 'private_key.pem');
+      baseFilename = 'private_key.pem';
       filename = `${domain}_private_key.pem`;
       break;
     case 'chain':
-      filePath = path.join(accountsPath, 'chain.pem');
+      baseFilename = 'chain.pem';
       filename = `${domain}_chain.pem`;
       break;
     case 'fullchain':
-      filePath = path.join(accountsPath, 'fullchain.pem');
+      baseFilename = 'fullchain.pem';
       filename = `${domain}_fullchain.pem`;
       break;
     case 'csr':
-      filePath = path.join(accountsPath, 'certificate.csr');
+      baseFilename = 'certificate.csr';
       filename = `${domain}_certificate.csr`;
       break;
     default:
       return res.status(400).json({ error: 'Invalid certificate type' });
   }
 
+  // Check staging environment setting (consistent with certificate.ts)
+  const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
+  const certSubDir = isStaging ? 'staging' : 'prod';
+  
+  // Only check the directory that matches the current environment setting
+  const filePath = path.join(accountsPath, certSubDir, baseFilename);
+  
   try {
-    // Check if file exists
+    // Check if file exists in the environment-specific directory
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ error: `Certificate file not found: ${certType}` });
     }
@@ -694,8 +707,15 @@ app.get('/api/data/:id/certificates', asyncHandler(async (req: Request, res: Res
     { type: 'csr', filename: 'certificate.csr', displayName: 'Certificate Signing Request' }
   ];
 
+  // Check staging environment setting (consistent with certificate.ts)
+  const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
+  const certSubDir = isStaging ? 'staging' : 'prod';
+  
+  Logger.debug(`Certificate listing for ${domain}: LETSENCRYPT_STAGING=${process.env.LETSENCRYPT_STAGING}, isStaging=${isStaging}, certSubDir=${certSubDir}`);
+  
+  // Only check the directory that matches the current environment setting
   for (const fileType of fileTypes) {
-    const filePath = path.join(accountsPath, fileType.filename);
+    const filePath = path.join(accountsPath, certSubDir, fileType.filename);
     try {
       if (fs.existsSync(filePath)) {
         const stats = fs.statSync(filePath);

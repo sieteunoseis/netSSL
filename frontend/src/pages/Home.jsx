@@ -8,12 +8,12 @@ import { Badge } from "@/components/ui/badge";
 import AddConnectionModal from "@/components/AddConnectionModalTabbed";
 import SettingsModal from "@/components/SettingsModal";
 import CertificateInfo from "@/components/CertificateInfo";
-import RenewalStatus from "@/components/RenewalStatus";
 import ServiceRestartButton from "@/components/ServiceRestartButton";
 import CertificateRenewalButton from "@/components/CertificateRenewalButton";
 import CertificateDownloadButton from "@/components/CertificateDownloadButton";
 import { apiCall } from "@/lib/api";
 import { filterEnabledConnections } from "@/lib/connection-utils";
+import { useWebSocket } from "@/contexts/WebSocketContext";
 import templateConfig from "../../template.config.json";
 import { 
   FileText, 
@@ -34,6 +34,7 @@ import {
 const Home = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
+  const { getConnectionOperations } = useWebSocket();
 
   // Connection state
   const [connectionState, setConnectionState] = useState({
@@ -42,12 +43,7 @@ const Home = () => {
   });
 
   const [certificateStatuses, setCertificateStatuses] = useState({});
-
-  const [renewalState, setRenewalState] = useState({
-    activeRenewal: null,
-    renewalId: null,
-    connectionId: null
-  });
+  const [downloadRefreshTrigger, setDownloadRefreshTrigger] = useState(0);
 
   const [restartingService, setRestartingService] = useState(new Set());
   const [confirmRestart, setConfirmRestart] = useState(null); // {id, name} for confirmation dialog
@@ -119,16 +115,6 @@ const Home = () => {
   }, []);
 
 
-  const handleRenewalClose = () => {
-    setRenewalState({
-      activeRenewal: null,
-      renewalId: null,
-      connectionId: null
-    });
-    
-    // Refresh connections data after renewal
-    fetchConnectionsData();
-  };
 
   const fetchCertificateStatuses = async (connections) => {
     const statuses = {};
@@ -438,6 +424,8 @@ const Home = () => {
                       {/* Certificate Download Button */}
                       <CertificateDownloadButton 
                         connection={connection}
+                        refreshTrigger={downloadRefreshTrigger}
+                        isRenewing={getConnectionOperations(connection.id, 'certificate_renewal').some(op => ['pending', 'in_progress'].includes(op.status))}
                       />
                     </div>
                   </div>
@@ -445,6 +433,7 @@ const Home = () => {
                   <CertificateInfo 
                     connectionId={connection.id} 
                     hostname={`${connection.hostname}.${connection.domain}`}
+                    onRenewalComplete={() => setDownloadRefreshTrigger(prev => prev + 1)}
                   />
                 </CardContent>
               </Card>
@@ -533,16 +522,6 @@ const Home = () => {
           </div>
         )}
 
-        {/* Renewal Status Modal */}
-        {renewalState.activeRenewal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <RenewalStatus
-              connectionId={renewalState.connectionId}
-              renewalId={renewalState.renewalId}
-              onClose={handleRenewalClose}
-            />
-          </div>
-        )}
       </div>
     </div>
   );

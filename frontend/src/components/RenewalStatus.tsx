@@ -363,7 +363,7 @@ const RenewalStatusComponent: React.FC<RenewalStatusProps> = ({ connectionId, re
                     <div className="flex items-center gap-2">
                       <input
                         type="text"
-                        value={status.manualDNSEntry.recordName}
+                        value={status.manualDNSEntry?.recordName || ''}
                         readOnly
                         className="flex-1 px-3 py-2 bg-white border border-orange-300 rounded-md text-sm font-mono"
                       />
@@ -371,7 +371,7 @@ const RenewalStatusComponent: React.FC<RenewalStatusProps> = ({ connectionId, re
                         size="sm"
                         variant="outline"
                         onClick={() => {
-                          navigator.clipboard.writeText(status.manualDNSEntry.recordName);
+                          navigator.clipboard.writeText(status.manualDNSEntry?.recordName || '');
                           toast({
                             title: "Copied",
                             description: "DNS record name copied to clipboard",
@@ -389,7 +389,7 @@ const RenewalStatusComponent: React.FC<RenewalStatusProps> = ({ connectionId, re
                     <div className="flex items-center gap-2">
                       <input
                         type="text"
-                        value={status.manualDNSEntry.recordValue}
+                        value={status.manualDNSEntry?.recordValue || ''}
                         readOnly
                         className="flex-1 px-3 py-2 bg-white border border-orange-300 rounded-md text-sm font-mono break-all"
                       />
@@ -397,7 +397,7 @@ const RenewalStatusComponent: React.FC<RenewalStatusProps> = ({ connectionId, re
                         size="sm"
                         variant="outline"
                         onClick={() => {
-                          navigator.clipboard.writeText(status.manualDNSEntry.recordValue);
+                          navigator.clipboard.writeText(status.manualDNSEntry?.recordValue || '');
                           toast({
                             title: "Copied",
                             description: "DNS record value copied to clipboard",

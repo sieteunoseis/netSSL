@@ -117,7 +117,7 @@ export class CustomDNSProvider {
     Logger.info(`Manual DNS Entry Removal Required - please remove the TXT record manually`);
   }
 
-  async waitForManualEntry(recordName: string, expectedValue: string, maxWaitTime: number = 300000): Promise<boolean> {
+  async waitForManualEntry(recordName: string, expectedValue: string, maxWaitTime: number = 300000, cancellationCheck?: () => boolean): Promise<boolean> {
     const startTime = Date.now();
     const checkInterval = 10000; // Check every 10 seconds
     
@@ -126,6 +126,12 @@ export class CustomDNSProvider {
     
     while (Date.now() - startTime < maxWaitTime) {
       try {
+        // Check for cancellation
+        if (cancellationCheck && cancellationCheck()) {
+          Logger.info(`DNS verification cancelled by user`);
+          return false;
+        }
+        
         const isVerified = await this.verifyDNSPropagation(recordName, expectedValue);
         if (isVerified) {
           Logger.info(`DNS record verified successfully after ${Math.round((Date.now() - startTime) / 1000)} seconds`);
@@ -136,8 +142,14 @@ export class CustomDNSProvider {
         const remaining = Math.round((maxWaitTime - (Date.now() - startTime)) / 1000);
         Logger.info(`Waiting for DNS entry... (${elapsed}s elapsed, ${remaining}s remaining)`);
         
-        // Wait before next check
-        await new Promise(resolve => setTimeout(resolve, checkInterval));
+        // Wait before next check, but check cancellation periodically
+        for (let i = 0; i < checkInterval / 1000; i++) {
+          if (cancellationCheck && cancellationCheck()) {
+            Logger.info(`DNS verification cancelled by user during wait`);
+            return false;
+          }
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
       } catch (error) {
         Logger.error(`Error during DNS verification: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }

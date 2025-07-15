@@ -12,14 +12,14 @@ import { useToast } from "@/hooks/use-toast";
 import { Download, ChevronDown, FileText, Key, Link, Shield } from "lucide-react";
 import { apiCall } from "@/lib/api";
 
-const CertificateDownloadButton = ({ connection }) => {
+const CertificateDownloadButton = ({ connection, refreshTrigger, isRenewing }) => {
   const { toast } = useToast();
   const [availableFiles, setAvailableFiles] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     fetchAvailableFiles();
-  }, [connection.id]);
+  }, [connection.id, refreshTrigger]);
 
   const fetchAvailableFiles = async () => {
     try {
@@ -92,6 +92,21 @@ const CertificateDownloadButton = ({ connection }) => {
     return names[type] || type;
   };
 
+  const formatDate = (dateString) => {
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch {
+      return 'Unknown';
+    }
+  };
+
   if (availableFiles.length === 0) {
     return (
       <Button
@@ -112,11 +127,15 @@ const CertificateDownloadButton = ({ connection }) => {
         <Button
           variant="outline"
           size="sm"
-          disabled={isLoading}
-          className="text-green-600 hover:text-green-700 border-green-300 hover:border-green-400"
+          disabled={isLoading || isRenewing}
+          className={isRenewing 
+            ? "text-gray-400 border-gray-300" 
+            : "text-green-600 hover:text-green-700 border-green-300 hover:border-green-400"
+          }
+          title={isRenewing ? "Certificate renewal in progress - downloads disabled" : "Download certificate files"}
         >
           <Download className="mr-2 h-4 w-4" />
-          Download Certificates
+          {isRenewing ? "Renewal in Progress" : "Download Certificates"}
           <ChevronDown className="ml-1 h-3 w-3" />
         </Button>
       </DropdownMenuTrigger>
@@ -135,6 +154,9 @@ const CertificateDownloadButton = ({ connection }) => {
                 <div className="font-medium">{getDisplayName(file.type)}</div>
                 <div className="text-xs text-muted-foreground">
                   {(file.size / 1024).toFixed(1)} KB
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {formatDate(file.lastModified)}
                 </div>
               </div>
             </div>

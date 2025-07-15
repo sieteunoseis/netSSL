@@ -33,13 +33,17 @@ interface CertificateInfoProps {
   connectionId: number;
   hostname: string;
   onRenewCertificate?: () => void;
+  onRenewalComplete?: () => void;
 }
 
-const CertificateInfoComponent: React.FC<CertificateInfoProps> = ({ connectionId, onRenewCertificate }) => {
+const CertificateInfoComponent: React.FC<CertificateInfoProps> = ({ connectionId, onRenewCertificate, onRenewalComplete }) => {
   const { toast } = useToast();
   const [certInfo, setCertInfo] = useState<CertificateInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showCompletionMessage, setShowCompletionMessage] = useState(false);
+  const [completionMessage, setCompletionMessage] = useState('');
+  const [lastRenewalProgress, setLastRenewalProgress] = useState(0);
   
   // Use WebSocket hook for real-time renewal updates
   const { 
@@ -117,16 +121,53 @@ const CertificateInfoComponent: React.FC<CertificateInfoProps> = ({ connectionId
     fetchCertificateInfo();
   }, [connectionId]);
 
+  // Track renewal progress to detect completion
+  useEffect(() => {
+    if (isRenewing && progress > lastRenewalProgress) {
+      setLastRenewalProgress(progress);
+    }
+  }, [isRenewing, progress, lastRenewalProgress]);
+
   // Handle renewal completion and error states
   useEffect(() => {
-    if (renewalStatus === 'completed' && !isRenewing) {
+    console.log('CertificateInfo renewal state:', {
+      renewalStatus,
+      isRenewing,
+      renewalError,
+      activeOperation: !!activeOperation,
+      detailedRenewalStatus,
+      progress,
+      lastRenewalProgress,
+      showCompletionMessage
+    });
+    
+    // Detect completion: was renewing with high progress, now not renewing and no active operation
+    if (!isRenewing && !activeOperation && lastRenewalProgress >= 70 && !showCompletionMessage) {
+      console.log('Renewal completed - showing completion message');
+      // Show completion message
+      setCompletionMessage('Certificate renewed successfully! Refreshing certificate information...');
+      setShowCompletionMessage(true);
+      
       toast({
         title: "Certificate Renewed",
         description: "Certificate has been successfully renewed.",
         duration: 5000,
       });
+      
       // Refresh certificate info after successful renewal
-      fetchCertificateInfo();
+      setTimeout(() => {
+        fetchCertificateInfo();
+        // Notify parent component that renewal completed
+        if (onRenewalComplete) {
+          onRenewalComplete();
+        }
+      }, 1000);
+      
+      // Hide completion message after 5 seconds
+      setTimeout(() => {
+        setShowCompletionMessage(false);
+        setLastRenewalProgress(0); // Reset for next renewal
+      }, 5000);
     }
     
     if (renewalStatus === 'failed' && renewalError) {
@@ -137,7 +178,7 @@ const CertificateInfoComponent: React.FC<CertificateInfoProps> = ({ connectionId
         duration: 7000,
       });
     }
-  }, [renewalStatus, isRenewing, renewalError, toast]);
+  }, [renewalStatus, isRenewing, renewalError, activeOperation, lastRenewalProgress, showCompletionMessage, toast]);
 
   const getCertificateStatus = () => {
     if (!certInfo) return { status: "unknown", color: "bg-gray-100 text-gray-800", icon: AlertCircle };
@@ -232,37 +273,149 @@ const CertificateInfoComponent: React.FC<CertificateInfoProps> = ({ connectionId
       </div>
       
       {/* Real-time renewal progress */}
-      {isRenewing && (
-        <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+      {(isRenewing || showCompletionMessage) && (
+        <div className={`mt-4 p-3 rounded-lg border ${
+          showCompletionMessage 
+            ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' 
+            : 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
+        }`}>
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center space-x-2">
-              <RefreshCw className="w-4 h-4 text-blue-600 animate-spin" />
-              <span className="text-sm font-medium text-blue-800 dark:text-blue-200">
-                Certificate Renewal in Progress
+              {showCompletionMessage ? (
+                <CheckCircle className="w-4 h-4 text-green-600" />
+              ) : (
+                <RefreshCw className="w-4 h-4 text-blue-600 animate-spin" />
+              )}
+              <span className={`text-sm font-medium ${
+                showCompletionMessage 
+                  ? 'text-green-800 dark:text-green-200' 
+                  : 'text-blue-800 dark:text-blue-200'
+              }`}>
+                {showCompletionMessage ? 'Certificate Renewal Complete' : 'Certificate Renewal in Progress'}
               </span>
             </div>
-            <Button
-              onClick={killRenewalOperation}
-              variant="ghost"
-              size="sm"
-              className="text-gray-500 hover:text-red-500 h-6 w-6 p-0"
-            >
-              <X className="w-3 h-3" />
-            </Button>
+            {!showCompletionMessage && (
+              <Button
+                onClick={killRenewalOperation}
+                variant="ghost"
+                size="sm"
+                className="text-gray-500 hover:text-red-500 h-6 w-6 p-0"
+              >
+                <X className="w-3 h-3" />
+              </Button>
+            )}
           </div>
           <div className="space-y-2">
-            <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-2">
-              <div 
-                className="bg-blue-600 h-2 rounded-full transition-all duration-300 ease-out"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-            <div className="text-sm text-blue-700 dark:text-blue-300">
-              {message} ({progress}%)
-            </div>
-            {detailedRenewalStatus && detailedRenewalStatus !== 'pending' && (
-              <div className="text-xs text-blue-600 dark:text-blue-400">
-                Status: {detailedRenewalStatus.replace(/_/g, ' ')}
+            {showCompletionMessage ? (
+              <div className="text-sm text-green-700 dark:text-green-300">
+                {completionMessage}
+              </div>
+            ) : (
+              <>
+                <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-2">
+                  <div 
+                    className="bg-blue-600 h-2 rounded-full transition-all duration-300 ease-out"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+                <div className="text-sm text-blue-700 dark:text-blue-300">
+                  {message} ({progress}%)
+                </div>
+                {detailedRenewalStatus && detailedRenewalStatus !== 'pending' && (
+                  <div className="text-xs text-blue-600 dark:text-blue-400">
+                    Status: {detailedRenewalStatus.replace(/_/g, ' ')}
+                  </div>
+                )}
+              </>
+            )}
+            
+            {/* Manual DNS Entry Instructions */}
+            {detailedRenewalStatus === 'waiting_manual_dns' && activeOperation?.metadata?.manualDNSEntry && (
+              <div className="mt-3 p-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-md">
+                <h4 className="font-medium text-orange-800 dark:text-orange-200 mb-2 flex items-center text-sm">
+                  <AlertCircle className="w-4 h-4 mr-2" />
+                  Manual DNS Configuration Required
+                </h4>
+                <div className="space-y-2 text-sm">
+                  <div className="grid grid-cols-[auto,1fr,auto] gap-2 items-center">
+                    <span className="font-medium text-orange-700 dark:text-orange-300">Type:</span>
+                    <input
+                      type="text"
+                      value="TXT"
+                      readOnly
+                      className="px-2 py-1 bg-white dark:bg-gray-800 border border-orange-300 dark:border-orange-700 rounded text-xs font-mono"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => {
+                        navigator.clipboard.writeText("TXT");
+                        toast({
+                          title: "Copied",
+                          description: "Record type copied",
+                          duration: 2000,
+                        });
+                      }}
+                    >
+                      Copy
+                    </Button>
+                  </div>
+                  
+                  <div className="grid grid-cols-[auto,1fr,auto] gap-2 items-center">
+                    <span className="font-medium text-orange-700 dark:text-orange-300">Name:</span>
+                    <input
+                      type="text"
+                      value={activeOperation.metadata.manualDNSEntry.recordName || ''}
+                      readOnly
+                      className="px-2 py-1 bg-white dark:bg-gray-800 border border-orange-300 dark:border-orange-700 rounded text-xs font-mono"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => {
+                        navigator.clipboard.writeText(activeOperation.metadata.manualDNSEntry.recordName || '');
+                        toast({
+                          title: "Copied",
+                          description: "DNS name copied",
+                          duration: 2000,
+                        });
+                      }}
+                    >
+                      Copy
+                    </Button>
+                  </div>
+                  
+                  <div className="grid grid-cols-[auto,1fr,auto] gap-2 items-center">
+                    <span className="font-medium text-orange-700 dark:text-orange-300">Value:</span>
+                    <input
+                      type="text"
+                      value={activeOperation.metadata.manualDNSEntry.recordValue || ''}
+                      readOnly
+                      className="px-2 py-1 bg-white dark:bg-gray-800 border border-orange-300 dark:border-orange-700 rounded text-xs font-mono break-all"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => {
+                        navigator.clipboard.writeText(activeOperation.metadata.manualDNSEntry.recordValue || '');
+                        toast({
+                          title: "Copied",
+                          description: "DNS value copied",
+                          duration: 2000,
+                        });
+                      }}
+                    >
+                      Copy
+                    </Button>
+                  </div>
+                  
+                  <div className="text-xs text-orange-600 dark:text-orange-400 mt-2">
+                    Add this TXT record to your DNS and the system will verify it automatically.
+                  </div>
+                </div>
               </div>
             )}
           </div>

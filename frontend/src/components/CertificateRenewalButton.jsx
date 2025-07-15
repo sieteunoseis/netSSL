@@ -179,6 +179,9 @@ CertificateRenewalButton.startRenewal = async (connectionId, toast) => {
       description: "Certificate renewal has been initiated. You can monitor progress in real-time.",
       duration: 5000,
     });
+    
+    // Return the renewal data so caller can show the modal
+    return data;
 
   } catch (error) {
     console.error('Error starting certificate renewal:', error);

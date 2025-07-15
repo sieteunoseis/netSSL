@@ -38,6 +38,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
   private activeRenewals: Set<number> = new Set(); // Track active renewals by connection ID
   private authzRecords: any[] = []; // Store authorization records for DNS challenges
   private dnsRecordIds: string[] = []; // Store DNS record IDs for cleanup
+  private cancellationTokens: Map<string, boolean> = new Map(); // Track cancellation tokens
 
   setDatabase(database: DatabaseManager): void {
     this.database = database;
@@ -170,6 +171,35 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     return null;
   }
 
+  async cancelRenewal(renewalId: string): Promise<void> {
+    Logger.info(`Cancelling renewal ${renewalId}`);
+    
+    // Set cancellation token
+    this.cancellationTokens.set(renewalId, true);
+    
+    // Update status if it exists
+    const status = this.renewalStatuses.get(renewalId);
+    if (status) {
+      status.status = 'failed';
+      status.error = 'Operation cancelled by user';
+      status.message = 'Operation cancelled by user';
+      status.endTime = new Date();
+      status.logs.push(`Operation cancelled by user at ${new Date().toISOString()}`);
+      
+      // Remove from active renewals
+      this.activeRenewals.delete(status.connectionId);
+    }
+    
+    // Clean up cancellation token after 1 minute
+    setTimeout(() => {
+      this.cancellationTokens.delete(renewalId);
+    }, 60000);
+  }
+
+  isCancelled(renewalId: string): boolean {
+    return this.cancellationTokens.get(renewalId) === true;
+  }
+
   private getProgressForStatus(status: string): number {
     const progressMap: Record<string, number> = {
       'pending': 0,
@@ -199,7 +229,16 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     const updateStatusWithOp = (newStatus: RenewalStatus['status'], message: string, progress: number) => 
       this.updateStatus(status, newStatus, message, progress, operationManager);
     
+    // Helper method to check cancellation
+    const checkCancellation = () => {
+      if (this.isCancelled(renewalId)) {
+        throw new Error('Operation cancelled by user');
+      }
+    };
+    
     try {
+      // Check cancellation at the start
+      checkCancellation();
       // Get connection details
       const connection = await database.getConnectionById(connectionId);
       if (!connection) {
@@ -295,9 +334,14 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         csr = await this.generateCSRFromVOS(connection, status);
       }
       
+      // Check cancellation before certificate request
+      checkCancellation();
+      
       // Now continue with Let's Encrypt certificate request
       await updateStatusWithOp('requesting_certificate', 'Requesting certificate from Let\'s Encrypt', 20);
+      await accountManager.saveRenewalLog(fullFQDN, `DEBUG: About to call requestCertificate method`);
       const certificate = await this.requestCertificate(connection, csr, database, status, operationManager);
+      await accountManager.saveRenewalLog(fullFQDN, `DEBUG: requestCertificate returned, certificate length: ${certificate ? certificate.length : 'null/undefined'}`);
       
       // Step 4: Handle certificate installation based on application type
       if (connection.application_type === 'general') {
@@ -315,11 +359,15 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
           const certPath = path.join(domainEnvDir, 'certificate.pem');
           const privateKeyPath = path.join(domainEnvDir, 'private_key.pem');
           
+          await accountManager.saveRenewalLog(fullFQDN, `DEBUG: Looking for certificate.pem at: ${certPath}`);
+          await accountManager.saveRenewalLog(fullFQDN, `DEBUG: certificate.pem exists: ${fs.existsSync(certPath)}`);
+          
           // Create .crt file from certificate.pem
           if (fs.existsSync(certPath)) {
             const certContent = await fs.promises.readFile(certPath, 'utf8');
             const crtPath = path.join(domainEnvDir, `${fullFQDN}.crt`);
             await fs.promises.writeFile(crtPath, certContent);
+            await accountManager.saveRenewalLog(fullFQDN, `DEBUG: Created ${fullFQDN}.crt successfully`);
             status.logs.push(`Created ${fullFQDN}.crt file for ESXi import`);
             await accountManager.saveRenewalLog(fullFQDN, `Created ${fullFQDN}.crt file for ESXi import`);
           }
@@ -445,6 +493,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       // Include manual DNS entry if present
       if (status.manualDNSEntry) {
         metadata.manualDNSEntry = status.manualDNSEntry;
+        Logger.info(`Including manualDNSEntry in metadata: ${JSON.stringify(status.manualDNSEntry)}`);
       }
       
       await operationManager.updateOperation(status.id, {
@@ -689,13 +738,11 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       }));
       
       // Handle manual DNS challenge mode
-      // Force manual DNS for: custom DNS provider, manual mode selected, or general applications
-      const forceManualDNS = dnsProvider === 'custom' || dnsChallengeMode === 'manual' || connection.application_type === 'general';
+      // Force manual DNS for: custom DNS provider or manual mode explicitly selected
+      const forceManualDNS = dnsProvider === 'custom' || dnsChallengeMode === 'manual';
       
       if (forceManualDNS) {
-        const reason = connection.application_type === 'general' ? 'general application' : 
-                       dnsProvider === 'custom' ? 'custom DNS provider' : 
-                       'manual mode selected';
+        const reason = dnsProvider === 'custom' ? 'custom DNS provider' : 'manual mode selected';
         await accountManager.saveRenewalLog(fullFQDN, `Manual DNS challenge required (${reason}) for ${dnsProvider} provider`);
         status.logs.push(`Manual DNS challenge required (${reason})`);
         
@@ -707,7 +754,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         }
         
         // Use custom DNS handler for manual mode
-        await this.handleCustomDNSChallenge(connection, [], status);
+        await this.handleCustomDNSChallenge(connection, [], status, operationManager);
         
         // Complete the challenges
         await this.updateStatus(status, 'completing_validation', 'Completing Let\'s Encrypt validation', 70);
@@ -720,6 +767,16 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         const certificateData = await acmeClient.finalizeCertificate(order.order, csr);
         await accountManager.saveRenewalLog(fullFQDN, 'Let\'s Encrypt certificate downloaded successfully');
         status.logs.push('Let\'s Encrypt certificate downloaded successfully');
+        
+        // Save certificate and chain to accounts folder with individual certificate extraction
+        await accountManager.saveRenewalLog(fullFQDN, `DEBUG: About to save certificate chain. Certificate data length: ${certificateData.length}`);
+        Logger.debug(`About to save certificate chain for ${fullFQDN}. Certificate data length: ${certificateData.length}`);
+        
+        if (!certificateData || certificateData.length === 0) {
+          throw new Error('Certificate data is empty - cannot save certificate chain');
+        }
+        
+        await this.saveCertificateChain(fullFQDN, certificateData, status);
         
         return certificateData;
       }
@@ -827,6 +884,13 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       }
       
       // Save certificate and chain to accounts folder with individual certificate extraction
+      await accountManager.saveRenewalLog(fullFQDN, `DEBUG: About to save certificate chain. Certificate data length: ${certificate.length}`);
+      Logger.debug(`About to save certificate chain for ${fullFQDN}. Certificate data length: ${certificate.length}`);
+      
+      if (!certificate || certificate.length === 0) {
+        throw new Error('Certificate data is empty - cannot save certificate chain');
+      }
+      
       await this.saveCertificateChain(fullFQDN, certificate, status);
       
       await accountManager.saveRenewalLog(fullFQDN, `=== Certificate obtained successfully from Let's Encrypt ===`);
@@ -995,7 +1059,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     }
   }
 
-  private async handleDNSChallenge(connection: ConnectionRecord, database: DatabaseManager, status: RenewalStatus): Promise<void> {
+  private async handleDNSChallenge(connection: ConnectionRecord, database: DatabaseManager, status: RenewalStatus, operationManager?: OperationStatusManager): Promise<void> {
     const dnsProvider = connection.dns_provider || 'cloudflare';
     const dnsChallengeMode = connection.dns_challenge_mode || 'auto';
     const settings = await database.getSettingsByProvider(dnsProvider);
@@ -1005,7 +1069,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       const fullFQDN = `${connection.hostname}.${connection.domain}`;
       await accountManager.saveRenewalLog(fullFQDN, `User selected manual DNS challenge mode for ${dnsProvider} provider`);
       status.logs.push(`Manual DNS challenge mode selected for ${dnsProvider} provider`);
-      await this.handleCustomDNSChallenge(connection, settings, status);
+      await this.handleCustomDNSChallenge(connection, settings, status, operationManager);
       return;
     }
     
@@ -1021,7 +1085,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     } else if (dnsProvider === 'google') {
       await this.handleGoogleChallenge(connection, settings, status);
     } else if (dnsProvider === 'custom') {
-      await this.handleCustomDNSChallenge(connection, settings, status);
+      await this.handleCustomDNSChallenge(connection, settings, status, operationManager);
     } else {
       throw new Error(`Unsupported DNS provider: ${dnsProvider}`);
     }
@@ -1271,7 +1335,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     }
   }
 
-  private async handleCustomDNSChallenge(connection: ConnectionRecord, _settings: any[], status: RenewalStatus): Promise<void> {
+  private async handleCustomDNSChallenge(connection: ConnectionRecord, _settings: any[], status: RenewalStatus, operationManager?: OperationStatusManager): Promise<void> {
     const fullFQDN = `${connection.hostname}.${connection.domain}`;
     
     try {
@@ -1282,7 +1346,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       }
       const customDNS = await CustomDNSProvider.create(this.database, fullFQDN);
       
-      await this.updateStatus(status, 'waiting_manual_dns', 'Manual DNS entry required - waiting for admin', 60);
+      await this.updateStatus(status, 'waiting_manual_dns', 'Manual DNS entry required - waiting for admin', 60, operationManager);
       
       // Get the challenges that were created in the renewal flow
       const challenges = status.challenges || [];
@@ -1307,27 +1371,28 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         };
         
         // Update status to indicate manual intervention needed
-        await this.updateStatus(status, 'waiting_manual_dns', 'Waiting for manual DNS entry', 30);
+        Logger.info(`About to update status to waiting_manual_dns with manualDNSEntry: ${JSON.stringify(status.manualDNSEntry)}`);
+        await this.updateStatus(status, 'waiting_manual_dns', 'Waiting for manual DNS entry', 30, operationManager);
         
         // Wait for manual DNS entry (5 minute timeout)
         const maxWaitTime = 300000; // 5 minutes
         Logger.info(`Waiting for manual DNS entry for ${recordName}`);
         await accountManager.saveRenewalLog(fullFQDN, `Waiting for manual DNS entry. Timeout: ${maxWaitTime / 1000} seconds`);
         
-        const isVerified = await customDNS.waitForManualEntry(recordName, keyAuth, maxWaitTime);
+        const isVerified = await customDNS.waitForManualEntry(recordName, keyAuth, maxWaitTime, () => this.isCancelled(status.id));
         
         if (!isVerified) {
           throw new Error(`Manual DNS entry verification timed out after ${maxWaitTime / 1000} seconds`);
         }
         
         // Update progress to show verification completed
-        await this.updateStatus(status, 'completing_validation', 'DNS record verified - completing validation', 60);
+        await this.updateStatus(status, 'completing_validation', 'DNS record verified - completing validation', 60, operationManager);
         
         await accountManager.saveRenewalLog(fullFQDN, `Manual DNS entry verified successfully`);
         status.logs.push(`DNS record verified: ${recordName}`);
       }
       
-      await this.updateStatus(status, 'completing_validation', 'Manual DNS entries verified - completing validation', 70);
+      await this.updateStatus(status, 'completing_validation', 'Manual DNS entries verified - completing validation', 70, operationManager);
       
     } catch (error) {
       Logger.error(`Custom DNS challenge failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -1380,15 +1445,13 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         return;
       }
 
-      // Parse the certificate chain to send all certificates
+      // Extract only the leaf certificate (first certificate in the chain)
       const certParts = certificate.split('-----END CERTIFICATE-----');
-      const allCerts = certParts
-        .filter(part => part.includes('-----BEGIN CERTIFICATE-----'))
-        .map(part => (part.trim() + '\n-----END CERTIFICATE-----'));
+      const leafCert = certParts[0].trim() + '\n-----END CERTIFICATE-----';
 
       const postData = JSON.stringify({
         service: 'tomcat',
-        certificates: allCerts
+        certificates: [leafCert]
       });
 
       const options = {
@@ -1406,7 +1469,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
 
       Logger.info(`VOS certificate chain upload request body: ${postData}`);
       await accountManager.saveRenewalLog(fullFQDN, `VOS certificate chain upload request to ${fullFQDN}:${options.port}${options.path}`);
-      await accountManager.saveRenewalLog(fullFQDN, `Uploading ${allCerts.length} certificate(s) in chain`);
+      await accountManager.saveRenewalLog(fullFQDN, `Uploading leaf certificate to tomcat service`);
       await accountManager.saveRenewalLog(fullFQDN, `Request body: ${postData}`);
 
       const req = https.request(options, (res) => {
@@ -1595,20 +1658,28 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
 
   private async saveCertificateChain(domain: string, certificateData: string, status: RenewalStatus): Promise<void> {
     try {
+      await accountManager.saveRenewalLog(domain, `DEBUG: saveCertificateChain called with domain: ${domain}, certificateData length: ${certificateData.length}`);
+      Logger.debug(`saveCertificateChain called with domain: ${domain}, certificateData length: ${certificateData.length}`);
+      
       // Load existing private key if it exists (for general applications with custom CSR)
       let privateKey = '';
       try {
         const existingCert = await accountManager.loadCertificate(domain);
         if (existingCert) {
           privateKey = existingCert.privateKey;
+          await accountManager.saveRenewalLog(domain, `DEBUG: Found existing private key, length: ${privateKey.length}`);
         }
       } catch (error) {
         // Private key not found, this is normal for VOS applications
         Logger.debug(`No existing private key found for ${domain}, this is normal for VOS applications`);
+        await accountManager.saveRenewalLog(domain, `DEBUG: No existing private key found for ${domain}`);
       }
 
       // Use the new chain saving method that extracts individual certificates
+      await accountManager.saveRenewalLog(domain, `Saving certificate chain for ${domain}`);
+      await accountManager.saveRenewalLog(domain, `DEBUG: About to call accountManager.saveCertificateChain`);
       await accountManager.saveCertificateChain(domain, certificateData, privateKey);
+      await accountManager.saveRenewalLog(domain, `DEBUG: accountManager.saveCertificateChain completed successfully`);
       
       status.logs.push(`Saved certificate files for ${domain}`);
       status.logs.push(`- Domain certificate: certificate.pem, ${domain}.crt`);
@@ -1620,9 +1691,22 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         status.logs.push(`- Private key: private_key.pem, ${domain}.key`);
       }
       
+      // Also save these logs to the renewal log file
+      await accountManager.saveRenewalLog(domain, `Saved certificate files for ${domain}`);
+      await accountManager.saveRenewalLog(domain, `- Domain certificate: certificate.pem, ${domain}.crt`);
+      await accountManager.saveRenewalLog(domain, `- Intermediate certificate: intermediate.crt`);
+      await accountManager.saveRenewalLog(domain, `- Root certificate: root.crt`);
+      await accountManager.saveRenewalLog(domain, `- CA bundle: ca-bundle.crt`);
+      await accountManager.saveRenewalLog(domain, `- Full chain: fullchain.pem`);
+      if (privateKey) {
+        await accountManager.saveRenewalLog(domain, `- Private key: private_key.pem, ${domain}.key`);
+      }
+      
       Logger.info(`Successfully saved certificate chain for ${domain}`);
     } catch (error) {
-      Logger.error(`Failed to save certificate chain for ${domain}:`, error);
+      const errorMsg = `Failed to save certificate chain for ${domain}: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      Logger.error(errorMsg, error);
+      await accountManager.saveRenewalLog(domain, `ERROR: ${errorMsg}`);
       throw error;
     }
   }
