@@ -20,18 +20,25 @@ export default function Component() {
         
         {/* Desktop Navigation */}
         <NavigationMenu className="hidden lg:flex">
-          <NavigationMenuList className="flex-1 justify-evenly">
+          <NavigationMenuList className="flex items-center space-x-6">
             <NavigationMenuLink asChild>
-              <Link to="/" className="mr-4">
+              <Link to="/" className="hover:text-blue-600 transition-colors">
                 Home
               </Link>
             </NavigationMenuLink>
             {templateConfig.useBackend && (
-              <NavigationMenuLink asChild>
-                <Link to="/connections" className="mr-4">
-                  Connections
-                </Link>
-              </NavigationMenuLink>
+              <>
+                <NavigationMenuLink asChild>
+                  <Link to="/connections" className="hover:text-blue-600 transition-colors">
+                    Connections
+                  </Link>
+                </NavigationMenuLink>
+                <NavigationMenuLink asChild>
+                  <Link to="/logs" className="hover:text-blue-600 transition-colors">
+                    Logs
+                  </Link>
+                </NavigationMenuLink>
+              </>
             )}
           </NavigationMenuList>
         </NavigationMenu>
@@ -58,13 +65,22 @@ export default function Component() {
               Home
             </Link>
             {templateConfig.useBackend && (
-              <Link 
-                to="/connections" 
-                className="block px-3 py-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800"
-                onClick={() => setIsMenuOpen(false)}
-              >
-                Connections
-              </Link>
+              <>
+                <Link 
+                  to="/connections" 
+                  className="block px-3 py-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  Connections
+                </Link>
+                <Link 
+                  to="/logs" 
+                  className="block px-3 py-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  Logs
+                </Link>
+              </>
             )}
           </div>
         </div>

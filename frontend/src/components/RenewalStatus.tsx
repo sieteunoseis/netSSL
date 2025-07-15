@@ -131,7 +131,8 @@ const RenewalStatusComponent: React.FC<RenewalStatusProps> = ({ connectionId, re
         progress: wsProgress,
         startTime: prevStatus?.startTime || new Date().toISOString(),
         error: wsError,
-        logs: activeOperation.metadata?.logs || prevStatus?.logs || []
+        logs: activeOperation.metadata?.logs || prevStatus?.logs || [],
+        manualDNSEntry: activeOperation.metadata?.manualDNSEntry || prevStatus?.manualDNSEntry
       } as RenewalStatus));
       setLoading(false);
     }
@@ -288,33 +289,121 @@ const RenewalStatusComponent: React.FC<RenewalStatusProps> = ({ connectionId, re
             {/* Manual DNS Instructions */}
             {status.status === 'waiting_manual_dns' && status.manualDNSEntry && (
               <div className="p-4 bg-orange-50 border border-orange-200 rounded-md">
-                <h4 className="font-medium text-orange-800 mb-2 flex items-center">
+                <h4 className="font-medium text-orange-800 mb-3 flex items-center">
                   <AlertCircle className="w-4 h-4 mr-2" />
                   Manual DNS Configuration Required
                 </h4>
-                <div className="space-y-2 text-sm">
-                  <div>
-                    <span className="font-medium">Record Type:</span> TXT
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <span className="text-sm font-medium text-orange-800">Record Type:</span>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value="TXT"
+                        readOnly
+                        className="flex-1 px-3 py-2 bg-white border border-orange-300 rounded-md text-sm font-mono"
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          navigator.clipboard.writeText("TXT");
+                          toast({
+                            title: "Copied",
+                            description: "Record type copied to clipboard",
+                            duration: 2000,
+                          });
+                        }}
+                      >
+                        Copy
+                      </Button>
+                    </div>
                   </div>
-                  <div>
-                    <span className="font-medium">Name:</span>
-                    <code className="ml-2 px-2 py-1 bg-orange-100 rounded text-xs">
-                      {status.manualDNSEntry.recordName}
-                    </code>
+                  
+                  <div className="space-y-1">
+                    <span className="text-sm font-medium text-orange-800">DNS Record Name:</span>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={status.manualDNSEntry.recordName}
+                        readOnly
+                        className="flex-1 px-3 py-2 bg-white border border-orange-300 rounded-md text-sm font-mono"
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          navigator.clipboard.writeText(status.manualDNSEntry.recordName);
+                          toast({
+                            title: "Copied",
+                            description: "DNS record name copied to clipboard",
+                            duration: 2000,
+                          });
+                        }}
+                      >
+                        Copy
+                      </Button>
+                    </div>
                   </div>
-                  <div>
-                    <span className="font-medium">Value:</span>
-                    <code className="ml-2 px-2 py-1 bg-orange-100 rounded text-xs break-all">
-                      {status.manualDNSEntry.recordValue}
-                    </code>
+                  
+                  <div className="space-y-1">
+                    <span className="text-sm font-medium text-orange-800">DNS Record Value:</span>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={status.manualDNSEntry.recordValue}
+                        readOnly
+                        className="flex-1 px-3 py-2 bg-white border border-orange-300 rounded-md text-sm font-mono break-all"
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          navigator.clipboard.writeText(status.manualDNSEntry.recordValue);
+                          toast({
+                            title: "Copied",
+                            description: "DNS record value copied to clipboard",
+                            duration: 2000,
+                          });
+                        }}
+                      >
+                        Copy
+                      </Button>
+                    </div>
                   </div>
-                  <div>
-                    <span className="font-medium">TTL:</span> 300 (or minimum allowed)
+                  
+                  <div className="space-y-1">
+                    <span className="text-sm font-medium text-orange-800">TTL (Time To Live):</span>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value="300"
+                        readOnly
+                        className="flex-1 px-3 py-2 bg-white border border-orange-300 rounded-md text-sm font-mono"
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          navigator.clipboard.writeText("300");
+                          toast({
+                            title: "Copied",
+                            description: "TTL value copied to clipboard",
+                            duration: 2000,
+                          });
+                        }}
+                      >
+                        Copy
+                      </Button>
+                    </div>
                   </div>
                 </div>
-                <div className="mt-3 text-xs text-orange-700">
-                  <strong>Instructions:</strong> Add the above TXT record to your DNS management interface. 
-                  The system will automatically verify the record every 10 seconds.
+                
+                <div className="mt-4 p-3 bg-orange-100 rounded-md">
+                  <p className="text-sm text-orange-800">
+                    <strong>Instructions:</strong> Add the above TXT record to your DNS management interface. 
+                    The system will automatically verify the record every 10 seconds and proceed once the DNS changes propagate.
+                  </p>
                 </div>
               </div>
             )}
@@ -382,9 +471,17 @@ const RenewalStatusComponent: React.FC<RenewalStatusProps> = ({ connectionId, re
                 <RefreshCw className="w-4 h-4 mr-2" />
                 Refresh
               </Button>
-              {(status.status === 'completed' || status.status === 'failed') && (
+              {(status.status === 'completed' || status.status === 'failed') ? (
                 <Button onClick={onClose} variant="outline" size="sm">
                   Close
+                </Button>
+              ) : status.status === 'waiting_manual_dns' ? (
+                <Button onClick={onClose} variant="ghost" size="sm">
+                  Minimize
+                </Button>
+              ) : (
+                <Button onClick={onClose} variant="ghost" size="sm">
+                  Cancel
                 </Button>
               )}
             </div>

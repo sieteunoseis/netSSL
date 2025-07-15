@@ -34,7 +34,7 @@ const FIELD_GROUPS = {
   basic: ["name", "hostname", "application_type", "application_type_info", "application_type_info_ise", "application_type_info_general"],
   authentication: ["username", "password"],
   certificate: ["domain", "ssl_provider", "dns_provider", "alt_names", "custom_csr", "general_private_key", "portal_url", "ise_nodes", "ise_certificate", "ise_private_key"],
-  advanced: ["enable_ssh", "auto_restart_service", "auto_renew"]
+  advanced: ["enable_ssh", "auto_restart_service", "auto_renew", "is_enabled"]
 };
 
 const AddConnectionModalTabbed: React.FC<AddConnectionModalTabbedProps> = ({ 

@@ -100,10 +100,21 @@ const CertificateRenewalButton = ({ connection, onConfirmRenew }) => {
   const getButtonContent = () => {
     if (isRenewing) {
       const progressText = progress > 0 ? ` (${progress}%)` : '';
+      
+      // Show more detailed status messages during DNS verification
+      let displayMessage = message || 'Renewing...';
+      if (renewalStatus === 'waiting_manual_dns') {
+        displayMessage = 'Waiting for manual DNS entry';
+      } else if (renewalStatus === 'waiting_dns_propagation') {
+        displayMessage = 'Waiting for DNS propagation';
+      } else if (renewalStatus === 'completing_validation') {
+        displayMessage = 'Completing DNS validation';
+      }
+      
       return (
         <>
           <RotateCcw className="mr-2 h-4 w-4 animate-spin" />
-          {message || 'Renewing...'}{progressText}
+          {displayMessage}{progressText}
         </>
       );
     }

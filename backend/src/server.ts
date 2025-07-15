@@ -460,6 +460,143 @@ app.get('/api/data/:id/renewal-status/:renewalId', asyncHandler(async (req: Requ
   }
 }));
 
+// Operations management endpoints
+app.get('/api/operations', asyncHandler(async (req: Request, res: Response) => {
+  try {
+    // Get all operations from database
+    const operations = await database.getActiveOperationsByType(0, '', false);
+    
+    // Add age information
+    const operationsWithAge = operations.map(op => ({
+      ...op,
+      ageMinutes: Math.floor((Date.now() - new Date(op.started_at).getTime()) / 1000 / 60)
+    }));
+
+    return res.json(operationsWithAge);
+  } catch (error: any) {
+    Logger.error('Error getting operations:', error);
+    return res.status(500).json({ 
+      error: 'Failed to get operations',
+      message: error.message 
+    });
+  }
+}));
+
+app.post('/api/operations/:operationId/force-complete', asyncHandler(async (req: Request, res: Response) => {
+  const operationId = req.params.operationId;
+  const { status = 'failed', error = 'Operation manually cancelled' } = req.body;
+
+  if (!['completed', 'failed'].includes(status)) {
+    return res.status(400).json({ 
+      error: 'Invalid status. Must be "completed" or "failed"' 
+    });
+  }
+
+  try {
+    // Check if operation exists
+    const operation = await operationManager.getOperation(operationId);
+    if (!operation) {
+      return res.status(404).json({ error: 'Operation not found' });
+    }
+
+    // Update operation status
+    await operationManager.updateOperation(operationId, {
+      status: status as 'completed' | 'failed',
+      progress: 100,
+      error: status === 'failed' ? error : undefined,
+      message: status === 'completed' ? 'Operation completed manually' : 'Operation cancelled manually'
+    });
+
+    Logger.info(`Operation ${operationId} manually set to ${status} status`);
+    
+    return res.json({ 
+      message: `Operation ${operationId} has been marked as ${status}`,
+      operationId,
+      status
+    });
+
+  } catch (error: any) {
+    Logger.error(`Error updating operation ${operationId}:`, error);
+    return res.status(500).json({
+      error: 'Failed to update operation',
+      message: error.message
+    });
+  }
+}));
+
+app.delete('/api/operations/:operationId', asyncHandler(async (req: Request, res: Response) => {
+  const operationId = req.params.operationId;
+
+  try {
+    // Check if operation exists
+    const operation = await operationManager.getOperation(operationId);
+    if (!operation) {
+      return res.status(404).json({ error: 'Operation not found' });
+    }
+
+    // Delete from database
+    await database.deleteActiveOperation(operationId);
+    
+    Logger.info(`Operation ${operationId} deleted from database`);
+    
+    return res.json({ 
+      message: `Operation ${operationId} has been deleted`,
+      operationId
+    });
+
+  } catch (error: any) {
+    Logger.error(`Error deleting operation ${operationId}:`, error);
+    return res.status(500).json({
+      error: 'Failed to delete operation',
+      message: error.message
+    });
+  }
+}));
+
+app.post('/api/operations/cleanup', asyncHandler(async (req: Request, res: Response) => {
+  const { hoursOld = 24, forceStuck = false } = req.body;
+
+  try {
+    let deletedCount = 0;
+    
+    if (forceStuck) {
+      // Force complete all stuck operations first
+      const stuckOps = await database.getActiveOperationsByType(0, '', false);
+      const stuckOperations = stuckOps.filter(op => 
+        ['pending', 'in_progress'].includes(op.status) &&
+        (Date.now() - new Date(op.started_at).getTime()) > 30 * 60 * 1000 // older than 30 minutes
+      );
+
+      for (const op of stuckOperations) {
+        await operationManager.updateOperation(op.id, {
+          status: 'failed',
+          progress: 100,
+          error: 'Operation cancelled due to stuck state'
+        });
+        deletedCount++;
+      }
+      
+      Logger.info(`Force completed ${stuckOperations.length} stuck operations`);
+    }
+
+    // Clean up old completed operations
+    await operationManager.cleanupCompletedOperations(hoursOld * 60);
+    
+    return res.json({ 
+      message: `Cleanup completed. ${deletedCount} stuck operations were force completed.`,
+      forceCompletedCount: deletedCount,
+      hoursOld
+    });
+
+  } catch (error: any) {
+    Logger.error('Error during operations cleanup:', error);
+    return res.status(500).json({
+      error: 'Failed to cleanup operations',
+      message: error.message
+    });
+  }
+}));
+
 // Certificate download endpoints
 app.get('/api/data/:id/certificates/:type', asyncHandler(async (req: Request, res: Response) => {
   const connectionId = parseInt(req.params.id);
@@ -690,6 +827,128 @@ app.get('/api/certificate/:hostname', asyncHandler(async (req: Request, res: Res
   }
 
   return res.json(certInfo);
+}));
+
+// Get renewal logs for a specific connection
+app.get('/api/data/:id/renewal-logs', asyncHandler(async (req: Request, res: Response) => {
+  const connectionId = parseInt(req.params.id);
+  
+  if (isNaN(connectionId)) {
+    return res.status(400).json({ error: 'Invalid connection ID parameter' });
+  }
+
+  try {
+    const connection = await database.getConnectionById(connectionId);
+    if (!connection) {
+      return res.status(404).json({ error: 'Connection not found' });
+    }
+
+    const { getDomainFromConnection } = await import('./utils/domain-utils');
+    const domain = getDomainFromConnection(connection);
+    
+    if (!domain) {
+      return res.status(400).json({ error: 'Invalid domain configuration for this connection' });
+    }
+    
+    const { AccountManager } = await import('./account-manager');
+    const accountManager = new AccountManager();
+    
+    const logs = await accountManager.getRenewalLog(domain);
+    
+    return res.json({
+      domain,
+      logs,
+      connection: {
+        id: connection.id,
+        name: connection.name,
+        hostname: connection.hostname,
+        domain: connection.domain
+      }
+    });
+  } catch (error) {
+    Logger.error('Error retrieving renewal logs:', error);
+    return res.status(500).json({ 
+      error: 'Internal server error',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+}));
+
+// Get logs for all connections (for logs page)
+app.get('/api/logs/all', asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const connections = await database.getAllConnections();
+    const { AccountManager } = await import('./account-manager');
+    const { getDomainFromConnection } = await import('./utils/domain-utils');
+    const accountManager = new AccountManager();
+    
+    const logsData = await Promise.all(
+      connections.map(async (connection) => {
+        const domain = getDomainFromConnection(connection);
+        
+        if (!domain) {
+          return {
+            connection: {
+              id: connection.id,
+              name: connection.name,
+              hostname: connection.hostname,
+              domain: connection.domain,
+              application_type: connection.application_type,
+              portal_url: connection.portal_url
+            },
+            domain: null,
+            logs: [],
+            hasLogs: false,
+            error: 'Invalid domain configuration'
+          };
+        }
+        
+        try {
+          const logs = await accountManager.getRenewalLog(domain);
+          return {
+            connection: {
+              id: connection.id,
+              name: connection.name,
+              hostname: connection.hostname,
+              domain: connection.domain,
+              application_type: connection.application_type,
+              portal_url: connection.portal_url
+            },
+            domain,
+            logs,
+            hasLogs: logs.length > 0
+          };
+        } catch (error) {
+          Logger.warn(`Failed to get logs for ${domain}:`, error);
+          return {
+            connection: {
+              id: connection.id,
+              name: connection.name,
+              hostname: connection.hostname,
+              domain: connection.domain,
+              application_type: connection.application_type,
+              portal_url: connection.portal_url
+            },
+            domain,
+            logs: [],
+            hasLogs: false,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          };
+        }
+      })
+    );
+
+    return res.json({
+      accounts: logsData,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    Logger.error('Error retrieving all logs:', error);
+    return res.status(500).json({ 
+      error: 'Internal server error',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
 }));
 
 // Debug endpoint to view accounts directory structure

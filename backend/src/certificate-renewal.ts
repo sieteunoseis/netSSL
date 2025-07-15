@@ -437,14 +437,21 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     
     // Update operation status - this will automatically emit WebSocket events
     if (operationManager) {
+      const metadata: any = {
+        logs: status.logs,
+        renewal_status: newStatus
+      };
+      
+      // Include manual DNS entry if present
+      if (status.manualDNSEntry) {
+        metadata.manualDNSEntry = status.manualDNSEntry;
+      }
+      
       await operationManager.updateOperation(status.id, {
         status: newStatus === 'completed' ? 'completed' : newStatus === 'failed' ? 'failed' : 'in_progress',
         progress: progress,
         message: message,
-        metadata: {
-          logs: status.logs,
-          renewal_status: newStatus
-        }
+        metadata
       });
     }
     
@@ -1300,7 +1307,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         };
         
         // Update status to indicate manual intervention needed
-        await this.updateStatus(status, 'waiting_manual_dns', 'Waiting for manual DNS entry', 65);
+        await this.updateStatus(status, 'waiting_manual_dns', 'Waiting for manual DNS entry', 30);
         
         // Wait for manual DNS entry (5 minute timeout)
         const maxWaitTime = 300000; // 5 minutes
@@ -1312,6 +1319,9 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         if (!isVerified) {
           throw new Error(`Manual DNS entry verification timed out after ${maxWaitTime / 1000} seconds`);
         }
+        
+        // Update progress to show verification completed
+        await this.updateStatus(status, 'completing_validation', 'DNS record verified - completing validation', 60);
         
         await accountManager.saveRenewalLog(fullFQDN, `Manual DNS entry verified successfully`);
         status.logs.push(`DNS record verified: ${recordName}`);
