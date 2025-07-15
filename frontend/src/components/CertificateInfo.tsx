@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Shield, Calendar, AlertCircle, CheckCircle, RefreshCw, FileText } from "lucide-react";
+import { Shield, Calendar, AlertCircle, CheckCircle, RefreshCw, FileText, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiCall } from "@/lib/api";
 import { useCertificateRenewal } from "@/contexts/WebSocketContext";
@@ -43,6 +43,7 @@ const CertificateInfoComponent: React.FC<CertificateInfoProps> = ({ connectionId
   
   // Use WebSocket hook for real-time renewal updates
   const { 
+    activeOperation,
     isRenewing, 
     progress, 
     message, 
@@ -75,6 +76,40 @@ const CertificateInfoComponent: React.FC<CertificateInfoProps> = ({ connectionId
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const killRenewalOperation = async () => {
+    if (!activeOperation) return;
+    
+    // Confirm before cancelling
+    if (!confirm('Are you sure you want to cancel this certificate renewal operation? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      // Cancel the active operation via API
+      const response = await apiCall(`/operations/${activeOperation.id}`, {
+        method: 'DELETE'
+      });
+      
+      if (response.ok) {
+        toast({
+          title: "Operation Cancelled",
+          description: "Certificate renewal operation has been cancelled and cleaned up.",
+          duration: 3000,
+        });
+      } else {
+        throw new Error('Failed to cancel operation');
+      }
+    } catch (error) {
+      console.error('Error cancelling operation:', error);
+      toast({
+        title: "Error",
+        description: "Failed to cancel the operation. Please try again.",
+        variant: "destructive",
+        duration: 5000,
+      });
     }
   };
 
@@ -199,11 +234,21 @@ const CertificateInfoComponent: React.FC<CertificateInfoProps> = ({ connectionId
       {/* Real-time renewal progress */}
       {isRenewing && (
         <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-          <div className="flex items-center space-x-2 mb-2">
-            <RefreshCw className="w-4 h-4 text-blue-600 animate-spin" />
-            <span className="text-sm font-medium text-blue-800 dark:text-blue-200">
-              Certificate Renewal in Progress
-            </span>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center space-x-2">
+              <RefreshCw className="w-4 h-4 text-blue-600 animate-spin" />
+              <span className="text-sm font-medium text-blue-800 dark:text-blue-200">
+                Certificate Renewal in Progress
+              </span>
+            </div>
+            <Button
+              onClick={killRenewalOperation}
+              variant="ghost"
+              size="sm"
+              className="text-gray-500 hover:text-red-500 h-6 w-6 p-0"
+            >
+              <X className="w-3 h-3" />
+            </Button>
           </div>
           <div className="space-y-2">
             <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-2">

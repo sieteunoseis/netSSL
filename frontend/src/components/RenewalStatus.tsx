@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { RefreshCw, CheckCircle, XCircle, Clock, AlertCircle, Download } from "lucide-react";
+import { RefreshCw, CheckCircle, XCircle, Clock, AlertCircle, Download, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiCall } from "@/lib/api";
 import { useCertificateRenewal } from "@/contexts/WebSocketContext";
@@ -83,6 +83,39 @@ const RenewalStatusComponent: React.FC<RenewalStatusProps> = ({ connectionId, re
       setCertificateFiles(data.availableFiles || []);
     } catch (err) {
       console.error('Error fetching certificate files:', err);
+    }
+  };
+
+  const killOperation = async () => {
+    // Confirm before cancelling
+    if (!confirm('Are you sure you want to cancel this certificate renewal operation? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      // Cancel the active operation via API
+      const response = await apiCall(`/operations/${renewalId}`, {
+        method: 'DELETE'
+      });
+      
+      if (response.ok) {
+        toast({
+          title: "Operation Cancelled",
+          description: "Certificate renewal operation has been cancelled and cleaned up.",
+          duration: 3000,
+        });
+        onClose();
+      } else {
+        throw new Error('Failed to cancel operation');
+      }
+    } catch (error) {
+      console.error('Error cancelling operation:', error);
+      toast({
+        title: "Error",
+        description: "Failed to cancel the operation. Please try again.",
+        variant: "destructive",
+        duration: 5000,
+      });
     }
   };
 
@@ -250,8 +283,13 @@ const RenewalStatusComponent: React.FC<RenewalStatusProps> = ({ connectionId, re
             {getStatusIcon()}
             <span>Certificate Renewal Status</span>
           </CardTitle>
-          <Button onClick={onClose} variant="ghost" size="sm">
-            ×
+          <Button 
+            onClick={status && !['completed', 'failed'].includes(status.status) ? killOperation : onClose} 
+            variant="ghost" 
+            size="sm"
+            className="text-gray-500 hover:text-red-500"
+          >
+            <X className="w-4 h-4" />
           </Button>
         </div>
       </CardHeader>
