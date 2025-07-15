@@ -221,7 +221,7 @@ export class SSHClient {
           // Cisco VOS can take 10-15 seconds to fully initialize
           const shellTimeout = setTimeout(() => {
             if (!resolved) {
-              Logger.warn(`Shell timeout reached for ${hostname} after 25 seconds`);
+              Logger.warn(`Shell timeout reached for ${hostname} after 60 seconds`);
               clearTimeout(timeout);
               if (dataReceived.length > 0) {
                 Logger.warn(`SSH timeout for ${hostname} - Did not find admin: prompt. Data received:`, {
@@ -243,7 +243,7 @@ export class SSHClient {
             } else {
               Logger.info(`Shell timeout cleared for ${hostname} - already resolved`);
             }
-          }, 25000); // Wait up to 25 seconds for prompt
+          }, 60000); // Wait up to 60 seconds for prompt
         });
       });
 

@@ -242,7 +242,7 @@ export class DatabaseManager {
       }
       
       const existingColumns = columns.map((col: any) => col.name);
-      const requiredColumns = ['id', ...this.tableColumns, 'password_hash', 'application_type', 'custom_csr', 'last_cert_issued', 'cert_count_this_week', 'cert_count_reset_date', 'created_at', 'updated_at'];
+      const requiredColumns = ['id', ...this.tableColumns, 'password_hash', 'application_type', 'custom_csr', 'is_enabled', 'last_cert_issued', 'cert_count_this_week', 'cert_count_reset_date', 'created_at', 'updated_at'];
       
       // Check for missing columns
       const missingColumns = requiredColumns.filter(col => !existingColumns.includes(col));
@@ -301,6 +301,10 @@ export class DatabaseManager {
         columnDef = 'TEXT DEFAULT "vos"';
       } else if (column === 'custom_csr') {
         columnDef = 'TEXT';
+      } else if (column === 'is_enabled') {
+        columnDef = 'INTEGER DEFAULT 1';
+      } else if (column === 'dns_challenge_mode') {
+        columnDef = 'TEXT DEFAULT "auto"';
       }
 
       const alterQuery = `ALTER TABLE connections ADD COLUMN ${column} ${columnDef}`;
@@ -328,7 +332,7 @@ export class DatabaseManager {
   getAllConnections(): Promise<ConnectionRecord[]> {
     return new Promise((resolve, reject) => {
       // Get all columns including password for API functionality
-      const baseColumns = ['id', ...this.tableColumns, 'application_type', 'custom_csr', 'last_cert_issued', 'cert_count_this_week', 'cert_count_reset_date', 'created_at', 'updated_at'];
+      const baseColumns = ['id', ...this.tableColumns, 'application_type', 'custom_csr', 'is_enabled', 'last_cert_issued', 'cert_count_this_week', 'cert_count_reset_date', 'created_at', 'updated_at'];
       const query = `SELECT ${baseColumns.join(', ')} FROM connections`;
       
       this.db.all(query, [], (err: any, rows: any[]) => {
@@ -346,7 +350,7 @@ export class DatabaseManager {
   getConnectionById(id: number): Promise<ConnectionRecord | null> {
     return new Promise((resolve, reject) => {
       // Get all columns including password for API functionality
-      const baseColumns = ['id', ...this.tableColumns, 'application_type', 'custom_csr', 'last_cert_issued', 'cert_count_this_week', 'cert_count_reset_date', 'created_at', 'updated_at'];
+      const baseColumns = ['id', ...this.tableColumns, 'application_type', 'custom_csr', 'is_enabled', 'last_cert_issued', 'cert_count_this_week', 'cert_count_reset_date', 'created_at', 'updated_at'];
       const query = `SELECT ${baseColumns.join(', ')} FROM connections WHERE id = ?`;
       
       this.db.get(query, [id], (err: any, row: any) => {
@@ -368,7 +372,7 @@ export class DatabaseManager {
     
     return new Promise((resolve, reject) => {
       // Include all columns including the newer fields
-      const allColumns = [...this.tableColumns, 'application_type', 'custom_csr'];
+      const allColumns = [...this.tableColumns, 'application_type', 'custom_csr', 'is_enabled'];
       const columnValues = allColumns.map(col => (data as any)[col] || null);
 
       const insertQuery = `
@@ -398,7 +402,7 @@ export class DatabaseManager {
         // Only update columns that are provided in data (excluding password and id)
         const dataColumns = this.tableColumns.filter(col => col !== 'password');
         // Add the new fields that were added later
-        const allUpdateableColumns = [...dataColumns, 'application_type', 'custom_csr'];
+        const allUpdateableColumns = [...dataColumns, 'application_type', 'custom_csr', 'is_enabled'];
         const updateColumns: string[] = [];
         const updateValues: any[] = [];
         

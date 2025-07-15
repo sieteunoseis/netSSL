@@ -224,7 +224,8 @@ const Home = () => {
       "digitalocean": "DigitalOcean",
       "route53": "AWS Route53",
       "azure": "Azure DNS",
-      "google": "Google Cloud DNS"
+      "google": "Google Cloud DNS",
+      "custom": "Custom DNS (Manual)"
     };
     return providers[provider] || provider;
   };

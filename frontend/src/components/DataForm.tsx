@@ -225,8 +225,8 @@ const DataForm: React.FC<DataFormProps> = ({
       .replace(/[^a-zA-Z]+/g, " ") // Replace non-letter characters with spaces
       .split(' ')
       .map(word => {
-        // Keep SSL, DNS, and SSH in uppercase
-        if (word.toLowerCase() === 'ssl' || word.toLowerCase() === 'dns' || word.toLowerCase() === 'ssh') {
+        // Keep SSL, DNS, SSH, ISE, and URL in uppercase
+        if (word.toLowerCase() === 'ssl' || word.toLowerCase() === 'dns' || word.toLowerCase() === 'ssh' || word.toLowerCase() === 'ise' || word.toLowerCase() === 'url') {
           return word.toUpperCase();
         }
         return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
@@ -335,6 +335,7 @@ const DataForm: React.FC<DataFormProps> = ({
                 data-lpignore="true"
                 data-form-type="other"
                 data-1p-ignore="true"
+                className="resize-none"
                 onChange={(e) => {
                   handleTextareaChange(e, col.validator, isOptional && !isConditionallyRequired);
                 }}

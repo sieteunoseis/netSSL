@@ -83,16 +83,21 @@
   }
   
   .scrollbar-styled::-webkit-scrollbar-track {
-    background: hsl(var(--muted));
-    border-radius: 4px;
+    background: transparent;
   }
   
   .scrollbar-styled::-webkit-scrollbar-thumb {
     background: hsl(var(--muted-foreground));
     border-radius: 4px;
+    background-clip: padding-box;
+    border: 2px solid transparent;
   }
   
   .scrollbar-styled::-webkit-scrollbar-thumb:hover {
     background: hsl(var(--foreground) / 0.7);
+  }
+  
+  .scrollbar-styled::-webkit-scrollbar-corner {
+    background: transparent;
   }
 }

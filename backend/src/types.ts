@@ -7,6 +7,7 @@ export interface ConnectionRecord {
   domain: string;
   ssl_provider: string;
   dns_provider: string;
+  dns_challenge_mode?: string;
   application_type?: 'vos' | 'ise' | 'general';
   version?: string;
   alt_names?: string;

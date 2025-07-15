@@ -46,8 +46,8 @@ interface EditConnectionModalTabbedProps {
 const FIELD_GROUPS = {
   basic: ["name", "hostname", "application_type"],
   authentication: ["username", "password"],
-  certificate: ["domain", "ssl_provider", "dns_provider", "alt_names", "custom_csr", "general_private_key", "portal_url", "ise_nodes", "ise_certificate", "ise_private_key"],
-  advanced: ["enable_ssh", "auto_restart_service", "auto_renew"]
+  certificate: ["domain", "ssl_provider", "dns_provider", "dns_challenge_mode", "alt_names", "custom_csr", "general_private_key", "portal_url", "ise_nodes", "ise_certificate", "ise_private_key"],
+  advanced: ["enable_ssh", "auto_restart_service", "auto_renew", "is_enabled"]
 };
 
 const EditConnectionModalTabbed: React.FC<EditConnectionModalTabbedProps> = ({ 
@@ -204,7 +204,7 @@ const EditConnectionModalTabbed: React.FC<EditConnectionModalTabbedProps> = ({
       .replace(/[^a-zA-Z]+/g, " ")
       .split(' ')
       .map(word => {
-        if (word.toLowerCase() === 'ssl' || word.toLowerCase() === 'dns' || word.toLowerCase() === 'ssh') {
+        if (word.toLowerCase() === 'ssl' || word.toLowerCase() === 'dns' || word.toLowerCase() === 'ssh' || word.toLowerCase() === 'ise' || word.toLowerCase() === 'url') {
           return word.toUpperCase();
         }
         return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
@@ -277,7 +277,9 @@ const EditConnectionModalTabbed: React.FC<EditConnectionModalTabbedProps> = ({
             onValueChange={(value) => handleSelectChange(col.name, value, col.validator, isOptional)}
           >
             <SelectTrigger>
-              <SelectValue placeholder={placeholder} />
+              <SelectValue placeholder={placeholder}>
+                {col.options?.find(opt => opt.value === String(formValue || col.default || ""))?.label || String(formValue || col.default || "")}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent position="item-aligned">
               {col.options?.map((option) => (
@@ -326,6 +328,7 @@ const EditConnectionModalTabbed: React.FC<EditConnectionModalTabbedProps> = ({
             data-lpignore="true"
             data-form-type="other"
             data-1p-ignore="true"
+            className="resize-none"
             onChange={(e) => {
               handleTextareaChange(e, col.validator, isOptional && !isConditionallyRequired);
             }}
@@ -356,7 +359,7 @@ const EditConnectionModalTabbed: React.FC<EditConnectionModalTabbedProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent tabIndex={-1} className="max-w-4xl w-[95vw] sm:w-[90vw] max-h-[90vh] h-[90vh] flex flex-col overflow-hidden">
+      <DialogContent tabIndex={-1} className="max-w-4xl w-[95vw] sm:w-[90vw] max-h-[90vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>Edit Connection</DialogTitle>
           <DialogDescription>
@@ -377,7 +380,7 @@ const EditConnectionModalTabbed: React.FC<EditConnectionModalTabbedProps> = ({
           </TabsList>
           
           <form onSubmit={handleSubmit} className="flex-1 flex flex-col">
-            <div className="flex-1 overflow-y-auto pl-1 pr-2 mt-4 pb-4 min-h-0 scroll-smooth scrollbar-styled">
+            <div className="flex-1 overflow-y-auto pl-1 pr-2 mt-4 pb-6 min-h-0 scroll-smooth scrollbar-styled max-h-[60vh]">
               <TabsContent value="basic" className="mt-0 space-y-4">
                 {getTabFields("basic").map(renderField)}
               </TabsContent>

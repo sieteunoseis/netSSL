@@ -204,6 +204,116 @@
     "default": "cloudflare"
   },
   {
+    "name": "dns_challenge_mode",
+    "type": "SELECT",
+    "validator": { "name": "isIn", "options": ["auto", "manual"] },
+    "label": "DNS Challenge Mode",
+    "options": [
+      { "value": "auto", "label": "Automated (API)" },
+      { "value": "manual", "label": "Manual" }
+    ],
+    "default": "auto",
+    "description": "Choose 'Manual' to manually add DNS records even when using providers with API support",
+    "conditional": {
+      "field": "dns_provider",
+      "value": "cloudflare"
+    },
+    "conditionalMultiple": [
+      {
+        "field": "application_type",
+        "values": ["vos", "ise"]
+      }
+    ]
+  },
+  {
+    "name": "dns_challenge_mode",
+    "type": "SELECT",
+    "validator": { "name": "isIn", "options": ["auto", "manual"] },
+    "label": "DNS Challenge Mode",
+    "options": [
+      { "value": "auto", "label": "Automated (API)" },
+      { "value": "manual", "label": "Manual" }
+    ],
+    "default": "auto",
+    "description": "Choose 'Manual' to manually add DNS records even when using providers with API support",
+    "conditional": {
+      "field": "dns_provider",
+      "value": "digitalocean"
+    },
+    "conditionalMultiple": [
+      {
+        "field": "application_type",
+        "values": ["vos", "ise"]
+      }
+    ]
+  },
+  {
+    "name": "dns_challenge_mode",
+    "type": "SELECT",
+    "validator": { "name": "isIn", "options": ["auto", "manual"] },
+    "label": "DNS Challenge Mode",
+    "options": [
+      { "value": "auto", "label": "Automated (API)" },
+      { "value": "manual", "label": "Manual" }
+    ],
+    "default": "auto",
+    "description": "Choose 'Manual' to manually add DNS records even when using providers with API support",
+    "conditional": {
+      "field": "dns_provider",
+      "value": "route53"
+    },
+    "conditionalMultiple": [
+      {
+        "field": "application_type",
+        "values": ["vos", "ise"]
+      }
+    ]
+  },
+  {
+    "name": "dns_challenge_mode",
+    "type": "SELECT",
+    "validator": { "name": "isIn", "options": ["auto", "manual"] },
+    "label": "DNS Challenge Mode",
+    "options": [
+      { "value": "auto", "label": "Automated (API)" },
+      { "value": "manual", "label": "Manual" }
+    ],
+    "default": "auto",
+    "description": "Choose 'Manual' to manually add DNS records even when using providers with API support",
+    "conditional": {
+      "field": "dns_provider",
+      "value": "azure"
+    },
+    "conditionalMultiple": [
+      {
+        "field": "application_type",
+        "values": ["vos", "ise"]
+      }
+    ]
+  },
+  {
+    "name": "dns_challenge_mode",
+    "type": "SELECT",
+    "validator": { "name": "isIn", "options": ["auto", "manual"] },
+    "label": "DNS Challenge Mode",
+    "options": [
+      { "value": "auto", "label": "Automated (API)" },
+      { "value": "manual", "label": "Manual" }
+    ],
+    "default": "auto",
+    "description": "Choose 'Manual' to manually add DNS records even when using providers with API support",
+    "conditional": {
+      "field": "dns_provider",
+      "value": "google"
+    },
+    "conditionalMultiple": [
+      {
+        "field": "application_type",
+        "values": ["vos", "ise"]
+      }
+    ]
+  },
+  {
     "name": "alt_names",
     "type": "TEXT",
     "validator": { "name": "isAscii", "options": "" },
@@ -231,7 +341,7 @@
     "type": "SWITCH",
     "validator": { "name": "isAscii", "options": "" },
     "label": "Auto Restart Services",
-    "description": "VOS: Restart 'Cisco Tomcat' | ISE: Restart application services after certificate installation",
+    "description": "VOS: Restart 'Cisco Tomcat' | ISE: Restart application services after certificate installation. ISE does not have an auto restart services function.",
     "default": false,
     "conditional": {
       "field": "enable_ssh",

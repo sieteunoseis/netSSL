@@ -166,8 +166,8 @@ const DataTable = ({ data, onDataChange }) => {
       .replace(/[^a-zA-Z]+/g, ' ')
       .split(' ')
       .map(word => {
-        // Keep SSL, DNS, and SSH in uppercase
-        if (word.toLowerCase() === 'ssl' || word.toLowerCase() === 'dns' || word.toLowerCase() === 'ssh') {
+        // Keep SSL, DNS, SSH, ISE, and URL in uppercase
+        if (word.toLowerCase() === 'ssl' || word.toLowerCase() === 'dns' || word.toLowerCase() === 'ssh' || word.toLowerCase() === 'ise' || word.toLowerCase() === 'url') {
           return word.toUpperCase();
         }
         return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
@@ -217,7 +217,8 @@ const DataTable = ({ data, onDataChange }) => {
         "digitalocean": "DigitalOcean", 
         "route53": "AWS Route53",
         "azure": "Azure DNS",
-        "google": "Google Cloud DNS"
+        "google": "Google Cloud DNS",
+        "custom": "Custom DNS (Manual)"
       };
       return providers[value] || value;
     }
