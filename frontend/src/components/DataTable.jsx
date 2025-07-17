@@ -6,7 +6,7 @@ import { apiCall } from '../lib/api';
 import { ChevronDown, ChevronUp, Trash2, Eye, EyeOff, Edit, Terminal, Server, Wrench, Power } from 'lucide-react';
 import EditConnectionModal from './EditConnectionModalTabbed';
 import { useToast } from "@/hooks/use-toast";
-import { isConnectionEnabled } from '../lib/connection-utils';
+import { isConnectionEnabled, getConnectionDisplayHostname } from '../lib/connection-utils';
 
 const DataTable = ({ data, onDataChange }) => {
   const config = useConfig();
@@ -43,8 +43,8 @@ const DataTable = ({ data, onDataChange }) => {
     setTestingSSH(newTesting);
 
     try {
-      // Construct FQDN by combining hostname and domain
-      const fqdn = record.domain ? `${record.hostname}.${record.domain}` : record.hostname;
+      // Use the connection utility to get the proper hostname for SSH testing
+      const fqdn = getConnectionDisplayHostname(record);
       
       const response = await apiCall('/ssh/test', {
         method: 'POST',
@@ -175,9 +175,15 @@ const DataTable = ({ data, onDataChange }) => {
       .join(' ');
   };
 
-  const formatColumnValue = (columnName, value, recordId = null) => {
+  const formatColumnValue = (columnName, value, recordId = null, record = null) => {
     if (columnName === "password") {
       return value; // Return actual value, we'll handle masking in the render
+    }
+    
+    // Handle ISE hostname display
+    if (columnName === "hostname" && record && record.application_type === "ise") {
+      // For ISE, hostname can be empty, wildcard, or a name
+      return record.hostname || "—";
     }
     
     // Handle boolean fields
@@ -239,16 +245,14 @@ const DataTable = ({ data, onDataChange }) => {
   const getMainDisplayColumns = (record) => {
     const baseColumns = ["application_type", "name"];
     
-    if (record && record.application_type === "ise") {
-      return [...baseColumns, "portal_url", "ise_nodes"];
-    } else {
-      return [...baseColumns, "hostname", "domain"];
-    }
+    // All application types now use hostname and domain
+    return [...baseColumns, "hostname", "domain"];
   };
 
   const getDetailColumns = (record) => {
     // Get all columns except main display columns and application type info fields
     const excludedFields = [...getMainDisplayColumns(record), 'application_type_info', 'application_type_info_ise', 'application_type_info_general'];
+    
     const allColumns = jsonData.filter(col => !excludedFields.includes(col.name));
     
     // Filter columns based on conditional logic
@@ -311,7 +315,7 @@ const DataTable = ({ data, onDataChange }) => {
                         {formatColumnName(colName)}
                       </div>
                       <div className="text-sm text-gray-900 dark:text-gray-100 truncate">
-                        {formatColumnValue(colName, record[colName])}
+                        {formatColumnValue(colName, record[colName], record.id, record)}
                       </div>
                     </div>
                   );
@@ -436,7 +440,7 @@ const DataTable = ({ data, onDataChange }) => {
                               )}
                             </div>
                           ) : (
-                            formatColumnValue(columnName, cellValue)
+                            formatColumnValue(columnName, cellValue, record.id, record)
                           )}
                         </div>
                       </div>

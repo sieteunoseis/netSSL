@@ -33,7 +33,7 @@ interface AddConnectionModalTabbedProps {
 const FIELD_GROUPS = {
   basic: ["name", "application_type", "application_type_info", "application_type_info_ise", "application_type_info_general"],
   authentication: ["username", "password"],
-  certificate: ["hostname", "domain", "ssl_provider", "dns_provider", "alt_names", "custom_csr", "general_private_key", "portal_hostname", "ise_nodes", "ise_certificate", "ise_private_key"],
+  certificate: ["hostname", "domain", "ssl_provider", "dns_provider", "alt_names", "custom_csr", "general_private_key", "ise_nodes", "ise_certificate", "ise_private_key"],
   advanced: ["enable_ssh", "auto_restart_service", "auto_renew", "is_enabled"]
 };
 

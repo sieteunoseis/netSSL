@@ -46,7 +46,7 @@ interface EditConnectionModalTabbedProps {
 const FIELD_GROUPS = {
   basic: ["name", "application_type"],
   authentication: ["username", "password"],
-  certificate: ["hostname", "domain", "ssl_provider", "dns_provider", "dns_challenge_mode", "alt_names", "custom_csr", "general_private_key", "portal_hostname", "ise_nodes", "ise_certificate", "ise_private_key"],
+  certificate: ["hostname", "domain", "ssl_provider", "dns_provider", "dns_challenge_mode", "alt_names", "custom_csr", "general_private_key", "ise_nodes", "ise_certificate", "ise_private_key"],
   advanced: ["enable_ssh", "auto_restart_service", "auto_renew", "is_enabled"]
 };
 

@@ -31,9 +31,9 @@ export const filterEnabledConnections = (connections) => {
  */
 export const getConnectionDisplayHostname = (connection) => {
   if (connection.application_type === 'ise') {
-    // For ISE, use portal_hostname and domain or fall back to legacy portal_url
-    if (connection.portal_hostname !== undefined && connection.domain) {
-      const hostname = connection.portal_hostname || '';
+    // For ISE, use hostname and domain or fall back to legacy portal_url
+    if (connection.hostname !== undefined && connection.domain) {
+      const hostname = connection.hostname || '';
       if (hostname === '*') {
         // Return wildcard.domain for display
         return `*.${connection.domain}`;
@@ -64,7 +64,7 @@ export const getConnectionDisplayHostname = (connection) => {
  */
 export const isWildcardCertificate = (connection) => {
   if (connection.application_type === 'ise') {
-    return connection.portal_hostname === '*' || 
+    return connection.hostname === '*' || 
            (connection.portal_url && connection.portal_url.startsWith('*.'));
   }
   return false;
@@ -78,8 +78,8 @@ export const isWildcardCertificate = (connection) => {
  */
 export const getCertificateValidationDomain = (connection) => {
   if (connection.application_type === 'ise') {
-    if (connection.portal_hostname !== undefined && connection.domain) {
-      const hostname = connection.portal_hostname || '';
+    if (connection.hostname !== undefined && connection.domain) {
+      const hostname = connection.hostname || '';
       if (hostname === '*') {
         // For wildcard, validate against base domain
         return connection.domain;

@@ -7,10 +7,10 @@ import { ConnectionRecord } from '../types';
  */
 export function getDomainFromConnection(connection: ConnectionRecord): string | null {
   if (connection.application_type === 'ise') {
-    // For ISE, use portal_hostname and domain or fall back to legacy portal_url
-    if (connection.portal_hostname !== undefined && connection.domain) {
-      // New structure: portal_hostname + domain
-      const hostname = connection.portal_hostname || ''; // Can be empty, wildcard, or a name
+    // For ISE, use hostname and domain or fall back to legacy portal_url
+    if (connection.hostname !== undefined && connection.domain) {
+      // New structure: hostname + domain
+      const hostname = connection.hostname || ''; // Can be empty, wildcard, or a name
       if (hostname === '*') {
         // Return just the domain for wildcard certificates
         return connection.domain;
