@@ -12,7 +12,7 @@ import ServiceRestartButton from "@/components/ServiceRestartButton";
 import CertificateRenewalButton from "@/components/CertificateRenewalButton";
 import CertificateDownloadButton from "@/components/CertificateDownloadButton";
 import { apiCall } from "@/lib/api";
-import { filterEnabledConnections } from "@/lib/connection-utils";
+import { filterEnabledConnections, getConnectionDisplayHostname, isWildcardCertificate, getCertificateValidationDomain } from "@/lib/connection-utils";
 import { useWebSocket } from "@/contexts/WebSocketContext";
 import templateConfig from "../../template.config.json";
 import { 
@@ -325,7 +325,12 @@ const Home = () => {
                       <div>
                         <CardTitle className="text-lg">{connection.name}</CardTitle>
                         <CardDescription className="flex items-center space-x-2">
-                          <span>{connection.hostname}.{connection.domain}</span>
+                          <span>{getConnectionDisplayHostname(connection)}</span>
+                          {isWildcardCertificate(connection) && (
+                            <Badge variant="outline" className="text-xs">
+                              Wildcard
+                            </Badge>
+                          )}
                         </CardDescription>
                       </div>
                     </div>
@@ -430,11 +435,22 @@ const Home = () => {
                     </div>
                   </div>
                   
-                  <CertificateInfo 
-                    connectionId={connection.id} 
-                    hostname={`${connection.hostname}.${connection.domain}`}
-                    onRenewalComplete={() => setDownloadRefreshTrigger(prev => prev + 1)}
-                  />
+                  {isWildcardCertificate(connection) ? (
+                    <div className="mt-4 p-4 bg-muted rounded-lg">
+                      <div className="flex items-center space-x-2">
+                        <Shield className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-sm text-muted-foreground">
+                          Wildcard certificate - Individual certificate validation not available
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <CertificateInfo 
+                      connectionId={connection.id} 
+                      hostname={getCertificateValidationDomain(connection) || ''}
+                      onRenewalComplete={() => setDownloadRefreshTrigger(prev => prev + 1)}
+                    />
+                  )}
                 </CardContent>
               </Card>
             );

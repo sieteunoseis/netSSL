@@ -7,35 +7,48 @@ import { ConnectionRecord } from '../types';
  */
 export function getDomainFromConnection(connection: ConnectionRecord): string | null {
   if (connection.application_type === 'ise') {
-    // For ISE, extract from portal_url
-    if (!connection.portal_url) {
-      return null;
-    }
-    
-    // Remove wildcard prefix if present (e.g., *.example.com -> example.com)
-    let domain = connection.portal_url;
-    
-    if (domain.startsWith('*.')) {
-      domain = domain.substring(2);
-    }
-    
-    // If it's a full URL, extract just the hostname
-    try {
-      if (domain.includes('://')) {
-        const url = new URL(domain);
-        return url.hostname;
+    // For ISE, use portal_hostname and domain or fall back to legacy portal_url
+    if (connection.portal_hostname !== undefined && connection.domain) {
+      // New structure: portal_hostname + domain
+      const hostname = connection.portal_hostname || ''; // Can be empty, wildcard, or a name
+      if (hostname === '*') {
+        // Return just the domain for wildcard certificates
+        return connection.domain;
+      } else if (hostname) {
+        // Return hostname.domain
+        return `${hostname}.${connection.domain}`;
+      } else {
+        // Empty hostname, return just domain
+        return connection.domain;
       }
-    } catch (error) {
-      // Not a valid URL, treat as domain
+    } else if (connection.portal_url) {
+      // Legacy structure: portal_url
+      let domain = connection.portal_url;
+      
+      if (domain.startsWith('*.')) {
+        domain = domain.substring(2);
+      }
+      
+      // If it's a full URL, extract just the hostname
+      try {
+        if (domain.includes('://')) {
+          const url = new URL(domain);
+          return url.hostname;
+        }
+      } catch (error) {
+        // Not a valid URL, treat as domain
+      }
+      
+      // Remove port if present
+      const portIndex = domain.indexOf(':');
+      if (portIndex > -1) {
+        domain = domain.substring(0, portIndex);
+      }
+      
+      return domain;
     }
     
-    // Remove port if present
-    const portIndex = domain.indexOf(':');
-    if (portIndex > -1) {
-      domain = domain.substring(0, portIndex);
-    }
-    
-    return domain;
+    return null;
   } else {
     // For VOS and general applications
     if (!connection.hostname || !connection.domain) {
