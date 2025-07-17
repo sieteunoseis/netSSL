@@ -32,7 +32,7 @@ export const filterEnabledConnections = (connections) => {
 export const getConnectionDisplayHostname = (connection) => {
   if (connection.application_type === 'ise' || connection.application_type === 'general') {
     // For ISE and General, use hostname and domain with flexible hostname support
-    if (connection.hostname !== undefined && connection.domain) {
+    if (connection.domain) {
       const hostname = connection.hostname || '';
       if (hostname === '*') {
         // Return wildcard.domain for display
@@ -44,7 +44,8 @@ export const getConnectionDisplayHostname = (connection) => {
         return connection.domain;
       }
     }
-    return connection.application_type === 'ise' ? 'ISE Portal' : 'General Application';
+    // Fallback when domain is missing
+    return connection.hostname || (connection.application_type === 'ise' ? 'ISE Portal' : 'General Application');
   } else {
     // For VOS applications (strict hostname required)
     if (connection.hostname && connection.domain) {
