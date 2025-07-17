@@ -209,7 +209,7 @@ app.post('/api/data', asyncHandler(async (req: Request, res: Response) => {
       const domain = `${sanitizedData.hostname}.${sanitizedData.domain}`;
       
       // Check if account already exists
-      const existingAccount = await acmeClient.loadAccount(domain);
+      const existingAccount = await acmeClient.loadAccount(domain, connectionId);
       if (!existingAccount) {
         Logger.info(`Pre-creating Let's Encrypt account for new connection: ${domain}`);
         const sslSettings = await database.getSettingsByProvider('letsencrypt');
@@ -217,7 +217,7 @@ app.post('/api/data', asyncHandler(async (req: Request, res: Response) => {
         
         if (email) {
           // Create account in background without blocking the response
-          acmeClient.createAccount(email, domain).then(() => {
+          acmeClient.createAccount(email, domain, connectionId).then(() => {
             Logger.info(`Successfully pre-created Let's Encrypt account for ${domain}`);
           }).catch((error) => {
             Logger.error(`Failed to pre-create Let's Encrypt account for ${domain}:`, error);
@@ -339,7 +339,7 @@ app.put('/api/data/:id', asyncHandler(async (req: Request, res: Response) => {
       const domain = `${sanitizedData.hostname}.${sanitizedData.domain}`;
       
       // Check if account already exists
-      const existingAccount = await acmeClient.loadAccount(domain);
+      const existingAccount = await acmeClient.loadAccount(domain, id);
       if (!existingAccount) {
         Logger.info(`Pre-creating Let's Encrypt account for updated connection: ${domain}`);
         const sslSettings = await database.getSettingsByProvider('letsencrypt');
@@ -347,7 +347,7 @@ app.put('/api/data/:id', asyncHandler(async (req: Request, res: Response) => {
         
         if (email) {
           // Create account in background without blocking the response
-          acmeClient.createAccount(email, domain).then(() => {
+          acmeClient.createAccount(email, domain, id).then(() => {
             Logger.info(`Successfully pre-created Let's Encrypt account for ${domain}`);
           }).catch((error) => {
             Logger.error(`Failed to pre-create Let's Encrypt account for ${domain}:`, error);
@@ -922,7 +922,7 @@ app.get('/api/logs/all', asyncHandler(async (req: Request, res: Response) => {
         }
         
         try {
-          const logs = await accountManager.getRenewalLog(connection.id, domain);
+          const logs = await accountManager.getRenewalLog(connection.id!, domain);
           return {
             connection: {
               id: connection.id,

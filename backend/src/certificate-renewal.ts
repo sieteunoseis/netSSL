@@ -260,7 +260,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
           status.logs.push(`Existing valid certificate available for ${connection.name}`);
         } else {
           await updateStatusWithOp('uploading_certificate', 'Using existing valid certificate', 80);
-          await this.uploadCertificateToVOS(connection, existingCert, status);
+          await this.uploadCertificateToVOS(connectionId, connection, existingCert, status);
         }
         
         // Notify user about service restart attempt (VOS only)
@@ -394,7 +394,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       } else {
         // For VOS applications, upload via API
         await updateStatusWithOp('uploading_certificate', 'Uploading certificate to VOS application', 90);
-        await this.uploadCertificateToVOS(connection, certificate, status);
+        await this.uploadCertificateToVOS(connectionId, connection, certificate, status);
       }
       
       // Notify user about service restart attempt (VOS only)
@@ -759,7 +759,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         }
         
         // Use custom DNS handler for manual mode
-        await this.handleCustomDNSChallenge(connection, [], status, operationManager);
+        await this.handleCustomDNSChallenge(connectionId, connection, [], status, operationManager);
         
         // Complete the challenges
         await this.updateStatus(status, 'completing_validation', 'Completing Let\'s Encrypt validation', 70);
@@ -781,7 +781,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
           throw new Error('Certificate data is empty - cannot save certificate chain');
         }
         
-        await this.saveCertificateChain(fullFQDN, certificateData, status);
+        await this.saveCertificateChain(connectionId, fullFQDN, certificateData, status);
         
         return certificateData;
       }
@@ -896,7 +896,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         throw new Error('Certificate data is empty - cannot save certificate chain');
       }
       
-      await this.saveCertificateChain(fullFQDN, certificate, status);
+      await this.saveCertificateChain(connectionId, fullFQDN, certificate, status);
       
       await accountManager.saveRenewalLog(connectionId, fullFQDN, `=== Certificate obtained successfully from Let's Encrypt ===`);
       status.logs.push('Certificate obtained from Let\'s Encrypt');
@@ -1064,7 +1064,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     }
   }
 
-  private async handleDNSChallenge(connection: ConnectionRecord, database: DatabaseManager, status: RenewalStatus, operationManager?: OperationStatusManager): Promise<void> {
+  private async handleDNSChallenge(connectionId: number, connection: ConnectionRecord, database: DatabaseManager, status: RenewalStatus, operationManager?: OperationStatusManager): Promise<void> {
     const dnsProvider = connection.dns_provider || 'cloudflare';
     const dnsChallengeMode = connection.dns_challenge_mode || 'auto';
     const settings = await database.getSettingsByProvider(dnsProvider);
@@ -1074,7 +1074,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       const fullFQDN = `${connection.hostname}.${connection.domain}`;
       await accountManager.saveRenewalLog(connectionId, fullFQDN, `User selected manual DNS challenge mode for ${dnsProvider} provider`);
       status.logs.push(`Manual DNS challenge mode selected for ${dnsProvider} provider`);
-      await this.handleCustomDNSChallenge(connection, settings, status, operationManager);
+      await this.handleCustomDNSChallenge(connectionId, connection, settings, status, operationManager);
       return;
     }
     
@@ -1090,7 +1090,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     } else if (dnsProvider === 'google') {
       await this.handleGoogleChallenge(connection, settings, status);
     } else if (dnsProvider === 'custom') {
-      await this.handleCustomDNSChallenge(connection, settings, status, operationManager);
+      await this.handleCustomDNSChallenge(connectionId, connection, settings, status, operationManager);
     } else {
       throw new Error(`Unsupported DNS provider: ${dnsProvider}`);
     }
@@ -1340,7 +1340,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     }
   }
 
-  private async handleCustomDNSChallenge(connection: ConnectionRecord, _settings: any[], status: RenewalStatus, operationManager?: OperationStatusManager): Promise<void> {
+  private async handleCustomDNSChallenge(connectionId: number, connection: ConnectionRecord, _settings: any[], status: RenewalStatus, operationManager?: OperationStatusManager): Promise<void> {
     const fullFQDN = `${connection.hostname}.${connection.domain}`;
     
     try {
@@ -1405,7 +1405,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     }
   }
 
-  private async uploadCertificateToVOS(connection: ConnectionRecord, certificate: string, status: RenewalStatus): Promise<void> {
+  private async uploadCertificateToVOS(connectionId: number, connection: ConnectionRecord, certificate: string, status: RenewalStatus): Promise<void> {
     return new Promise(async (resolve, reject) => {
       try {
         // Parse the certificate chain into individual certificates
@@ -1419,13 +1419,13 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         }
 
         // Upload the full certificate chain (leaf + intermediates)
-        await this.uploadLeafCertificate(connection, certificate, status);
+        await this.uploadLeafCertificate(connectionId, connection, certificate, status);
 
         // Upload the CA certificates separately (root and intermediates)
         // VOS may already have these, so we'll handle errors gracefully
         if (certificates.length > 1) {
           try {
-            await this.uploadCaCertificates(connection, certificates.slice(1), status);
+            await this.uploadCaCertificates(connectionId, connection, certificates.slice(1), status);
           } catch (caError: any) {
             const fullFQDN = `${connection.hostname}.${connection.domain}`;
             await accountManager.saveRenewalLog(connectionId, fullFQDN, `CA certificate upload warning: ${caError.message}`);
@@ -1441,7 +1441,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     });
   }
 
-  private async uploadLeafCertificate(connection: ConnectionRecord, certificate: string, status: RenewalStatus): Promise<void> {
+  private async uploadLeafCertificate(connectionId: number, connection: ConnectionRecord, certificate: string, status: RenewalStatus): Promise<void> {
     return new Promise(async (resolve, reject) => {
       const fullFQDN = `${connection.hostname}.${connection.domain}`;
       
@@ -1577,7 +1577,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     });
   }
 
-  private async uploadCaCertificates(connection: ConnectionRecord, certificates: string[], status: RenewalStatus): Promise<void> {
+  private async uploadCaCertificates(connectionId: number, connection: ConnectionRecord, certificates: string[], status: RenewalStatus): Promise<void> {
     return new Promise(async (resolve, reject) => {
       try {
         const fullFQDN = `${connection.hostname}.${connection.domain}`;
@@ -1661,7 +1661,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     });
   }
 
-  private async saveCertificateChain(domain: string, certificateData: string, status: RenewalStatus): Promise<void> {
+  private async saveCertificateChain(connectionId: number, domain: string, certificateData: string, status: RenewalStatus): Promise<void> {
     try {
       await accountManager.saveRenewalLog(connectionId, domain, `DEBUG: saveCertificateChain called with domain: ${domain}, certificateData length: ${certificateData.length}`);
       Logger.debug(`saveCertificateChain called with domain: ${domain}, certificateData length: ${certificateData.length}`);
