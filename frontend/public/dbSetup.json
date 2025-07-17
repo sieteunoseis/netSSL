@@ -344,7 +344,7 @@
     "type": "SWITCH",
     "validator": { "name": "isAscii", "options": "" },
     "label": "Auto Restart Services",
-    "description": "VOS: Restart 'Cisco Tomcat' | ISE: Restart application services after certificate installation. ISE does not have an auto restart services function.",
+    "description": "Automatically restart 'Cisco Tomcat' service after certificate installation (VOS applications only)",
     "default": false,
     "conditional": {
       "field": "enable_ssh",

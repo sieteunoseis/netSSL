@@ -21,7 +21,7 @@ export interface ConnectionRecord {
   auto_renew?: boolean;
   auto_renew_status?: string;
   auto_renew_last_attempt?: string;
-  is_enabled?: boolean;
+  is_enabled?: boolean | number;
   last_cert_issued?: string;
   cert_count_this_week?: number;
   cert_count_reset_date?: string;

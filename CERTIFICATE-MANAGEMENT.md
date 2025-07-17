@@ -10,7 +10,7 @@ The system uses an organized directory structure for Let's Encrypt accounts and 
 
 ```
 /accounts/
-├── domain.example.com/
+├── connection-1/
 │   ├── staging/
 │   │   ├── letsencrypt.json                    # Let's Encrypt account file
 │   │   ├── certificate.pem                     # Domain certificate (leaf) in PEM format
@@ -26,7 +26,27 @@ The system uses an organized directory structure for Let's Encrypt accounts and 
 │   ├── prod/
 │   │   └── (same files for production environment)
 │   └── renewal.log                             # Renewal history log (shared)
+├── connection-2/
+│   ├── staging/
+│   │   └── (same file structure as connection-1)
+│   ├── prod/
+│   │   └── (same file structure as connection-1)
+│   └── renewal.log
+└── connection-3/
+    ├── staging/
+    │   └── (same file structure as connection-1)
+    ├── prod/
+    │   └── (same file structure as connection-1)
+    └── renewal.log
 ```
+
+### Directory Organization
+
+The system uses **connection ID-based directories** to organize certificates and accounts:
+
+- **Connection-based structure**: Each connection gets its own directory (`connection-1`, `connection-2`, etc.)
+- **Solves wildcard conflicts**: Multiple connections with wildcard certificates (e.g., `*.automate.builders`) no longer conflict
+- **Unique isolation**: Each connection has completely isolated certificate storage
 
 ### Environment Separation
 
@@ -280,9 +300,9 @@ The system implements intelligent certificate reuse to avoid unnecessary renewal
 ```
 
 #### Example Scenario
-If you run a certificate renewal on January 1st, and the existing certificate expires on March 1st (60 days away), the system will:
+If you run a certificate renewal on January 1st for connection ID 5, and the existing certificate expires on March 1st (60 days away), the system will:
 
-1. ✅ Find the existing certificate in `accounts/domain/staging/certificate.pem`
+1. ✅ Find the existing certificate in `accounts/connection-5/staging/certificate.pem`
 2. ✅ Calculate it expires in 60 days (more than 30)
 3. ✅ Upload that same certificate to your CUCM server
 4. ✅ Restart Tomcat service (if enabled)
@@ -304,24 +324,34 @@ If you run a certificate renewal on January 1st, and the existing certificate ex
 
 ## File Migration
 
-### Automatic Migration Process
+### Directory Structure Migration
 
-When upgrading from the old flat file structure, the system automatically migrates:
+The system has evolved through multiple directory structures:
 
-**From (old)**: `domain_provider_env.json`
-**To (new)**: `domain/env/provider.json`
+**Version 1 (Legacy)**: Flat file structure
+- `domain_provider_env.json`
+- Example: `cucm01-pub.automate.builders_letsencrypt_staging.json`
 
-Example:
+**Version 2 (Domain-based)**: Domain-based directories
+- `domain/env/provider.json`
+- Example: `cucm01-pub.automate.builders/staging/letsencrypt.json`
 
-- `cucm01-pub.automate.builders_letsencrypt_staging.json`
-- Becomes: `cucm01-pub.automate.builders/staging/letsencrypt.json`
+**Version 3 (Current)**: Connection ID-based directories
+- `connection-<id>/env/provider.json`
+- Example: `connection-5/staging/letsencrypt.json`
 
-### Migration Features
+### Migration Benefits
 
-- **One-time operation**: Creates `.migration-complete` marker file
-- **Safe migration**: Checks for existing files before moving
-- **Automatic cleanup**: Migration script removes itself after completion
-- **Error handling**: Skips invalid files, continues with valid ones
+**Connection ID-based structure solves:**
+- **Wildcard certificate conflicts**: Multiple connections with same wildcard domain
+- **Unique isolation**: Each connection has completely separate certificate storage
+- **Cleaner organization**: No domain name conflicts in directory structure
+
+### Migration Notes
+
+- **No automatic migration**: The new structure requires manual setup
+- **Clean implementation**: Legacy compatibility code has been removed
+- **Fresh start**: Connections will create new directory structure on first renewal
 
 ## Environment Configuration
 
@@ -371,7 +401,7 @@ For each connection using Let's Encrypt:
 ### Log Locations
 
 - **Application logs**: Console output during server startup
-- **Renewal logs**: `accounts/domain/renewal.log`
+- **Renewal logs**: `accounts/connection-<id>/renewal.log`
 - **Account verification**: Server startup logs
 
 ## API Endpoints
@@ -402,5 +432,5 @@ For each connection using Let's Encrypt:
 
 ---
 
-*Last Updated: July 12, 2025*
-*Documentation covers certificate management system v2.0 with environment-based directory structure*
+*Last Updated: July 17, 2025*
+*Documentation covers certificate management system v3.0 with connection ID-based directory structure*

@@ -30,7 +30,8 @@ export class ACMEClient {
     this.client = null as any;
   }
 
-  async createAccount(email: string, domain: string): Promise<ACMEAccount> {
+
+  async createAccount(email: string, domain: string, connectionId: number): Promise<ACMEAccount> {
     try {
       Logger.info(`Creating Let's Encrypt account for ${email} (domain: ${domain})`);
       
@@ -90,7 +91,7 @@ export class ACMEClient {
       Logger.info(`Account created with URL: ${acmeAccount.accountUrl}`);
 
       // Save account to file system
-      await accountManager.saveAccount(domain, 'letsencrypt', acmeAccount);
+      await accountManager.saveAccount(connectionId, domain, 'letsencrypt', acmeAccount);
       
       Logger.info(`Successfully created Let's Encrypt account for ${email}`);
       return acmeAccount;
@@ -100,9 +101,10 @@ export class ACMEClient {
     }
   }
 
-  async loadAccount(domain: string): Promise<ACMEAccount | null> {
+  async loadAccount(domain: string, connectionId: number): Promise<ACMEAccount | null> {
     try {
-      const savedAccount = await accountManager.loadAccount(domain, 'letsencrypt');
+      const savedAccount = await accountManager.loadAccount(connectionId, domain, 'letsencrypt');
+      
       if (!savedAccount) {
         return null;
       }

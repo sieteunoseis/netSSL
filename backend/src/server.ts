@@ -209,7 +209,7 @@ app.post('/api/data', asyncHandler(async (req: Request, res: Response) => {
       const domain = `${sanitizedData.hostname}.${sanitizedData.domain}`;
       
       // Check if account already exists
-      const existingAccount = await acmeClient.loadAccount(domain);
+      const existingAccount = await acmeClient.loadAccount(domain, connectionId);
       if (!existingAccount) {
         Logger.info(`Pre-creating Let's Encrypt account for new connection: ${domain}`);
         const sslSettings = await database.getSettingsByProvider('letsencrypt');
@@ -217,7 +217,7 @@ app.post('/api/data', asyncHandler(async (req: Request, res: Response) => {
         
         if (email) {
           // Create account in background without blocking the response
-          acmeClient.createAccount(email, domain).then(() => {
+          acmeClient.createAccount(email, domain, connectionId).then(() => {
             Logger.info(`Successfully pre-created Let's Encrypt account for ${domain}`);
           }).catch((error) => {
             Logger.error(`Failed to pre-create Let's Encrypt account for ${domain}:`, error);
@@ -313,7 +313,8 @@ app.put('/api/data/:id', asyncHandler(async (req: Request, res: Response) => {
     hostname: req.body.hostname,
     enable_ssh: req.body.enable_ssh,
     auto_restart_service: req.body.auto_restart_service,
-    auto_renew: req.body.auto_renew
+    auto_renew: req.body.auto_renew,
+    is_enabled: req.body.is_enabled
   });
 
   // Sanitize input data
@@ -326,7 +327,8 @@ app.put('/api/data/:id', asyncHandler(async (req: Request, res: Response) => {
     hostname: sanitizedData.hostname,
     enable_ssh: sanitizedData.enable_ssh,
     auto_restart_service: sanitizedData.auto_restart_service,
-    auto_renew: sanitizedData.auto_renew
+    auto_renew: sanitizedData.auto_renew,
+    is_enabled: sanitizedData.is_enabled
   });
   
   // Update connection in database
@@ -339,7 +341,7 @@ app.put('/api/data/:id', asyncHandler(async (req: Request, res: Response) => {
       const domain = `${sanitizedData.hostname}.${sanitizedData.domain}`;
       
       // Check if account already exists
-      const existingAccount = await acmeClient.loadAccount(domain);
+      const existingAccount = await acmeClient.loadAccount(domain, id);
       if (!existingAccount) {
         Logger.info(`Pre-creating Let's Encrypt account for updated connection: ${domain}`);
         const sslSettings = await database.getSettingsByProvider('letsencrypt');
@@ -347,7 +349,7 @@ app.put('/api/data/:id', asyncHandler(async (req: Request, res: Response) => {
         
         if (email) {
           // Create account in background without blocking the response
-          acmeClient.createAccount(email, domain).then(() => {
+          acmeClient.createAccount(email, domain, id).then(() => {
             Logger.info(`Successfully pre-created Let's Encrypt account for ${domain}`);
           }).catch((error) => {
             Logger.error(`Failed to pre-create Let's Encrypt account for ${domain}:`, error);
@@ -618,8 +620,13 @@ app.get('/api/data/:id/certificates/:type', asyncHandler(async (req: Request, re
     return res.status(404).json({ error: 'Connection not found' });
   }
 
-  const domain = `${connection.hostname}.${connection.domain}`;
-  const accountsPath = path.join(__dirname, '..', 'accounts', domain);
+  const domain = getDomainFromConnection(connection);
+  if (!domain) {
+    return res.status(400).json({ 
+      error: 'Invalid connection configuration',
+      details: 'Missing hostname/domain for certificate lookup'
+    });
+  }
   
   let baseFilename: string;
   let filename: string;
@@ -650,15 +657,11 @@ app.get('/api/data/:id/certificates/:type', asyncHandler(async (req: Request, re
       return res.status(400).json({ error: 'Invalid certificate type' });
   }
 
-  // Check staging environment setting (consistent with certificate.ts)
-  const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
-  const certSubDir = isStaging ? 'staging' : 'prod';
-  
-  // Only check the directory that matches the current environment setting
-  const filePath = path.join(accountsPath, certSubDir, baseFilename);
-  
   try {
-    // Check if file exists in the environment-specific directory
+    // Use AccountManager to get the certificate file path
+    const filePath = accountManager.getCertificateFilePath(connectionId, baseFilename);
+    
+    // Check if file exists
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ error: `Certificate file not found: ${certType}` });
     }
@@ -693,8 +696,13 @@ app.get('/api/data/:id/certificates', asyncHandler(async (req: Request, res: Res
     return res.status(404).json({ error: 'Connection not found' });
   }
 
-  const domain = `${connection.hostname}.${connection.domain}`;
-  const accountsPath = path.join(__dirname, '..', 'accounts', domain);
+  const domain = getDomainFromConnection(connection);
+  if (!domain) {
+    return res.status(400).json({ 
+      error: 'Invalid connection configuration',
+      details: 'Missing hostname/domain for certificate lookup'
+    });
+  }
   
   // Check which certificate files are available
   const availableFiles: { type: string; filename: string; size: number; lastModified: string }[] = [];
@@ -707,15 +715,11 @@ app.get('/api/data/:id/certificates', asyncHandler(async (req: Request, res: Res
     { type: 'csr', filename: 'certificate.csr', displayName: 'Certificate Signing Request' }
   ];
 
-  // Check staging environment setting (consistent with certificate.ts)
-  const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
-  const certSubDir = isStaging ? 'staging' : 'prod';
+  Logger.debug(`Certificate listing for connection ${connectionId} (${domain})`);
   
-  Logger.debug(`Certificate listing for ${domain}: LETSENCRYPT_STAGING=${process.env.LETSENCRYPT_STAGING}, isStaging=${isStaging}, certSubDir=${certSubDir}`);
-  
-  // Only check the directory that matches the current environment setting
+  // Use AccountManager to check for certificate files
   for (const fileType of fileTypes) {
-    const filePath = path.join(accountsPath, certSubDir, fileType.filename);
+    const filePath = accountManager.getCertificateFilePath(connectionId, fileType.filename);
     try {
       if (fs.existsSync(filePath)) {
         const stats = fs.statSync(filePath);
@@ -870,10 +874,7 @@ app.get('/api/data/:id/renewal-logs', asyncHandler(async (req: Request, res: Res
       return res.status(400).json({ error: 'Invalid domain configuration for this connection' });
     }
     
-    const { AccountManager } = await import('./account-manager');
-    const accountManager = new AccountManager();
-    
-    const logs = await accountManager.getRenewalLog(domain);
+    const logs = await accountManager.getRenewalLog(connectionId, domain);
     
     return res.json({
       domain,
@@ -923,7 +924,7 @@ app.get('/api/logs/all', asyncHandler(async (req: Request, res: Response) => {
         }
         
         try {
-          const logs = await accountManager.getRenewalLog(domain);
+          const logs = await accountManager.getRenewalLog(connection.id!, domain);
           return {
             connection: {
               id: connection.id,

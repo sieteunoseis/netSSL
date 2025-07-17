@@ -59,15 +59,21 @@ export class SSHClient {
         this.isConnected = false;
       });
 
-      this.client.connect({
+      const connectConfig: any = {
         host: config.host,
         port: config.port || 22,
         username: config.username,
         password: config.password,
-        algorithms: config.algorithms,
         readyTimeout: 30000,
         keepaliveInterval: 5000
-      });
+      };
+
+      // Only add algorithms if they are provided
+      if (config.algorithms) {
+        connectConfig.algorithms = config.algorithms;
+      }
+
+      this.client.connect(connectConfig);
     });
   }
 
@@ -274,12 +280,13 @@ export class SSHClient {
           username,
           password,
           readyTimeout: 20000,
-          algorithms: {
-            kex: ['diffie-hellman-group-exchange-sha256', 'diffie-hellman-group14-sha256', 'diffie-hellman-group-exchange-sha1', 'diffie-hellman-group14-sha1'],
-            cipher: ['aes256-ctr', 'aes192-ctr', 'aes128-ctr', 'aes256-cbc', 'aes192-cbc', 'aes128-cbc', '3des-cbc'],
-            serverHostKey: ['ssh-rsa', 'ssh-dss', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521'],
-            hmac: ['hmac-sha2-256', 'hmac-sha2-512', 'hmac-sha1']
-          }
+          // Temporarily remove algorithms to test with SSH2 defaults
+          // algorithms: {
+          //   kex: ['diffie-hellman-group-exchange-sha256', 'diffie-hellman-group14-sha256', 'diffie-hellman-group-exchange-sha1', 'diffie-hellman-group14-sha1'],
+          //   cipher: ['aes256-ctr', 'aes192-ctr', 'aes128-ctr', 'aes256-cbc', 'aes192-cbc', 'aes128-cbc', '3des-cbc'],
+          //   serverHostKey: ['ssh-rsa', 'ssh-dss', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521'],
+          //   hmac: ['hmac-sha2-256', 'hmac-sha2-512', 'hmac-sha1']
+          // }
         });
       } catch (err: any) {
         clearTimeout(timeout);
@@ -442,12 +449,13 @@ export class SSHClient {
           username,
           password,
           readyTimeout: 20000,
-          algorithms: {
-            kex: ['diffie-hellman-group-exchange-sha256', 'diffie-hellman-group14-sha256', 'diffie-hellman-group-exchange-sha1', 'diffie-hellman-group14-sha1'],
-            cipher: ['aes256-ctr', 'aes192-ctr', 'aes128-ctr', 'aes256-cbc', 'aes192-cbc', 'aes128-cbc', '3des-cbc'],
-            serverHostKey: ['ssh-rsa', 'ssh-dss', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521'],
-            hmac: ['hmac-sha2-256', 'hmac-sha2-512', 'hmac-sha1']
-          }
+          // Temporarily remove algorithms to test with SSH2 defaults
+          // algorithms: {
+          //   kex: ['diffie-hellman-group-exchange-sha256', 'diffie-hellman-group14-sha256', 'diffie-hellman-group-exchange-sha1', 'diffie-hellman-group14-sha1'],
+          //   cipher: ['aes256-ctr', 'aes192-ctr', 'aes128-ctr', 'aes256-cbc', 'aes192-cbc', 'aes128-cbc', '3des-cbc'],
+          //   serverHostKey: ['ssh-rsa', 'ssh-dss', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521'],
+          //   hmac: ['hmac-sha2-256', 'hmac-sha2-512', 'hmac-sha1']
+          // }
         });
       } catch (err: any) {
         clearTimeout(timeout);
@@ -622,12 +630,13 @@ export class SSHClient {
           username,
           password,
           readyTimeout: 20000,
-          algorithms: {
-            kex: ['diffie-hellman-group-exchange-sha256', 'diffie-hellman-group14-sha256', 'diffie-hellman-group-exchange-sha1', 'diffie-hellman-group14-sha1'],
-            cipher: ['aes256-ctr', 'aes192-ctr', 'aes128-ctr', 'aes256-cbc', 'aes192-cbc', 'aes128-cbc', '3des-cbc'],
-            serverHostKey: ['ssh-rsa', 'ssh-dss', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521'],
-            hmac: ['hmac-sha2-256', 'hmac-sha2-512', 'hmac-sha1']
-          }
+          // Temporarily remove algorithms to test with SSH2 defaults
+          // algorithms: {
+          //   kex: ['diffie-hellman-group-exchange-sha256', 'diffie-hellman-group14-sha256', 'diffie-hellman-group-exchange-sha1', 'diffie-hellman-group14-sha1'],
+          //   cipher: ['aes256-ctr', 'aes192-ctr', 'aes128-ctr', 'aes256-cbc', 'aes192-cbc', 'aes128-cbc', '3des-cbc'],
+          //   serverHostKey: ['ssh-rsa', 'ssh-dss', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521'],
+          //   hmac: ['hmac-sha2-256', 'hmac-sha2-512', 'hmac-sha1']
+          // }
         });
       } catch (err: any) {
         clearTimeout(timeout);
