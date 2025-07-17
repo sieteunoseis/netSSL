@@ -77,7 +77,14 @@ const EditConnectionModalTabbed: React.FC<EditConnectionModalTabbedProps> = ({
   useEffect(() => {
     if (record && data.length > 0) {
       const initialData = data.reduce((obj: Record<string, string | boolean>, col) => {
-        obj[col.name] = record[col.name] !== undefined ? record[col.name] : 
+        let value = record[col.name];
+        
+        // Handle boolean conversion for SWITCH types
+        if (col.type === "SWITCH" && value !== undefined) {
+          value = Boolean(value === true || value === 1 || value === "1");
+        }
+        
+        obj[col.name] = value !== undefined ? value : 
                        (col.default !== undefined ? col.default : 
                         (col.type === "SWITCH" ? false : ""));
         return obj;

@@ -249,7 +249,15 @@ const DataForm: React.FC<DataFormProps> = ({
         let shouldShow = true;
         
         if (col.conditional) {
-          shouldShow = formData[col.conditional.field] === col.conditional.value;
+          const fieldValue = formData[col.conditional.field];
+          const conditionValue = col.conditional.value;
+          
+          // Handle boolean comparisons properly
+          if (typeof conditionValue === 'boolean') {
+            shouldShow = Boolean(fieldValue === true || fieldValue === 1 || fieldValue === "1") === conditionValue;
+          } else {
+            shouldShow = fieldValue === conditionValue;
+          }
         } else if (col.conditionalMultiple) {
           shouldShow = col.conditionalMultiple.some(condition => 
             condition.values.includes(formData[condition.field])
@@ -257,7 +265,7 @@ const DataForm: React.FC<DataFormProps> = ({
         }
         
         // For conditional fields like custom_csr, make them required when their condition is met
-        const isConditionallyRequired = col.conditional && formData[col.conditional.field] === col.conditional.value && col.name === 'custom_csr';
+        const isConditionallyRequired = col.conditional && shouldShow && col.name === 'custom_csr';
         
         // Skip validation for SWITCH types
         if (col.type === "SWITCH") {
