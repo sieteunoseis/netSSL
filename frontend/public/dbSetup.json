@@ -48,10 +48,38 @@
   {
     "name": "hostname",
     "type": "TEXT",
+    "validator": { "name": "matches", "options": "^[a-zA-Z0-9]([a-zA-Z0-9\\-]{0,61}[a-zA-Z0-9])?$" },
+    "label": "Server Hostname",
+    "placeholder": "e.g., cucm01-pub, cucm02-sub",
+    "description": "Hostname only - do not include domain name (e.g., 'server01' not 'server01.domain.com')",
+    "conditional": {
+      "field": "application_type",
+      "value": "vos"
+    }
+  },
+  {
+    "name": "hostname",
+    "type": "TEXT",
     "validator": { "name": "matches", "options": "^(\\*|[a-zA-Z0-9]([a-zA-Z0-9\\-]{0,61}[a-zA-Z0-9])?)?$" },
-    "label": "Certificate Hostname",
-    "placeholder": "e.g., cucm01-pub, esxi01, sponsor, guest1, * (wildcard if supported), or blank (if supported)",
-    "description": "Hostname only - do not include domain name. For ISE: Can be portal name, wildcard (*), or blank"
+    "label": "Portal Hostname",
+    "placeholder": "e.g., sponsor, guest1, * (wildcard), or leave blank",
+    "description": "Portal hostname - can be a name, wildcard (*), or blank for domain-only certificates",
+    "conditional": {
+      "field": "application_type",
+      "value": "ise"
+    }
+  },
+  {
+    "name": "hostname",
+    "type": "TEXT",
+    "validator": { "name": "matches", "options": "^[a-zA-Z0-9]([a-zA-Z0-9\\-]{0,61}[a-zA-Z0-9])?$" },
+    "label": "Server Hostname",
+    "placeholder": "e.g., esxi01, server01",
+    "description": "Hostname only - do not include domain name (e.g., 'server01' not 'server01.domain.com')",
+    "conditional": {
+      "field": "application_type",
+      "value": "general"
+    }
   },
   {
     "name": "username",

@@ -10,12 +10,32 @@ export const validateConnectionData = (data: any): { isValid: boolean; errors: s
     errors.push('Name must contain only ASCII characters');
   }
 
-  // Hostname is not required for ISE applications
-  if (data.application_type !== 'ise') {
+  // Hostname validation based on application type
+  if (data.application_type === 'vos' || data.application_type === 'general') {
+    // VOS and general applications require a valid hostname
     if (!data.hostname || typeof data.hostname !== 'string') {
       errors.push('Hostname is required and must be a string');
     } else if (!validator.isAscii(data.hostname)) {
       errors.push('Hostname must contain only ASCII characters');
+    } else {
+      // Use strict hostname pattern for VOS/general (no wildcard, no empty)
+      const hostnamePattern = /^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$/;
+      if (!hostnamePattern.test(data.hostname)) {
+        errors.push('Hostname must be a valid hostname (letters, numbers, hyphens only)');
+      }
+    }
+  } else if (data.application_type === 'ise') {
+    // ISE allows hostname to be empty, wildcard, or a valid hostname
+    if (data.hostname !== undefined && typeof data.hostname !== 'string') {
+      errors.push('Hostname must be a string');
+    } else if (data.hostname && !validator.isAscii(data.hostname)) {
+      errors.push('Hostname must contain only ASCII characters');
+    } else if (data.hostname) {
+      // Use flexible hostname pattern for ISE (allows wildcard and empty)
+      const iseHostnamePattern = /^(\*|[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)?$/;
+      if (!iseHostnamePattern.test(data.hostname)) {
+        errors.push('Hostname must be a valid hostname, wildcard (*), or blank');
+      }
     }
   }
 
