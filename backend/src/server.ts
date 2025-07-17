@@ -313,7 +313,8 @@ app.put('/api/data/:id', asyncHandler(async (req: Request, res: Response) => {
     hostname: req.body.hostname,
     enable_ssh: req.body.enable_ssh,
     auto_restart_service: req.body.auto_restart_service,
-    auto_renew: req.body.auto_renew
+    auto_renew: req.body.auto_renew,
+    is_enabled: req.body.is_enabled
   });
 
   // Sanitize input data
@@ -326,7 +327,8 @@ app.put('/api/data/:id', asyncHandler(async (req: Request, res: Response) => {
     hostname: sanitizedData.hostname,
     enable_ssh: sanitizedData.enable_ssh,
     auto_restart_service: sanitizedData.auto_restart_service,
-    auto_renew: sanitizedData.auto_renew
+    auto_renew: sanitizedData.auto_renew,
+    is_enabled: sanitizedData.is_enabled
   });
   
   // Update connection in database

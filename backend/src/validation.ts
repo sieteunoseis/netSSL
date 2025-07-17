@@ -226,10 +226,13 @@ export const sanitizeConnectionData = (data: any): Partial<ConnectionRecord> => 
     sanitized.auto_renew_last_attempt = validator.escape(String(data.auto_renew_last_attempt || ''));
   }
 
-  // Handle is_enabled field - defaults to true if not provided
+  // Handle is_enabled field - convert to proper boolean/integer
   if (data.is_enabled !== undefined) {
-    sanitized.is_enabled = Boolean(data.is_enabled);
+    // Convert to integer for SQLite (0 or 1)
+    sanitized.is_enabled = data.is_enabled ? 1 : 0;
   }
+  // Note: If is_enabled is undefined, we don't set it in sanitized data,
+  // which means the database update will preserve the existing value
 
   return sanitized;
 };
