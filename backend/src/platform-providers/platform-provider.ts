@@ -1,4 +1,5 @@
 import { SSHClient } from '../ssh-client';
+import { Logger } from '../logger';
 
 export interface PlatformConfig {
   platformType: string;
@@ -153,10 +154,18 @@ export abstract class PlatformProvider {
       host: hostname,
       username,
       password,
-      algorithms: this.config.sshConfig.connectionAlgorithms
+      // Temporarily remove algorithm restrictions to test
+      // algorithms: this.config.sshConfig.connectionAlgorithms
     };
 
-    await this.sshClient.connect(sshConfig);
+    Logger.info(`Connecting to SSH with algorithms:`, this.config.sshConfig.connectionAlgorithms);
+    
+    try {
+      await this.sshClient.connect(sshConfig);
+    } catch (error) {
+      Logger.error(`SSH connection failed for ${hostname}:`, error);
+      throw error;
+    }
   }
 
   protected async executeSSHCommand(command: string): Promise<string> {
