@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { RefreshCw, Search, FileText, Server, AlertCircle, Download, Copy, Play, Pause } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiCall } from "@/lib/api";
+import { getConnectionDisplayHostname } from "@/lib/connection-utils";
 import BackgroundLogo from "@/components/BackgroundLogo";
 
 const Logs = () => {
@@ -231,9 +232,7 @@ const Logs = () => {
                         {account.connection.name}
                       </p>
                       <p className="text-sm text-gray-500 truncate">
-                        {account.connection.application_type === 'ise' 
-                          ? account.connection.portal_url || 'No portal URL' 
-                          : account.domain || 'No domain'}
+                        {getConnectionDisplayHostname(account.connection) || account.domain || 'No domain'}
                       </p>
                     </div>
                     <div className="flex flex-col items-end space-y-1">
@@ -273,9 +272,7 @@ const Logs = () => {
                     {selectedAccount.connection.name}
                   </h3>
                   <p className="text-sm text-gray-500">
-                    {selectedAccount.connection.application_type === 'ise' 
-                      ? selectedAccount.connection.portal_url || 'No portal URL'
-                      : selectedAccount.domain || 'No domain'} • {selectedAccount.logs.length} log entries
+                    {getConnectionDisplayHostname(selectedAccount.connection) || selectedAccount.domain || 'No domain'} • {selectedAccount.logs.length} log entries
                   </p>
                 </div>
                 <div className="flex items-center space-x-2">
