@@ -49,8 +49,8 @@
     "name": "hostname",
     "type": "TEXT",
     "validator": { "name": "matches", "options": "^(\\*|[a-zA-Z0-9]([a-zA-Z0-9\\-]{0,61}[a-zA-Z0-9])?)?$" },
-    "label": "Server Hostname",
-    "placeholder": "VOS/General: cucm01-pub, esxi01 | ISE: sponsor, guest1, * (wildcard), or blank",
+    "label": "Certificate Hostname",
+    "placeholder": "e.g., cucm01-pub, esxi01, sponsor, guest1, * (wildcard if supported), or blank (if supported)",
     "description": "Hostname only - do not include domain name. For ISE: Can be portal name, wildcard (*), or blank"
   },
   {
@@ -77,19 +77,6 @@
       {
         "field": "application_type",
         "values": ["vos", "ise"]
-      }
-    ]
-  },
-  {
-    "name": "domain",
-    "type": "TEXT",
-    "validator": { "name": "isFQDN", "options": { "allow_numeric_tld": true } },
-    "label": "Domain Name",
-    "placeholder": "e.g., automate.builders",
-    "conditionalMultiple": [
-      {
-        "field": "application_type",
-        "values": ["vos", "general"]
       }
     ]
   },
