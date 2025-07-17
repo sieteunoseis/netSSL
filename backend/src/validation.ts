@@ -19,13 +19,11 @@ export const validateConnectionData = (data: any): { isValid: boolean; errors: s
     }
   }
 
-  // Domain is not required for ISE applications (they use portal_url instead)
-  if (data.application_type !== 'ise') {
-    if (!data.domain || typeof data.domain !== 'string') {
-      errors.push('Domain is required and must be a string');
-    } else if (!validator.isFQDN(data.domain, { allow_numeric_tld: true })) {
-      errors.push('Domain must be a valid FQDN');
-    }
+  // Domain is now required for all application types
+  if (!data.domain || typeof data.domain !== 'string') {
+    errors.push('Domain is required and must be a string');
+  } else if (!validator.isFQDN(data.domain, { allow_numeric_tld: true })) {
+    errors.push('Domain must be a valid FQDN');
   }
 
   // Username and password are required for VOS applications only
@@ -45,14 +43,6 @@ export const validateConnectionData = (data: any): { isValid: boolean; errors: s
     }
   } else if (data.application_type === 'ise') {
     // ISE-specific validations
-    if (data.portal_url && typeof data.portal_url === 'string' && data.portal_url.trim() !== '') {
-      // Use same regex pattern as frontend for consistency
-      const portalUrlPattern = /^(\*\.)?[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$/;
-      if (!portalUrlPattern.test(data.portal_url)) {
-        errors.push('Guest Portal URL must be a valid FQDN or wildcard domain');
-      }
-    }
-
     if (data.ise_nodes && typeof data.ise_nodes === 'string' && data.ise_nodes.trim() !== '') {
       if (!validator.isAscii(data.ise_nodes)) {
         errors.push('ISE Node FQDNs must contain only ASCII characters');
@@ -182,7 +172,6 @@ export const sanitizeConnectionData = (data: any): Partial<ConnectionRecord> => 
     alt_names: validator.escape(String(data.alt_names || '')),
     custom_csr: data.custom_csr ? String(data.custom_csr) : undefined, // Don't escape CSR content
     general_private_key: data.general_private_key ? String(data.general_private_key) : undefined, // Don't escape private key content
-    portal_url: data.portal_url ? validator.escape(String(data.portal_url)) : undefined,
     ise_nodes: data.ise_nodes ? validator.escape(String(data.ise_nodes)) : undefined,
     ise_certificate: data.ise_certificate ? String(data.ise_certificate) : undefined, // Don't escape certificate content
     ise_private_key: data.ise_private_key ? String(data.ise_private_key) : undefined // Don't escape private key content

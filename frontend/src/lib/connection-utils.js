@@ -31,7 +31,7 @@ export const filterEnabledConnections = (connections) => {
  */
 export const getConnectionDisplayHostname = (connection) => {
   if (connection.application_type === 'ise') {
-    // For ISE, use hostname and domain or fall back to legacy portal_url
+    // For ISE, use hostname and domain
     if (connection.hostname !== undefined && connection.domain) {
       const hostname = connection.hostname || '';
       if (hostname === '*') {
@@ -43,9 +43,6 @@ export const getConnectionDisplayHostname = (connection) => {
         // Empty hostname, return just domain
         return connection.domain;
       }
-    } else if (connection.portal_url) {
-      // Legacy structure
-      return connection.portal_url;
     }
     return 'ISE Portal';
   } else {
@@ -64,8 +61,7 @@ export const getConnectionDisplayHostname = (connection) => {
  */
 export const isWildcardCertificate = (connection) => {
   if (connection.application_type === 'ise') {
-    return connection.hostname === '*' || 
-           (connection.portal_url && connection.portal_url.startsWith('*.'));
+    return connection.hostname === '*';
   }
   return false;
 };
@@ -88,13 +84,6 @@ export const getCertificateValidationDomain = (connection) => {
       } else {
         return connection.domain;
       }
-    } else if (connection.portal_url) {
-      // Legacy structure
-      let domain = connection.portal_url;
-      if (domain.startsWith('*.')) {
-        domain = domain.substring(2);
-      }
-      return domain;
     }
     return null;
   } else {

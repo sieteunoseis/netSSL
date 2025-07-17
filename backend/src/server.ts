@@ -813,7 +813,7 @@ app.get('/api/data/:id/certificate', asyncHandler(async (req: Request, res: Resp
   if (!domain) {
     return res.status(400).json({ 
       error: 'Invalid connection configuration',
-      details: 'Missing hostname/domain or portal_url for certificate lookup'
+      details: 'Missing hostname/domain for certificate lookup'
     });
   }
 
@@ -913,8 +913,7 @@ app.get('/api/logs/all', asyncHandler(async (req: Request, res: Response) => {
               name: connection.name,
               hostname: connection.hostname,
               domain: connection.domain,
-              application_type: connection.application_type,
-              portal_url: connection.portal_url
+              application_type: connection.application_type
             },
             domain: null,
             logs: [],
@@ -931,8 +930,7 @@ app.get('/api/logs/all', asyncHandler(async (req: Request, res: Response) => {
               name: connection.name,
               hostname: connection.hostname,
               domain: connection.domain,
-              application_type: connection.application_type,
-              portal_url: connection.portal_url
+              application_type: connection.application_type
             },
             domain,
             logs,
@@ -946,8 +944,7 @@ app.get('/api/logs/all', asyncHandler(async (req: Request, res: Response) => {
               name: connection.name,
               hostname: connection.hostname,
               domain: connection.domain,
-              application_type: connection.application_type,
-              portal_url: connection.portal_url
+              application_type: connection.application_type
             },
             domain,
             logs: [],

@@ -38,7 +38,7 @@ export class LetsEncryptAccountChecker {
         
         if (!validDomain) {
           if (conn.application_type === 'ise') {
-            Logger.warn(`  ISE connection missing portal_url: ${conn.portal_url}`);
+            Logger.warn(`  ISE connection missing hostname/domain: ${conn.hostname}/${conn.domain}`);
           } else {
             Logger.warn(`  VOS/General connection missing hostname/domain: ${conn.hostname}/${conn.domain}`);
           }

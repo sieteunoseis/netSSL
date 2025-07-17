@@ -13,7 +13,6 @@ export interface ConnectionRecord {
   alt_names?: string;
   custom_csr?: string;
   general_private_key?: string;
-  portal_url?: string;
   ise_nodes?: string;
   ise_certificate?: string;
   ise_private_key?: string;
