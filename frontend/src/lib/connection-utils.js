@@ -30,8 +30,8 @@ export const filterEnabledConnections = (connections) => {
  * @returns {string} - The hostname to display
  */
 export const getConnectionDisplayHostname = (connection) => {
-  if (connection.application_type === 'ise') {
-    // For ISE, use hostname and domain
+  if (connection.application_type === 'ise' || connection.application_type === 'general') {
+    // For ISE and General, use hostname and domain with flexible hostname support
     if (connection.hostname !== undefined && connection.domain) {
       const hostname = connection.hostname || '';
       if (hostname === '*') {
@@ -44,9 +44,9 @@ export const getConnectionDisplayHostname = (connection) => {
         return connection.domain;
       }
     }
-    return 'ISE Portal';
+    return connection.application_type === 'ise' ? 'ISE Portal' : 'General Application';
   } else {
-    // For VOS and general applications
+    // For VOS applications (strict hostname required)
     if (connection.hostname && connection.domain) {
       return `${connection.hostname}.${connection.domain}`;
     }
@@ -60,7 +60,7 @@ export const getConnectionDisplayHostname = (connection) => {
  * @returns {boolean} - True if wildcard certificate
  */
 export const isWildcardCertificate = (connection) => {
-  if (connection.application_type === 'ise') {
+  if (connection.application_type === 'ise' || connection.application_type === 'general') {
     return connection.hostname === '*';
   }
   return false;
@@ -73,7 +73,7 @@ export const isWildcardCertificate = (connection) => {
  * @returns {string|null} - The domain to validate certificate against
  */
 export const getCertificateValidationDomain = (connection) => {
-  if (connection.application_type === 'ise') {
+  if (connection.application_type === 'ise' || connection.application_type === 'general') {
     if (connection.hostname !== undefined && connection.domain) {
       const hostname = connection.hostname || '';
       if (hostname === '*') {
@@ -87,7 +87,7 @@ export const getCertificateValidationDomain = (connection) => {
     }
     return null;
   } else {
-    // For VOS and general applications
+    // For VOS applications (strict hostname required)
     if (connection.hostname && connection.domain) {
       return `${connection.hostname}.${connection.domain}`;
     }

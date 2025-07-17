@@ -6,8 +6,8 @@ import { ConnectionRecord } from '../types';
  * @returns The domain/hostname or null if not available
  */
 export function getDomainFromConnection(connection: ConnectionRecord): string | null {
-  if (connection.application_type === 'ise') {
-    // For ISE, use hostname and domain
+  if (connection.application_type === 'ise' || connection.application_type === 'general') {
+    // For ISE and General, use hostname and domain with flexible hostname support
     if (connection.hostname !== undefined && connection.domain) {
       const hostname = connection.hostname || ''; // Can be empty, wildcard, or a name
       if (hostname === '*') {
@@ -24,7 +24,7 @@ export function getDomainFromConnection(connection: ConnectionRecord): string | 
     
     return null;
   } else {
-    // For VOS and general applications
+    // For VOS applications (strict hostname required)
     if (!connection.hostname || !connection.domain) {
       return null;
     }
