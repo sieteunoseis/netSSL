@@ -67,29 +67,29 @@ export class LetsEncryptAccountChecker {
       // Check each connection
       for (const connection of letsEncryptConnections) {
         const domain = getDomainFromConnection(connection);
-        if (!domain) {
-          Logger.warn(`Skipping connection ${connection.name} - no valid domain found`);
+        if (!domain || !connection.id) {
+          Logger.warn(`Skipping connection ${connection.name} - no valid domain or connection ID found`);
           continue;
         }
         
         try {
           // Check if account exists
-          const existingAccount = await acmeClient.loadAccount(domain);
+          const existingAccount = await acmeClient.loadAccount(domain, connection.id);
           
           if (!existingAccount) {
             Logger.info(`Creating Let's Encrypt account for ${domain}...`);
             
             // Create new account
-            await acmeClient.createAccount(email, domain);
+            await acmeClient.createAccount(email, domain, connection.id);
             
             Logger.info(`Successfully created Let's Encrypt account for ${domain}`);
-            await accountManager.saveRenewalLog(domain, `Account created during startup verification (${isStaging ? 'STAGING' : 'PRODUCTION'})`);
+            await accountManager.saveRenewalLog(connection.id, domain, `Account created during startup verification (${isStaging ? 'STAGING' : 'PRODUCTION'})`);
           } else {
             Logger.info(`Let's Encrypt account already exists for ${domain}`);
           }
         } catch (error) {
           Logger.error(`Failed to verify/create account for ${domain}:`, error);
-          await accountManager.saveRenewalLog(domain, `Account verification failed during startup: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          await accountManager.saveRenewalLog(connection.id, domain, `Account verification failed during startup: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
       }
 

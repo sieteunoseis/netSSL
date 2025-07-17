@@ -25,6 +25,7 @@ export interface LetsEncryptAccount {
 }
 
 export interface CertificateAccount {
+  connectionId: number;
   domain: string;
   provider: 'letsencrypt' | 'zerossl';
   account_data: LetsEncryptAccount | any;
@@ -50,33 +51,51 @@ export class AccountManager {
     }
   }
 
-  private getAccountPath(domain: string, provider: string): string {
-    // Create domain directory structure with staging/prod subdirectories
+  private getAccountPath(connectionId: number, provider: string): string {
+    // Create connection ID directory structure with staging/prod subdirectories
     const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
     const envDir = isStaging ? 'staging' : 'prod';
-    const domainDir = path.join(this.accountsDir, domain, envDir);
-    this.ensureDirectoryExists(domainDir);
-    return path.join(domainDir, `${provider}.json`);
+    const connectionDir = path.join(this.accountsDir, `connection-${connectionId}`, envDir);
+    this.ensureDirectoryExists(connectionDir);
+    return path.join(connectionDir, `${provider}.json`);
   }
 
-  private getDomainDir(domain: string): string {
-    const domainDir = path.join(this.accountsDir, domain);
-    this.ensureDirectoryExists(domainDir);
-    return domainDir;
+  private getConnectionDir(connectionId: number): string {
+    const connectionDir = path.join(this.accountsDir, `connection-${connectionId}`);
+    this.ensureDirectoryExists(connectionDir);
+    return connectionDir;
   }
 
-  private getDomainEnvDir(domain: string): string {
-    // Get domain directory with environment subdirectory for certificates/CSRs
+  private getConnectionEnvDir(connectionId: number): string {
+    // Get connection directory with environment subdirectory for certificates/CSRs
     const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
     const envDir = isStaging ? 'staging' : 'prod';
-    const domainEnvDir = path.join(this.accountsDir, domain, envDir);
-    this.ensureDirectoryExists(domainEnvDir);
-    return domainEnvDir;
+    const connectionEnvDir = path.join(this.accountsDir, `connection-${connectionId}`, envDir);
+    this.ensureDirectoryExists(connectionEnvDir);
+    return connectionEnvDir;
   }
 
-  async saveAccount(domain: string, provider: 'letsencrypt' | 'zerossl', accountData: any): Promise<void> {
+
+  // Helper method to get certificate file path for a specific connection
+  getCertificateFilePath(connectionId: number, filename: string): string {
+    const connectionEnvDir = this.getConnectionEnvDir(connectionId);
+    return path.join(connectionEnvDir, filename);
+  }
+
+  // Helper method to check if certificate files exist for a connection
+  async hasCertificateFiles(connectionId: number): Promise<boolean> {
+    const connectionEnvDir = this.getConnectionEnvDir(connectionId);
+    const certPath = path.join(connectionEnvDir, 'certificate.pem');
+    const keyPath = path.join(connectionEnvDir, 'private_key.pem');
+    
+    return fs.existsSync(certPath) && fs.existsSync(keyPath);
+  }
+
+
+  async saveAccount(connectionId: number, domain: string, provider: 'letsencrypt' | 'zerossl', accountData: any): Promise<void> {
     try {
       const account: CertificateAccount = {
+        connectionId,
         domain,
         provider,
         account_data: accountData,
@@ -84,81 +103,81 @@ export class AccountManager {
         updated_at: new Date()
       };
 
-      const accountPath = this.getAccountPath(domain, provider);
+      const accountPath = this.getAccountPath(connectionId, provider);
       await fs.promises.writeFile(accountPath, JSON.stringify(account, null, 2));
       
-      Logger.info(`Saved ${provider} account for domain: ${domain}`);
+      Logger.info(`Saved ${provider} account for connection ${connectionId} (${domain})`);
     } catch (error) {
-      Logger.error(`Failed to save account for ${domain}:`, error);
+      Logger.error(`Failed to save account for connection ${connectionId} (${domain}):`, error);
       throw error;
     }
   }
 
-  async loadAccount(domain: string, provider: 'letsencrypt' | 'zerossl'): Promise<CertificateAccount | null> {
+  async loadAccount(connectionId: number, domain: string, provider: 'letsencrypt' | 'zerossl'): Promise<CertificateAccount | null> {
     try {
-      const accountPath = this.getAccountPath(domain, provider);
+      const accountPath = this.getAccountPath(connectionId, provider);
       
       if (!fs.existsSync(accountPath)) {
-        Logger.debug(`No account file found for ${domain} with provider ${provider}`);
+        Logger.debug(`No account file found for connection ${connectionId} (${domain}) with provider ${provider}`);
         return null;
       }
 
       const accountData = await fs.promises.readFile(accountPath, 'utf8');
       const account: CertificateAccount = JSON.parse(accountData);
       
-      Logger.info(`Loaded ${provider} account for domain: ${domain}`);
+      Logger.info(`Loaded ${provider} account for connection ${connectionId} (${domain})`);
       return account;
     } catch (error) {
-      Logger.error(`Failed to load account for ${domain}:`, error);
+      Logger.error(`Failed to load account for connection ${connectionId} (${domain}):`, error);
       return null;
     }
   }
 
-  async updateAccount(domain: string, provider: 'letsencrypt' | 'zerossl', updates: Partial<any>): Promise<void> {
+  async updateAccount(connectionId: number, domain: string, provider: 'letsencrypt' | 'zerossl', updates: Partial<any>): Promise<void> {
     try {
-      const account = await this.loadAccount(domain, provider);
+      const account = await this.loadAccount(connectionId, domain, provider);
       if (!account) {
-        throw new Error(`Account not found for ${domain} with provider ${provider}`);
+        throw new Error(`Account not found for connection ${connectionId} (${domain}) with provider ${provider}`);
       }
 
       // Update account data
       account.account_data = { ...account.account_data, ...updates };
       account.updated_at = new Date();
 
-      await this.saveAccount(domain, provider, account.account_data);
-      Logger.info(`Updated ${provider} account for domain: ${domain}`);
+      await this.saveAccount(connectionId, domain, provider, account.account_data);
+      Logger.info(`Updated ${provider} account for connection ${connectionId} (${domain})`);
     } catch (error) {
-      Logger.error(`Failed to update account for ${domain}:`, error);
+      Logger.error(`Failed to update account for connection ${connectionId} (${domain}):`, error);
       throw error;
     }
   }
 
-  async saveCertificate(domain: string, certificate: string, privateKey: string): Promise<void> {
+  async saveCertificate(connectionId: number, domain: string, certificate: string, privateKey: string): Promise<void> {
     try {
-      const domainEnvDir = this.getDomainEnvDir(domain);
-      const certPath = path.join(domainEnvDir, 'certificate.pem');
-      const keyPath = path.join(domainEnvDir, 'private_key.pem');
+      const connectionEnvDir = this.getConnectionEnvDir(connectionId);
+      const certPath = path.join(connectionEnvDir, 'certificate.pem');
+      const keyPath = path.join(connectionEnvDir, 'private_key.pem');
 
       await fs.promises.writeFile(certPath, certificate);
       await fs.promises.writeFile(keyPath, privateKey);
       
       const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
       const envType = isStaging ? 'staging' : 'production';
-      Logger.info(`Saved certificate and private key for domain: ${domain} (${envType})`);
+      Logger.info(`Saved certificate and private key for connection ${connectionId} (${domain}) (${envType})`);
     } catch (error) {
-      Logger.error(`Failed to save certificate for ${domain}:`, error);
+      Logger.error(`Failed to save certificate for connection ${connectionId} (${domain}):`, error);
       throw error;
     }
   }
 
-  async saveCertificateChain(domain: string, fullChainData: string, privateKey: string): Promise<void> {
+  async saveCertificateChain(connectionId: number, domain: string, fullChainData: string, privateKey: string): Promise<void> {
     try {
-      const domainEnvDir = this.getDomainEnvDir(domain);
+      const connectionEnvDir = this.getConnectionEnvDir(connectionId);
       const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
       const envType = isStaging ? 'staging' : 'production';
 
       // Save the complete chain
-      const fullChainPath = path.join(domainEnvDir, 'fullchain.pem');
+      const fullChainPath = path.join(connectionEnvDir, 'fullchain.pem');
       await fs.promises.writeFile(fullChainPath, fullChainData);
 
       // Parse and extract individual certificates
@@ -176,50 +195,50 @@ export class AccountManager {
       const chainCerts = certificates.slice(1); // Intermediate + Root certificates
       
       // Save individual certificate files
-      await fs.promises.writeFile(path.join(domainEnvDir, 'certificate.pem'), leafCert);
-      await fs.promises.writeFile(path.join(domainEnvDir, 'private_key.pem'), privateKey);
+      await fs.promises.writeFile(path.join(connectionEnvDir, 'certificate.pem'), leafCert);
+      await fs.promises.writeFile(path.join(connectionEnvDir, 'private_key.pem'), privateKey);
 
       // Save chain certificates (intermediate + root)
       if (chainCerts.length > 0) {
         const chainData = chainCerts.join('\n');
-        await fs.promises.writeFile(path.join(domainEnvDir, 'chain.pem'), chainData);
+        await fs.promises.writeFile(path.join(connectionEnvDir, 'chain.pem'), chainData);
 
         // Save individual CA certificates for easier application integration
         if (chainCerts.length >= 1) {
           // First chain cert is usually the intermediate
-          await fs.promises.writeFile(path.join(domainEnvDir, 'intermediate.crt'), chainCerts[0]);
+          await fs.promises.writeFile(path.join(connectionEnvDir, 'intermediate.crt'), chainCerts[0]);
         }
         
         if (chainCerts.length >= 2) {
           // Second chain cert is usually the root
-          await fs.promises.writeFile(path.join(domainEnvDir, 'root.crt'), chainCerts[1]);
+          await fs.promises.writeFile(path.join(connectionEnvDir, 'root.crt'), chainCerts[1]);
         }
 
         // For applications that need all CA certs in one file
-        await fs.promises.writeFile(path.join(domainEnvDir, 'ca-bundle.crt'), chainData);
+        await fs.promises.writeFile(path.join(connectionEnvDir, 'ca-bundle.crt'), chainData);
       }
 
       // Create application-friendly formats
-      await fs.promises.writeFile(path.join(domainEnvDir, `${domain}.crt`), leafCert);
-      await fs.promises.writeFile(path.join(domainEnvDir, `${domain}.key`), privateKey);
+      await fs.promises.writeFile(path.join(connectionEnvDir, `${domain}.crt`), leafCert);
+      await fs.promises.writeFile(path.join(connectionEnvDir, `${domain}.key`), privateKey);
 
-      Logger.info(`Saved complete certificate chain for domain: ${domain} (${envType})`);
+      Logger.info(`Saved complete certificate chain for connection ${connectionId} (${domain}) (${envType})`);
       Logger.info(`Certificate files: certificate.pem, ${domain}.crt, intermediate.crt, root.crt, ca-bundle.crt`);
 
     } catch (error) {
-      Logger.error(`Failed to save certificate chain for ${domain}:`, error);
+      Logger.error(`Failed to save certificate chain for connection ${connectionId} (${domain}):`, error);
       throw error;
     }
   }
 
-  async loadCertificate(domain: string): Promise<{ certificate: string; privateKey: string } | null> {
+  async loadCertificate(connectionId: number, domain: string): Promise<{ certificate: string; privateKey: string } | null> {
     try {
-      const domainEnvDir = this.getDomainEnvDir(domain);
-      const certPath = path.join(domainEnvDir, 'certificate.pem');
-      const keyPath = path.join(domainEnvDir, 'private_key.pem');
+      const connectionEnvDir = this.getConnectionEnvDir(connectionId);
+      const certPath = path.join(connectionEnvDir, 'certificate.pem');
+      const keyPath = path.join(connectionEnvDir, 'private_key.pem');
 
       if (!fs.existsSync(certPath) || !fs.existsSync(keyPath)) {
-        Logger.debug(`Certificate files not found for domain: ${domain} in current environment`);
+        Logger.debug(`Certificate files not found for connection ${connectionId} (${domain}) in current environment`);
         return null;
       }
 
@@ -228,37 +247,37 @@ export class AccountManager {
       
       const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
       const envType = isStaging ? 'staging' : 'production';
-      Logger.info(`Loaded certificate and private key for domain: ${domain} (${envType})`);
+      Logger.info(`Loaded certificate and private key for connection ${connectionId} (${domain}) (${envType})`);
       return { certificate, privateKey };
     } catch (error) {
-      Logger.error(`Failed to load certificate for ${domain}:`, error);
+      Logger.error(`Failed to load certificate for connection ${connectionId} (${domain}):`, error);
       return null;
     }
   }
 
-  async saveCSR(domain: string, csr: string): Promise<void> {
+  async saveCSR(connectionId: number, domain: string, csr: string): Promise<void> {
     try {
-      const domainEnvDir = this.getDomainEnvDir(domain);
-      const csrPath = path.join(domainEnvDir, 'certificate.csr');
+      const connectionEnvDir = this.getConnectionEnvDir(connectionId);
+      const csrPath = path.join(connectionEnvDir, 'certificate.csr');
 
       await fs.promises.writeFile(csrPath, csr);
       
       const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
       const envType = isStaging ? 'staging' : 'production';
-      Logger.info(`Saved CSR for domain: ${domain} (${envType})`);
+      Logger.info(`Saved CSR for connection ${connectionId} (${domain}) (${envType})`);
     } catch (error) {
-      Logger.error(`Failed to save CSR for ${domain}:`, error);
+      Logger.error(`Failed to save CSR for connection ${connectionId} (${domain}):`, error);
       throw error;
     }
   }
 
-  async loadCSR(domain: string): Promise<string | null> {
+  async loadCSR(connectionId: number, domain: string): Promise<string | null> {
     try {
-      const domainEnvDir = this.getDomainEnvDir(domain);
-      const csrPath = path.join(domainEnvDir, 'certificate.csr');
+      const connectionEnvDir = this.getConnectionEnvDir(connectionId);
+      const csrPath = path.join(connectionEnvDir, 'certificate.csr');
 
       if (!fs.existsSync(csrPath)) {
-        Logger.debug(`CSR file not found for domain: ${domain} in current environment`);
+        Logger.debug(`CSR file not found for connection ${connectionId} (${domain}) in current environment`);
         return null;
       }
 
@@ -266,32 +285,32 @@ export class AccountManager {
       
       const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
       const envType = isStaging ? 'staging' : 'production';
-      Logger.info(`Loaded CSR for domain: ${domain} (${envType})`);
+      Logger.info(`Loaded CSR for connection ${connectionId} (${domain}) (${envType})`);
       return csr;
     } catch (error) {
-      Logger.error(`Failed to load CSR for ${domain}:`, error);
+      Logger.error(`Failed to load CSR for connection ${connectionId} (${domain}):`, error);
       return null;
     }
   }
 
-  async saveRenewalLog(domain: string, log: string): Promise<void> {
+  async saveRenewalLog(connectionId: number, domain: string, log: string): Promise<void> {
     try {
-      const domainDir = this.getDomainDir(domain);
-      const logPath = path.join(domainDir, 'renewal.log');
+      const connectionDir = this.getConnectionDir(connectionId);
+      const logPath = path.join(connectionDir, 'renewal.log');
       const timestamp = new Date().toISOString();
       const logEntry = `[${timestamp}] ${log}\n`;
 
       await fs.promises.appendFile(logPath, logEntry);
-      Logger.debug(`Saved renewal log for domain: ${domain}`);
+      Logger.debug(`Saved renewal log for connection ${connectionId} (${domain})`);
     } catch (error) {
-      Logger.error(`Failed to save renewal log for ${domain}:`, error);
+      Logger.error(`Failed to save renewal log for connection ${connectionId} (${domain}):`, error);
     }
   }
 
-  async getRenewalLog(domain: string): Promise<string[]> {
+  async getRenewalLog(connectionId: number, domain: string): Promise<string[]> {
     try {
-      const domainDir = this.getDomainDir(domain);
-      const logPath = path.join(domainDir, 'renewal.log');
+      const connectionDir = this.getConnectionDir(connectionId);
+      const logPath = path.join(connectionDir, 'renewal.log');
 
       if (!fs.existsSync(logPath)) {
         return [];
@@ -300,15 +319,15 @@ export class AccountManager {
       const logContent = await fs.promises.readFile(logPath, 'utf8');
       return logContent.trim().split('\n').filter(line => line.length > 0);
     } catch (error) {
-      Logger.error(`Failed to read renewal log for ${domain}:`, error);
+      Logger.error(`Failed to read renewal log for connection ${connectionId} (${domain}):`, error);
       return [];
     }
   }
 
-  async listAccountsByDomain(domain: string): Promise<string[]> {
+  async listAccountsByConnection(connectionId: number): Promise<string[]> {
     try {
-      const domainDir = path.join(this.accountsDir, domain);
-      if (!fs.existsSync(domainDir)) {
+      const connectionDir = path.join(this.accountsDir, `connection-${connectionId}`);
+      if (!fs.existsSync(connectionDir)) {
         return [];
       }
 
@@ -316,7 +335,7 @@ export class AccountManager {
       
       // Check both staging and prod directories
       for (const envDir of ['staging', 'prod']) {
-        const envPath = path.join(domainDir, envDir);
+        const envPath = path.join(connectionDir, envDir);
         if (fs.existsSync(envPath)) {
           const files = await fs.promises.readdir(envPath);
           const accountFiles = files.filter(file => file.endsWith('.json'));
@@ -329,57 +348,57 @@ export class AccountManager {
       
       return Array.from(providers);
     } catch (error) {
-      Logger.error(`Failed to list accounts for ${domain}:`, error);
+      Logger.error(`Failed to list accounts for connection ${connectionId}:`, error);
       return [];
     }
   }
 
-  async deleteAccount(domain: string, provider: 'letsencrypt' | 'zerossl'): Promise<void> {
+  async deleteAccount(connectionId: number, domain: string, provider: 'letsencrypt' | 'zerossl'): Promise<void> {
     try {
-      const accountPath = this.getAccountPath(domain, provider);
+      const accountPath = this.getAccountPath(connectionId, provider);
       
       if (fs.existsSync(accountPath)) {
         await fs.promises.unlink(accountPath);
-        Logger.info(`Deleted ${provider} account for domain: ${domain}`);
+        Logger.info(`Deleted ${provider} account for connection ${connectionId} (${domain})`);
       }
     } catch (error) {
-      Logger.error(`Failed to delete account for ${domain}:`, error);
+      Logger.error(`Failed to delete account for connection ${connectionId} (${domain}):`, error);
       throw error;
     }
   }
 
-  async cleanupDomainFiles(domain: string): Promise<void> {
+  async cleanupConnectionFiles(connectionId: number): Promise<void> {
     try {
-      const domainDir = this.getDomainDir(domain);
+      const connectionDir = this.getConnectionDir(connectionId);
       
-      if (fs.existsSync(domainDir)) {
-        await fs.promises.rmdir(domainDir, { recursive: true });
-        Logger.info(`Cleaned up files for domain: ${domain}`);
+      if (fs.existsSync(connectionDir)) {
+        await fs.promises.rmdir(connectionDir, { recursive: true });
+        Logger.info(`Cleaned up files for connection ${connectionId}`);
       }
     } catch (error) {
-      Logger.error(`Failed to cleanup files for ${domain}:`, error);
+      Logger.error(`Failed to cleanup files for connection ${connectionId}:`, error);
       throw error;
     }
   }
 
-  async getAccountStats(): Promise<{ totalAccounts: number; domains: string[]; providers: string[] }> {
+  async getAccountStats(): Promise<{ totalAccounts: number; connections: string[]; providers: string[] }> {
     try {
       let totalAccounts = 0;
-      const domains = new Set<string>();
+      const connections = new Set<string>();
       const providers = new Set<string>();
       
-      const domainDirs = await fs.promises.readdir(this.accountsDir);
+      const connectionDirs = await fs.promises.readdir(this.accountsDir);
       
-      for (const domainDir of domainDirs) {
-        const domainPath = path.join(this.accountsDir, domainDir);
-        const stat = await fs.promises.stat(domainPath);
+      for (const connectionDir of connectionDirs) {
+        const connectionPath = path.join(this.accountsDir, connectionDir);
+        const stat = await fs.promises.stat(connectionPath);
         
         if (stat.isDirectory()) {
-          domains.add(domainDir);
+          connections.add(connectionDir);
           
           // Check staging and prod directories
           for (const envDir of ['staging', 'prod']) {
-            const envPath = path.join(domainPath, envDir);
+            const envPath = path.join(connectionPath, envDir);
             if (fs.existsSync(envPath)) {
               const files = await fs.promises.readdir(envPath);
               const accountFiles = files.filter(file => file.endsWith('.json'));
@@ -396,14 +415,15 @@ export class AccountManager {
 
       return {
         totalAccounts,
-        domains: Array.from(domains),
+        connections: Array.from(connections),
         providers: Array.from(providers)
       };
     } catch (error) {
       Logger.error('Failed to get account stats:', error);
-      return { totalAccounts: 0, domains: [], providers: [] };
+      return { totalAccounts: 0, connections: [], providers: [] };
     }
   }
 }
 
+// Create a singleton instance
 export const accountManager = new AccountManager();
