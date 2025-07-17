@@ -341,7 +341,14 @@ export class DatabaseManager {
           reject(err);
         } else {
           Logger.debug(`Retrieved ${rows.length} connections`);
-          resolve(rows as ConnectionRecord[]);
+          // Convert integer is_enabled values back to booleans for API consistency
+          const convertedRows = rows.map((row: any) => {
+            if (row.is_enabled !== undefined) {
+              row.is_enabled = Boolean(row.is_enabled);
+            }
+            return row;
+          });
+          resolve(convertedRows as ConnectionRecord[]);
         }
       });
     });
@@ -359,6 +366,10 @@ export class DatabaseManager {
           reject(err);
         } else {
           Logger.debug(`Retrieved connection with ID: ${id}`);
+          // Convert integer is_enabled value back to boolean for API consistency
+          if (row && row.is_enabled !== undefined) {
+            row.is_enabled = Boolean(row.is_enabled);
+          }
           resolve(row as ConnectionRecord || null);
         }
       });
