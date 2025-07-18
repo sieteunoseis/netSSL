@@ -21,3 +21,4 @@ frontend.env
 # Certificate accounts and private keys - exclude everything except README
 backend/accounts/*
 !backend/accounts/README.md
+CISCO IOS.md

@@ -119,7 +119,7 @@ export class CustomDNSProvider {
 
   async waitForManualEntry(recordName: string, expectedValue: string, maxWaitTime: number = 300000, cancellationCheck?: () => boolean): Promise<boolean> {
     const startTime = Date.now();
-    const checkInterval = 10000; // Check every 10 seconds
+    const checkInterval = 15000; // Check every 15 seconds as specified in requirements
     
     Logger.info(`Waiting for manual DNS entry. You have ${maxWaitTime / 1000} seconds to add the record.`);
     Logger.info(`Checking every ${checkInterval / 1000} seconds...`);
@@ -171,7 +171,7 @@ Manual DNS Configuration Required:
    - TTL: 300 (or minimum allowed)
 
 3. Save the record and wait for propagation
-4. The system will automatically verify the record every 10 seconds
+4. The system will automatically verify the record every 15 seconds
 
 DNS Servers being monitored: ${this.customDnsServers.length > 0 ? this.customDnsServers.join(', ') : 'Default (8.8.8.8, 1.1.1.1)'}
 `;
