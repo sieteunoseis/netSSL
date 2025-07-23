@@ -15,7 +15,7 @@ export default function Component() {
     <nav className="sticky inset-x-0 top-0 z-50 bg-white shadow-sm px-4 md:px-6 dark:bg-black">
       <div className="flex justify-between h-14 items-center">
         <Link to={ config.brandingUrl ? config.brandingUrl : 'http://automate.builders' } className="font-semibold" target="_blank" rel="noopener noreferrer">
-        <h1 className="scroll-m-20 text-4xl font-extrabold tracking-tight lg:text-2xl">{ config.brandingName ? config.brandingName : 'Automate Builders' }</h1>
+        <h1 className="scroll-m-20 text-4xl font-extrabold tracking-tight lg:text-2xl">{ config.brandingName ? config.brandingName : 'netSSL' }</h1>
         </Link>
         
         {/* Desktop Navigation */}

@@ -256,9 +256,10 @@ const Home = () => {
       <div className="max-w-6xl mx-auto px-4">
         <div className="flex flex-col items-center mb-10">
           <div className="inline-block animate-fade-in text-center">
+            <img src="/logo.png" alt="netSSL" className="h-36 w-36 mx-auto mb-4 rounded-full object-cover shadow-lg mix-blend-multiply dark:mix-blend-normal" />
             <h1 className="text-4xl font-bold mb-2 animate-slide-up">Certificate Dashboard</h1>
             <p className="text-lg text-muted-foreground animate-slide-up-delayed">
-              Monitor and manage SSL certificates for your Cisco applications
+              Monitor and manage SSL certificates for your network applications
             </p>
           </div>
           <div className="mt-6 flex space-x-4">

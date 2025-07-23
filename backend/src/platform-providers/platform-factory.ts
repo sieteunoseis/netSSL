@@ -1,7 +1,6 @@
 import { PlatformProvider } from './platform-provider';
 import { VOSProvider } from './vos-provider';
-// Future imports for other platforms
-// import { ISEProvider } from './ise-provider';
+import { ISEProvider } from './ise-provider';
 
 export type SupportedPlatform = 'vos' | 'ise' | 'general';
 
@@ -22,9 +21,8 @@ export class PlatformFactory {
         break;
       
       case 'ise':
-        // Future implementation
-        // provider = new ISEProvider();
-        throw new Error('ISE platform provider not yet implemented');
+        provider = new ISEProvider();
+        break;
       
       case 'general':
         // For general applications that don't need platform-specific APIs
@@ -40,7 +38,7 @@ export class PlatformFactory {
   }
 
   static getSupportedPlatforms(): SupportedPlatform[] {
-    return ['vos']; // Add 'ise', 'general' as they become available
+    return ['vos', 'ise']; // Add 'general' as it becomes available
   }
 
   static isPlatformSupported(platformType: string): boolean {

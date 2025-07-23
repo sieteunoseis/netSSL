@@ -16,6 +16,7 @@ export interface ConnectionRecord {
   ise_nodes?: string;
   ise_certificate?: string;
   ise_private_key?: string;
+  ise_cert_import_config?: string;
   enable_ssh?: boolean;
   auto_restart_service?: boolean;
   auto_renew?: boolean;

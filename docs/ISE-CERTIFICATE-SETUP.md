@@ -244,5 +244,30 @@ echo | openssl s_client -connect guest1.automate.builders:8443 2>/dev/null | ope
 
 ---
 
+NOTES:
+
+  Summary
+
+  Yes, the Let's Encrypt X1 root certificate is now being
+  extracted. Here's what was implemented:
+
+  1. Issue identified: Let's Encrypt now only provides the
+  intermediate certificate (R11) in the chain, not the ISRG Root X1
+   root certificate, but ISE requires both.
+  2. Solution implemented: Modified account-manager.ts:215-248 to
+  automatically add the ISRG Root X1 certificate when only the
+  intermediate certificate is present in the chain.
+  3. Verification:
+    - The system now creates both intermediate.crt (R11) and
+  root.crt (ISRG Root X1) files
+    - ISE certificate uploads will have access to both certificates
+   as required
+    - The existing ISE provider code in
+  certificate-renewal.ts:2137-2161 already loads both files for
+  upload
+
+  The system now ensures ISE gets both certificates it needs for
+  proper certificate chain validation.
+
 *Last Updated: July 12, 2025*
 *For use with VOS SSH Dashboard Let's Encrypt integration*

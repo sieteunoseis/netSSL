@@ -33,9 +33,10 @@ function App() {
       <div className="max-w-6xl mx-auto px-4">
         <div className="flex items-center justify-between mb-6">
           <div>
+            <img src="/logo.png" alt="netSSL" className="h-36 w-36 mb-4 rounded-full object-cover shadow-lg mix-blend-multiply dark:mix-blend-normal" />
             <h1 className="scroll-m-20 text-4xl font-extrabold tracking-tight lg:text-5xl mb-2">Saved Connections</h1>
             <p className="text-lg text-gray-600 dark:text-gray-300">
-              Manage your Cisco application connections ({data.length} total, {filterEnabledConnections(data).length} enabled)
+              Manage your network application connections ({data.length} total, {filterEnabledConnections(data).length} enabled)
             </p>
           </div>
           <div className="flex space-x-2">

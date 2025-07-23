@@ -19,6 +19,8 @@ import { getDomainFromConnection } from './utils/domain-utils';
 import { migrateAccountFiles } from './migrate-accounts';
 import { initializeWebSocket } from './websocket-server';
 import { OperationStatusManager } from './services/operation-status-manager';
+import { PlatformFactory } from './platform-providers/platform-factory';
+import { ISEProvider } from './platform-providers/ise-provider';
 
 dotenv.config({ path: '../.env' });
 
@@ -427,6 +429,100 @@ app.post('/api/data/:id/issue-cert', asyncHandler(async (req: Request, res: Resp
     Logger.error(`Error starting certificate renewal for connection ${id}: ${error.message}`);
     return res.status(500).json({
       error: 'Failed to start certificate renewal',
+      details: error.message
+    });
+  }
+}));
+
+// ISE Certificate Import using Platform Provider
+app.post('/api/data/:id/import-ise-cert', asyncHandler(async (req: Request, res: Response) => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) {
+    return res.status(400).json({ error: 'Invalid ID parameter' });
+  }
+
+  // Check if connection exists and is ISE type
+  const connection = await database.getConnectionById(id);
+  if (!connection) {
+    return res.status(404).json({ error: 'Connection not found' });
+  }
+
+  if (connection.application_type !== 'ise') {
+    return res.status(400).json({ error: 'Connection must be of type ISE for certificate import' });
+  }
+
+  // Validate required fields
+  if (!connection.username || !connection.password) {
+    return res.status(400).json({ error: 'ISE username and password are required for certificate import' });
+  }
+
+  if (!connection.ise_nodes) {
+    return res.status(400).json({ error: 'ISE nodes must be configured for certificate import' });
+  }
+
+  const { certificateData, privateKeyData, caCertificates } = req.body;
+
+  if (!certificateData || !privateKeyData) {
+    return res.status(400).json({ error: 'Certificate data and private key data are required' });
+  }
+
+  try {
+    // Parse ISE certificate import configuration
+    let customConfig = {};
+    if (connection.ise_cert_import_config) {
+      try {
+        customConfig = JSON.parse(connection.ise_cert_import_config);
+      } catch (e) {
+        Logger.warn(`Invalid JSON in ise_cert_import_config for connection ${id}, using defaults`);
+      }
+    }
+
+    // Get ISE provider
+    const iseProvider = PlatformFactory.createProvider('ise') as ISEProvider;
+    
+    // Parse ISE nodes
+    const nodes = connection.ise_nodes.split(',').map(node => node.trim()).filter(node => node);
+
+    // Import CA certificates first if provided
+    if (caCertificates && Array.isArray(caCertificates) && caCertificates.length > 0) {
+      for (const node of nodes) {
+        try {
+          Logger.info(`Uploading CA certificates to ISE node: ${node}`);
+          const caResult = await iseProvider.uploadTrustCertificates(
+            node,
+            connection.username,
+            connection.password,
+            caCertificates
+          );
+          
+          if (!caResult.success) {
+            Logger.warn(`Failed to upload CA certificates to ${node}: ${caResult.message}`);
+          } else {
+            Logger.info(`Successfully uploaded CA certificates to ${node}`);
+          }
+        } catch (error: any) {
+          Logger.error(`Error uploading CA certificates to ${node}:`, error);
+          // Continue with certificate import even if CA upload fails
+        }
+      }
+    }
+
+    // Import identity certificate to all nodes
+    const result = await iseProvider.importCertificateToNodes(
+      nodes,
+      connection.username,
+      connection.password,
+      certificateData,
+      privateKeyData,
+      customConfig
+    );
+
+    return res.json(result);
+
+  } catch (error: any) {
+    Logger.error(`Error during ISE certificate import for connection ${id}:`, error);
+    return res.status(500).json({
+      error: 'Failed to import certificate to ISE',
       details: error.message
     });
   }

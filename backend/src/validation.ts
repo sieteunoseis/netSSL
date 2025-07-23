@@ -81,6 +81,18 @@ export const validateConnectionData = (data: any): { isValid: boolean; errors: s
       }
     }
 
+    if (data.ise_cert_import_config && typeof data.ise_cert_import_config === 'string' && data.ise_cert_import_config.trim() !== '') {
+      try {
+        const config = JSON.parse(data.ise_cert_import_config);
+        // Validate that it's an object
+        if (typeof config !== 'object' || Array.isArray(config)) {
+          errors.push('ISE Certificate Import Configuration must be a valid JSON object');
+        }
+      } catch (e) {
+        errors.push('ISE Certificate Import Configuration must be valid JSON');
+      }
+    }
+
     // Username and password are optional for ISE
     if (data.username && typeof data.username !== 'string') {
       errors.push('Username must be a string');
@@ -194,7 +206,8 @@ export const sanitizeConnectionData = (data: any): Partial<ConnectionRecord> => 
     general_private_key: data.general_private_key ? String(data.general_private_key) : undefined, // Don't escape private key content
     ise_nodes: data.ise_nodes ? validator.escape(String(data.ise_nodes)) : undefined,
     ise_certificate: data.ise_certificate ? String(data.ise_certificate) : undefined, // Don't escape certificate content
-    ise_private_key: data.ise_private_key ? String(data.ise_private_key) : undefined // Don't escape private key content
+    ise_private_key: data.ise_private_key ? String(data.ise_private_key) : undefined, // Don't escape private key content
+    ise_cert_import_config: data.ise_cert_import_config ? String(data.ise_cert_import_config) : undefined // Don't escape JSON content
   };
 
   // Only include username and password if they are provided (for general applications they are optional)

@@ -46,7 +46,7 @@ interface EditConnectionModalTabbedProps {
 const FIELD_GROUPS = {
   basic: ["name", "application_type"],
   authentication: ["username", "password"],
-  certificate: ["hostname", "domain", "ssl_provider", "dns_provider", "dns_challenge_mode", "alt_names", "custom_csr", "general_private_key", "ise_nodes", "ise_certificate", "ise_private_key"],
+  certificate: ["hostname", "domain", "ssl_provider", "dns_provider", "dns_challenge_mode", "alt_names", "custom_csr", "general_private_key", "ise_nodes", "ise_certificate", "ise_private_key", "ise_cert_import_config"],
   advanced: ["enable_ssh", "auto_restart_service", "auto_renew", "is_enabled"]
 };
 
@@ -155,6 +155,14 @@ const EditConnectionModalTabbed: React.FC<EditConnectionModalTabbedProps> = ({
         newErrors[name] = "Must contain a valid PEM formatted certificate request";
       } else {
         newErrors[name] = "";
+      }
+    } else if (name === 'ise_cert_import_config' && value.trim() !== '') {
+      // Validate JSON format
+      try {
+        JSON.parse(value);
+        newErrors[name] = "";
+      } catch (e) {
+        newErrors[name] = "Must be valid JSON";
       }
     } else if (value.trim() !== '' || !isOptional) {
       const validatorFn = validator[options.name] as any;

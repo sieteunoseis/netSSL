@@ -163,6 +163,14 @@ const DataForm: React.FC<DataFormProps> = ({
       } else {
         newErrors[name] = "";
       }
+    } else if (name === 'ise_cert_import_config' && value.trim() !== '') {
+      // Validate JSON format
+      try {
+        JSON.parse(value);
+        newErrors[name] = "";
+      } catch (e) {
+        newErrors[name] = "Must be valid JSON";
+      }
     } else if (options && (value.trim() !== '' || !isOptional)) {
       const validatorFn = validator[options.name] as (value: string, options?: unknown) => boolean;
       if (!validatorFn(value, options.options)) {

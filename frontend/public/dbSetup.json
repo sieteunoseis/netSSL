@@ -181,6 +181,19 @@
     }
   },
   {
+    "name": "ise_cert_import_config",
+    "type": "TEXTAREA",
+    "validator": { "name": "isJSON", "options": "" },
+    "label": "Certificate Import Configuration (JSON)",
+    "placeholder": "{\n  \"admin\": false,\n  \"allowExtendedValidity\": true,\n  \"allowOutOfDateCert\": true,\n  \"allowPortalTagTransferForSameSubject\": true,\n  \"allowReplacementOfCertificates\": true,\n  \"allowReplacementOfPortalGroupTag\": true,\n  \"allowRoleTransferForSameSubject\": true,\n  \"allowSHA1Certificates\": true,\n  \"allowWildCardCertificates\": false,\n  \"eap\": false,\n  \"ims\": false,\n  \"name\": \"Guest System Certificate\",\n  \"password\": \"\",\n  \"portal\": true,\n  \"portalGroupTag\": \"My Default Portal Certificate Group\",\n  \"pxgrid\": false,\n  \"radius\": false,\n  \"saml\": false,\n  \"validateCertificateExtensions\": false\n}",
+    "default": "{\n  \"admin\": false,\n  \"allowExtendedValidity\": true,\n  \"allowOutOfDateCert\": true,\n  \"allowPortalTagTransferForSameSubject\": true,\n  \"allowReplacementOfCertificates\": true,\n  \"allowReplacementOfPortalGroupTag\": true,\n  \"allowRoleTransferForSameSubject\": true,\n  \"allowSHA1Certificates\": true,\n  \"allowWildCardCertificates\": false,\n  \"eap\": false,\n  \"ims\": false,\n  \"name\": \"Guest System Certificate\",\n  \"password\": \"\",\n  \"portal\": true,\n  \"portalGroupTag\": \"My Default Portal Certificate Group\",\n  \"pxgrid\": false,\n  \"radius\": false,\n  \"saml\": false,\n  \"validateCertificateExtensions\": false\n}",
+    "description": "Configuration for ISE certificate import API. This JSON will be merged with certificate data when importing certificates.",
+    "conditional": {
+      "field": "application_type",
+      "value": "ise"
+    }
+  },
+  {
     "name": "ssl_provider",
     "type": "SELECT",
     "validator": { "name": "isIn", "options": ["letsencrypt", "zerossl"] },

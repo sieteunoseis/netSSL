@@ -7,7 +7,7 @@ const getConfigValues = () => {
   if (import.meta.env.DEV) {
     const config = {
       brandingUrl: import.meta.env.VITE_BRANDING_URL || "https://automate.builders",
-      brandingName: import.meta.env.VITE_BRANDING_NAME || "Automate Builders",
+      brandingName: import.meta.env.VITE_BRANDING_NAME || "netSSL",
       tableColumns: import.meta.env.VITE_TABLE_COLUMNS || "name,hostname,username,password,version",
     };
     return config;
@@ -16,7 +16,7 @@ const getConfigValues = () => {
   // Production environment
   const config = {
     brandingUrl: window.APP_CONFIG?.BRANDING_URL || "https://automate.builders",
-    brandingName: window.APP_CONFIG?.BRANDING_NAME || "Automate Builders",
+    brandingName: window.APP_CONFIG?.BRANDING_NAME || "netSSL",
     tableColumns: window.APP_CONFIG?.TABLE_COLUMNS || "name,hostname,username,password,version",
   };
   return config;
