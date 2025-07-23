@@ -9,6 +9,8 @@ import { accountManager } from './account-manager';
 import { SSHClient } from './ssh-client';
 import { OperationStatusManager } from './services/operation-status-manager';
 import { getDomainFromConnection } from './utils/domain-utils';
+import { PlatformFactory } from './platform-providers/platform-factory';
+import { ISEProvider } from './platform-providers/ise-provider';
 
 export interface RenewalStatus {
   id: string;
@@ -254,13 +256,29 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
 
       // Check for existing valid certificate
       const existingCert = await this.getExistingCertificate(fullFQDN);
-      if (existingCert) {
+      
+      // For ISE, also check for recently generated certificates (within last hour)
+      // This helps when retrying failed uploads
+      let recentCert = null;
+      if (!existingCert && connection.application_type === 'ise') {
+        recentCert = await this.getRecentCertificate(connectionId, fullFQDN, 3600000); // 1 hour in milliseconds
+        if (recentCert) {
+          status.logs.push(`Found recently generated certificate for ${connection.name} (generated within last hour)`);
+          await accountManager.saveRenewalLog(connectionId, fullFQDN, `Using recently generated certificate (less than 1 hour old)`);
+        }
+      }
+      
+      const certificateToUse = existingCert || recentCert;
+      if (certificateToUse) {
         if (connection.application_type === 'general') {
           await updateStatusWithOp('uploading_certificate', 'Existing certificate available for download', 80);
           status.logs.push(`Existing valid certificate available for ${connection.name}`);
+        } else if (connection.application_type === 'ise') {
+          await updateStatusWithOp('uploading_certificate', 'Using existing valid certificate for ISE', 80);
+          await this.uploadCertificateToISE(connectionId, connection, certificateToUse, status);
         } else {
           await updateStatusWithOp('uploading_certificate', 'Using existing valid certificate', 80);
-          await this.uploadCertificateToVOS(connectionId, connection, existingCert, status);
+          await this.uploadCertificateToVOS(connectionId, connection, certificateToUse, status);
         }
         
         // Notify user about service restart attempt (VOS only)
@@ -333,6 +351,25 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
           status.logs.push(`No private key found in custom CSR - only CSR will be processed`);
           await accountManager.saveRenewalLog(connectionId, fullFQDN, `No private key found in custom CSR - only CSR will be processed`);
         }
+      } else if (connection.application_type === 'ise') {
+        // For ISE applications, use the provided CSR if available, otherwise generate one
+        if (connection.ise_certificate && connection.ise_certificate.trim()) {
+          await updateStatusWithOp('generating_csr', 'Using provided CSR from ISE connection', 10);
+          
+          // Extract CSR from the provided certificate field
+          const csrMatch = connection.ise_certificate.match(/-----BEGIN CERTIFICATE REQUEST-----[\s\S]*?-----END CERTIFICATE REQUEST-----/);
+          if (!csrMatch) {
+            throw new Error('Valid CSR not found in ISE certificate field');
+          }
+          csr = csrMatch[0];
+          
+          status.logs.push(`Using provided CSR for ISE application: ${connection.name}`);
+          await accountManager.saveRenewalLog(connectionId, fullFQDN, `Using provided CSR for ISE application: ${connection.name}`);
+        } else {
+          // Generate CSR using ISE provider
+          await updateStatusWithOp('generating_csr', 'Generating CSR from ISE application API', 10);
+          csr = await this.generateCSRFromISE(connection, status, connectionId);
+        }
       } else {
         // For VOS applications (CUCM, CER, CUC, IM&P), generate CSR from API
         await updateStatusWithOp('generating_csr', 'Generating CSR from VOS application API', 10);
@@ -391,6 +428,10 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
           status.logs.push(`Warning: Could not create CRT/KEY files: ${error instanceof Error ? error.message : 'Unknown error'}`);
           await accountManager.saveRenewalLog(connectionId, fullFQDN, `Warning: Could not create CRT/KEY files: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
+      } else if (connection.application_type === 'ise') {
+        // For ISE applications, upload via ISE API
+        await updateStatusWithOp('uploading_certificate', 'Uploading certificate to ISE nodes', 90);
+        await this.uploadCertificateToISE(connectionId, connection, certificate, status);
       } else {
         // For VOS applications, upload via API
         await updateStatusWithOp('uploading_certificate', 'Uploading certificate to VOS application', 90);
@@ -430,6 +471,47 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     } finally {
       // Always remove from active renewals
       this.activeRenewals.delete(connectionId);
+    }
+  }
+
+  private async getRecentCertificate(connectionId: number, domain: string, maxAgeMs: number): Promise<string | null> {
+    try {
+      // Use connection-based directory structure
+      const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
+      const envDir = isStaging ? 'staging' : 'prod';
+      const connectionDir = path.join(process.env.ACCOUNTS_DIR || './accounts', `connection-${connectionId}`, envDir);
+      
+      // Try different certificate file names in order of preference
+      const certFiles = ['fullchain.pem', 'certificate.pem', `${domain}.crt`];
+      
+      for (const certFile of certFiles) {
+        const certPath = path.join(connectionDir, certFile);
+        
+        if (fs.existsSync(certPath)) {
+          try {
+            // Check file modification time
+            const stats = await fs.promises.stat(certPath);
+            const fileAge = Date.now() - stats.mtime.getTime();
+            
+            if (fileAge <= maxAgeMs) {
+              const certificateData = await fs.promises.readFile(certPath, 'utf8');
+              const envType = isStaging ? 'staging' : 'production';
+              Logger.info(`Found recent certificate for ${domain} (${Math.round(fileAge / 60000)} minutes old, ${envType}): ${certPath}`);
+              return certificateData;
+            }
+            
+            Logger.info(`Certificate found but too old (${Math.round(fileAge / 60000)}min old, max ${Math.round(maxAgeMs / 60000)}min): ${certPath}`);
+          } catch (statError: any) {
+            Logger.error(`Error checking file stats for ${certPath}:`, statError);
+          }
+        }
+      }
+      
+      Logger.info(`No recent certificate found for connection ${connectionId} in ${connectionDir}`);
+      return null;
+    } catch (error) {
+      Logger.error(`Error checking for recent certificate for connection ${connectionId}, domain ${domain}:`, error);
+      return null;
     }
   }
 
@@ -1752,18 +1834,34 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       await accountManager.saveRenewalLog(connectionId, domain, `DEBUG: saveCertificateChain called with domain: ${domain}, certificateData length: ${certificateData.length}`);
       Logger.debug(`saveCertificateChain called with domain: ${domain}, certificateData length: ${certificateData.length}`);
       
-      // Load existing private key if it exists (for general applications with custom CSR)
+      // Load private key from database or existing files
       let privateKey = '';
       try {
-        const existingCert = await accountManager.loadCertificate(connectionId, domain);
-        if (existingCert) {
-          privateKey = existingCert.privateKey;
-          await accountManager.saveRenewalLog(connectionId, domain, `DEBUG: Found existing private key, length: ${privateKey.length}`);
+        // First check if we have a private key in the database (for ISE connections)
+        if (this.database) {
+          const connections = await this.database.getAllConnections();
+          const connection = connections.find(conn => conn.id === Number(connectionId));
+          if (connection && connection.ise_private_key) {
+            privateKey = connection.ise_private_key;
+            await accountManager.saveRenewalLog(connectionId, domain, `DEBUG: Found ISE private key in database, length: ${privateKey.length}`);
+          } else if (connection && connection.general_private_key) {
+            privateKey = connection.general_private_key;
+            await accountManager.saveRenewalLog(connectionId, domain, `DEBUG: Found general private key in database, length: ${privateKey.length}`);
+          }
+        }
+        
+        // If no private key in database, try to load from existing certificate files (for general applications with custom CSR)
+        if (!privateKey) {
+          const existingCert = await accountManager.loadCertificate(connectionId, domain);
+          if (existingCert) {
+            privateKey = existingCert.privateKey;
+            await accountManager.saveRenewalLog(connectionId, domain, `DEBUG: Found existing private key in files, length: ${privateKey.length}`);
+          }
         }
       } catch (error) {
         // Private key not found, this is normal for VOS applications
-        Logger.debug(`No existing private key found for ${domain}, this is normal for VOS applications`);
-        await accountManager.saveRenewalLog(connectionId, domain, `DEBUG: No existing private key found for ${domain}`);
+        Logger.debug(`No private key found for ${domain}, this is normal for VOS applications`);
+        await accountManager.saveRenewalLog(connectionId, domain, `DEBUG: No private key found for ${domain}`);
       }
 
       // Use the new chain saving method that extracts individual certificates
@@ -1907,6 +2005,313 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         requiresManualRestart: true, 
         message: `Service restart error - Manual restart required on ${connection.hostname}.${connection.domain}` 
       };
+    }
+  }
+
+  private async generateCSRFromISE(connection: ConnectionRecord, status: RenewalStatus, connectionId: number): Promise<string> {
+    const fullFQDN = getDomainFromConnection(connection);
+    if (!fullFQDN) {
+      throw new Error('Invalid connection configuration: missing hostname/domain');
+    }
+
+    if (!connection.username || !connection.password) {
+      throw new Error('Username and password are required for ISE CSR generation');
+    }
+
+    if (!connection.ise_nodes) {
+      throw new Error('ISE nodes must be configured for CSR generation');
+    }
+
+    try {
+      // Get ISE provider
+      const iseProvider = PlatformFactory.createProvider('ise') as ISEProvider;
+      
+      // Parse ISE nodes and use the first one for CSR generation
+      const nodes = connection.ise_nodes.split(',').map(node => node.trim()).filter(node => node);
+      if (nodes.length === 0) {
+        throw new Error('No valid ISE nodes configured');
+      }
+
+      const primaryNode = nodes[0];
+      status.logs.push(`Generating CSR from ISE node: ${primaryNode}`);
+      await accountManager.saveRenewalLog(connectionId, fullFQDN, `Generating CSR from ISE node: ${primaryNode}`);
+
+      // Prepare CSR parameters
+      const csrParams = {
+        commonName: fullFQDN,
+        subjectAltNames: connection.alt_names ? connection.alt_names.split(',').map(name => name.trim()) : [],
+        keySize: 2048,
+        keyType: 'RSA',
+        organizationName: 'Organization',
+        organizationalUnit: 'IT Department',
+        locality: 'City',
+        state: 'State',
+        country: 'US'
+      };
+
+      // Generate CSR using ISE provider
+      const csrResponse = await iseProvider.generateCSR(
+        primaryNode,
+        connection.username,
+        connection.password,
+        csrParams
+      );
+
+      if (!csrResponse.success || !csrResponse.csr) {
+        throw new Error(csrResponse.message || 'Failed to generate CSR from ISE');
+      }
+
+      status.logs.push(`CSR generated successfully from ISE: ${csrResponse.csr.length} characters`);
+      await accountManager.saveRenewalLog(connectionId, fullFQDN, `CSR generated successfully from ISE: ${csrResponse.csr.length} characters`);
+
+      // Save the CSR to accounts folder for record keeping
+      await accountManager.saveCSR(connectionId, fullFQDN, csrResponse.csr);
+
+      // Save private key if provided by ISE
+      if (csrResponse.privateKey) {
+        status.logs.push(`Private key received from ISE and saved`);
+        await accountManager.saveRenewalLog(connectionId, fullFQDN, `Private key received from ISE and saved`);
+        
+        // Save private key to accounts folder
+        const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
+        const envDir = isStaging ? 'staging' : 'prod';
+        const domainDir = path.join(accountManager['accountsDir'], fullFQDN, envDir);
+        
+        await fs.promises.mkdir(domainDir, { recursive: true });
+        const privateKeyPath = path.join(domainDir, 'private_key.pem');
+        await fs.promises.writeFile(privateKeyPath, csrResponse.privateKey);
+      }
+
+      return csrResponse.csr;
+    } catch (error: any) {
+      const errorMsg = `Failed to generate CSR from ISE: ${error.message}`;
+      Logger.error(errorMsg);
+      status.logs.push(`ERROR: ${errorMsg}`);
+      await accountManager.saveRenewalLog(connectionId, fullFQDN, `ERROR: ${errorMsg}`);
+      throw new Error(errorMsg);
+    }
+  }
+
+  private async uploadCertificateToISE(connectionId: number, connection: ConnectionRecord, certificate: string, status: RenewalStatus): Promise<void> {
+    const fullFQDN = getDomainFromConnection(connection);
+    if (!fullFQDN) {
+      throw new Error('Invalid connection configuration: missing hostname/domain');
+    }
+
+    if (!connection.username || !connection.password) {
+      throw new Error('Username and password are required for ISE certificate upload');
+    }
+
+    if (!connection.ise_nodes) {
+      throw new Error('ISE nodes must be configured for certificate upload');
+    }
+
+    try {
+      // Get private key
+      let privateKey = '';
+      if (connection.ise_private_key && connection.ise_private_key.trim()) {
+        privateKey = connection.ise_private_key;
+        status.logs.push(`Using provided private key for ISE certificate import`);
+      } else {
+        // Try to load private key from accounts folder
+        const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
+        const envDir = isStaging ? 'staging' : 'prod';
+        const privateKeyPath = path.join(accountManager['accountsDir'], fullFQDN, envDir, 'private_key.pem');
+        
+        try {
+          privateKey = await fs.promises.readFile(privateKeyPath, 'utf8');
+          status.logs.push(`Loaded private key from accounts folder`);
+        } catch (error) {
+          throw new Error('Private key not found. Please ensure private key is provided or CSR was generated via this system.');
+        }
+      }
+
+      // Try to load already separated certificate files first, fallback to parsing chain
+      const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
+      const envDir = isStaging ? 'staging' : 'prod';
+      const certDir = path.join(accountManager['accountsDir'], fullFQDN, envDir);
+      
+      let caCertificates: string[] = [];
+      let filesFound = false;
+      
+      // Try to load intermediate certificate if it exists
+      try {
+        const intermediatePath = path.join(certDir, 'intermediate.crt');
+        const intermediateCert = await fs.promises.readFile(intermediatePath, 'utf8');
+        if (intermediateCert.trim()) {
+          caCertificates.push(intermediateCert);
+          status.logs.push(`Loaded intermediate certificate from file`);
+          filesFound = true;
+        }
+      } catch (error) {
+        // File doesn't exist, will fallback to parsing
+      }
+      
+      // Try to load root certificate if it exists
+      try {
+        const rootPath = path.join(certDir, 'root.crt');
+        const rootCert = await fs.promises.readFile(rootPath, 'utf8');
+        if (rootCert.trim()) {
+          caCertificates.push(rootCert);
+          status.logs.push(`Loaded root certificate from file`);
+          filesFound = true;
+        }
+      } catch (error) {
+        // File doesn't exist, will fallback to parsing
+      }
+      
+      // If no certificate files found, parse from the certificate chain
+      if (!filesFound) {
+        status.logs.push(`Certificate files not found, parsing from certificate chain`);
+        const certParts = certificate.split('-----END CERTIFICATE-----');
+        const certificates = certParts
+          .filter(part => part.includes('-----BEGIN CERTIFICATE-----'))
+          .map(part => (part.trim() + '\n-----END CERTIFICATE-----'));
+        
+        if (certificates.length === 0) {
+          throw new Error('No certificates found to upload');
+        }
+        
+        // All except the first (leaf) certificate are CA certificates
+        caCertificates = certificates.slice(1);
+      }
+
+      // Get ISE provider
+      const iseProvider = PlatformFactory.createProvider('ise') as ISEProvider;
+      
+      // Parse ISE nodes
+      const nodes = connection.ise_nodes.split(',').map(node => node.trim()).filter(node => node);
+      
+      // Parse custom configuration
+      let customConfig = {};
+      if (connection.ise_cert_import_config) {
+        try {
+          customConfig = JSON.parse(connection.ise_cert_import_config);
+        } catch (e) {
+          status.logs.push(`Warning: Invalid JSON in ISE import config, using defaults`);
+        }
+      }
+
+      // Upload CA certificates first if there are any
+      if (caCertificates.length > 0) {
+        status.logs.push(`Uploading ${caCertificates.length} CA certificate(s) to ISE nodes`);
+        await accountManager.saveRenewalLog(connectionId, fullFQDN, `Uploading ${caCertificates.length} CA certificate(s) to ISE nodes`);
+        
+        for (const node of nodes) {
+          try {
+            const caResult = await iseProvider.uploadTrustCertificates(
+              node,
+              connection.username,
+              connection.password,
+              caCertificates
+            );
+            
+            if (caResult.success) {
+              status.logs.push(`✅ CA certificates uploaded to ${node}`);
+              await accountManager.saveRenewalLog(connectionId, fullFQDN, `✅ CA certificates uploaded to ${node}`);
+            } else {
+              status.logs.push(`⚠️ CA certificate upload warning for ${node}: ${caResult.message}`);
+              await accountManager.saveRenewalLog(connectionId, fullFQDN, `⚠️ CA certificate upload warning for ${node}: ${caResult.message}`);
+            }
+          } catch (error: any) {
+            const errorMsg = `⚠️ CA certificate upload failed for ${node}: ${error.message}`;
+            status.logs.push(errorMsg);
+            await accountManager.saveRenewalLog(connectionId, fullFQDN, errorMsg);
+            
+            // Check if this is a connection issue that would prevent certificate import
+            if (error.message.includes('SSL certificate') || error.message.includes('Connection failed') || error.message.includes('expired')) {
+              Logger.warn(`Connection issue detected for ${node}, this will likely affect certificate import: ${error.message}`);
+            }
+            // Continue with identity certificate import even if CA upload fails
+          }
+        }
+      }
+
+      // Load the domain certificate from file, or extract from chain
+      let domainCertificate = '';
+      try {
+        const certPath = path.join(certDir, 'certificate.pem');
+        domainCertificate = await fs.promises.readFile(certPath, 'utf8');
+        status.logs.push(`Loaded domain certificate from file`);
+      } catch (error) {
+        // If file doesn't exist, extract from certificate chain
+        status.logs.push(`Certificate file not found, extracting from certificate chain`);
+        const certParts = certificate.split('-----END CERTIFICATE-----');
+        const certificates = certParts
+          .filter(part => part.includes('-----BEGIN CERTIFICATE-----'))
+          .map(part => (part.trim() + '\n-----END CERTIFICATE-----'));
+        
+        if (certificates.length === 0) {
+          throw new Error('No certificates found in certificate chain');
+        }
+        
+        domainCertificate = certificates[0]; // First certificate is the domain certificate
+      }
+
+      // Import identity certificate to all nodes
+      status.logs.push(`Importing identity certificate to ${nodes.length} ISE node(s)`);
+      await accountManager.saveRenewalLog(connectionId, fullFQDN, `Importing identity certificate to ${nodes.length} ISE node(s)`);
+
+      const result = await iseProvider.importCertificateToNodes(
+        nodes,
+        connection.username,
+        connection.password,
+        domainCertificate,
+        privateKey,
+        customConfig
+      );
+
+      // Log results
+      const successCount = result.results.filter(r => r.status === 'success').length;
+      const totalCount = result.results.length;
+
+      status.logs.push(`Certificate import completed: ${successCount}/${totalCount} nodes successful`);
+      await accountManager.saveRenewalLog(connectionId, fullFQDN, `Certificate import completed: ${successCount}/${totalCount} nodes successful`);
+
+      // Log individual node results with detailed feedback
+      for (const nodeResult of result.results) {
+        if (nodeResult.status === 'success') {
+          const successMsg = `✅ ${nodeResult.node}: ${nodeResult.message}`;
+          status.logs.push(successMsg);
+          await accountManager.saveRenewalLog(connectionId, fullFQDN, successMsg);
+        } else {
+          const errorMsg = `❌ ${nodeResult.node}: ${nodeResult.message}`;
+          status.logs.push(errorMsg);
+          await accountManager.saveRenewalLog(connectionId, fullFQDN, errorMsg);
+          
+          // Provide specific guidance for common issues
+          if (nodeResult.message && nodeResult.message.includes('SSL certificate') || nodeResult.message.includes('expired')) {
+            const guidanceMsg = `💡 Suggestion for ${nodeResult.node}: Update the SSL certificate on this ISE node before attempting certificate import`;
+            status.logs.push(guidanceMsg);
+            await accountManager.saveRenewalLog(connectionId, fullFQDN, guidanceMsg);
+          }
+        }
+      }
+
+      if (successCount === 0) {
+        // Provide specific error message based on common failure patterns
+        const firstError = result.results[0]?.message || 'Unknown error';
+        if (firstError.includes('SSL certificate') || firstError.includes('expired')) {
+          throw new Error(`Failed to import certificate to any ISE nodes. All nodes have SSL certificate issues. Please update the SSL certificates on your ISE servers before proceeding with certificate import.`);
+        } else if (firstError.includes('Connection failed')) {
+          throw new Error(`Failed to import certificate to any ISE nodes. Connection issues detected. Please verify ISE hostnames, network connectivity, and that ISE services are running.`);
+        } else {
+          throw new Error(`Failed to import certificate to any ISE nodes. Error: ${firstError}`);
+        }
+      }
+
+      if (successCount < totalCount) {
+        const warningMsg = `⚠️ Warning: Certificate imported to ${successCount}/${totalCount} nodes. Some nodes may require manual certificate installation.`;
+        status.logs.push(warningMsg);
+        await accountManager.saveRenewalLog(connectionId, fullFQDN, warningMsg);
+      }
+
+    } catch (error: any) {
+      const errorMsg = `Failed to upload certificate to ISE: ${error.message}`;
+      Logger.error(errorMsg);
+      status.logs.push(`ERROR: ${errorMsg}`);
+      await accountManager.saveRenewalLog(connectionId, fullFQDN, `ERROR: ${errorMsg}`);
+      throw new Error(errorMsg);
     }
   }
 }
