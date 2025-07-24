@@ -223,7 +223,7 @@ const Home = () => {
     // Filter to only enabled connections
     const enabledConnections = filterEnabledConnections(connectionState.connections);
     
-    if (enabledConnections.length === 0) return { total: 0, valid: 0, expiring: 0, expired: 0 };
+    if (enabledConnections.length === 0) return { total: 0, valid: 0, expiring: 0, expired: 0, autoRenew: 0 };
     
     const summary = enabledConnections.reduce((acc, conn) => {
       const status = getCertificateStatus(conn);
@@ -231,8 +231,9 @@ const Home = () => {
       if (status.status === "valid") acc.valid++;
       else if (status.status === "expiring") acc.expiring++;
       else if (status.status === "expired") acc.expired++;
+      if (conn.auto_renew) acc.autoRenew++;
       return acc;
-    }, { total: 0, valid: 0, expiring: 0, expired: 0 });
+    }, { total: 0, valid: 0, expiring: 0, expired: 0, autoRenew: 0 });
 
     return summary;
   };
@@ -267,19 +268,11 @@ const Home = () => {
           <div className="mt-6 flex space-x-4">
             <AddConnectionModal onConnectionAdded={handleConnectionAdded} />
             <SettingsModal />
-            <Button 
-              variant="outline" 
-              onClick={fetchConnectionsData}
-              className="flex items-center space-x-2"
-            >
-              <RefreshCw className="w-4 h-4" />
-              <span>Refresh</span>
-            </Button>
           </div>
         </div>
 
         {/* Overall Status Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
           <Card className="bg-card/85 backdrop-blur-sm">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Servers</CardTitle>
@@ -317,6 +310,16 @@ const Home = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-red-600">{overallStatus.expired}</div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/85 backdrop-blur-sm">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Auto Renew</CardTitle>
+              <RotateCcw className="h-4 w-4 text-blue-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-blue-600">{overallStatus.autoRenew}</div>
             </CardContent>
           </Card>
         </div>

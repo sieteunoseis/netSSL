@@ -28,6 +28,18 @@ interface CertificateInfo {
   isValid: boolean;
   daysUntilExpiry: number;
   error?: string;
+  // Certificate algorithm information
+  keyAlgorithm?: string;
+  keySize?: number;
+  signatureAlgorithm?: string;
+  // Performance timing metrics (in milliseconds)
+  timings?: {
+    dnsResolve?: number;
+    tcpConnect?: number;
+    tlsHandshake?: number;
+    certificateProcessing?: number;
+    totalTime?: number;
+  };
 }
 
 interface CertificateInfoProps {
@@ -522,6 +534,66 @@ const CertificateInfoComponent: React.FC<CertificateInfoProps> = ({ connectionId
                         {name}
                       </Badge>
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Algorithm Information */}
+              {(certInfo.keyAlgorithm || certInfo.keySize || certInfo.signatureAlgorithm) && (
+                <div>
+                  <h4 className="font-medium text-sm mb-2">Algorithm Information</h4>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    {certInfo.keyAlgorithm && (
+                      <div>
+                        <span className="font-medium">Key Algorithm:</span>
+                        <span className="ml-2 uppercase">{certInfo.keyAlgorithm}</span>
+                      </div>
+                    )}
+                    {certInfo.keySize && (
+                      <div>
+                        <span className="font-medium">Key Size:</span>
+                        <span className="ml-2">{certInfo.keySize} bits</span>
+                      </div>
+                    )}
+                    {certInfo.signatureAlgorithm && (
+                      <div className="col-span-2">
+                        <span className="font-medium">Signature Algorithm:</span>
+                        <span className="ml-2">{certInfo.signatureAlgorithm}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Performance Metrics */}
+              {certInfo.timings && (
+                <div>
+                  <h4 className="font-medium text-sm mb-2">Connection Performance</h4>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    {certInfo.timings.dnsResolve !== undefined && (
+                      <div>
+                        <span className="font-medium">DNS Resolve:</span>
+                        <span className="ml-2">{certInfo.timings.dnsResolve}ms</span>
+                      </div>
+                    )}
+                    {certInfo.timings.tlsHandshake !== undefined && (
+                      <div>
+                        <span className="font-medium">TLS Handshake:</span>
+                        <span className="ml-2">{certInfo.timings.tlsHandshake}ms</span>
+                      </div>
+                    )}
+                    {certInfo.timings.certificateProcessing !== undefined && (
+                      <div>
+                        <span className="font-medium">Cert Processing:</span>
+                        <span className="ml-2">{certInfo.timings.certificateProcessing}ms</span>
+                      </div>
+                    )}
+                    {certInfo.timings.totalTime !== undefined && (
+                      <div>
+                        <span className="font-medium">Total Time:</span>
+                        <span className="ml-2 font-semibold">{certInfo.timings.totalTime}ms</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

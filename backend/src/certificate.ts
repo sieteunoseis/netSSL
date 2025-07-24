@@ -1,5 +1,6 @@
 import https from 'https';
 import tls from 'tls';
+import dns from 'dns';
 import fs from 'fs';
 import path from 'path';
 import { Logger } from './logger';
@@ -25,96 +26,202 @@ export interface CertificateInfo {
   isValid: boolean;
   daysUntilExpiry: number;
   error?: string;
+  // Certificate algorithm information
+  keyAlgorithm?: string;
+  keySize?: number;
+  signatureAlgorithm?: string;
+  // Performance timing metrics (in milliseconds)
+  timings?: {
+    dnsResolve?: number;
+    tcpConnect?: number;
+    tlsHandshake?: number;
+    certificateProcessing?: number;
+    totalTime?: number;
+  };
 }
 
 export async function getCertificateInfo(hostname: string, port: number = 443): Promise<CertificateInfo | null> {
   return new Promise((resolve) => {
     Logger.info(`Attempting to get certificate for ${hostname}:${port}`);
     
-    const options = {
-      host: hostname,
-      port: port,
-      rejectUnauthorized: false, // Allow self-signed certificates
-      timeout: 5000, // 5 second timeout
-    };
+    // Timing variables
+    const startTime = Date.now();
+    let dnsResolveTime: number | undefined;
+    let tcpConnectTime: number | undefined;
+    let tlsHandshakeTime: number | undefined;
+    let processingStartTime: number;
 
-    const socket = tls.connect(options, () => {
-      try {
-        Logger.info(`Connected to ${hostname}:${port}, getting certificate`);
-        const cert = socket.getPeerCertificate(true);
-        
-        if (!cert || Object.keys(cert).length === 0) {
-          Logger.error(`No certificate found for ${hostname}:${port}`);
-          resolve(null);
-          return;
-        }
-
-        const now = new Date();
-        const validFrom = new Date(cert.valid_from);
-        const validTo = new Date(cert.valid_to);
-        const daysUntilExpiry = Math.floor((validTo.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-
-        const certInfo: CertificateInfo = {
-          subject: {
-            CN: cert.subject?.CN || '<Not Part Of Certificate>',
-            O: cert.subject?.O || '<Not Part Of Certificate>',
-            OU: cert.subject?.OU || '<Not Part Of Certificate>',
-          },
-          issuer: {
-            CN: cert.issuer?.CN || '<Not Part Of Certificate>',
-            O: cert.issuer?.O || '<Not Part Of Certificate>',
-            OU: cert.issuer?.OU || '<Not Part Of Certificate>',
-          },
-          validFrom: validFrom.toLocaleString('en-US', {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-            hour: 'numeric',
-            minute: 'numeric',
-            second: 'numeric',
-            timeZoneName: 'short'
-          }),
-          validTo: validTo.toLocaleString('en-US', {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-            hour: 'numeric',
-            minute: 'numeric',
-            second: 'numeric',
-            timeZoneName: 'short'
-          }),
-          fingerprint: cert.fingerprint || '',
-          fingerprint256: cert.fingerprint256 || '',
-          serialNumber: cert.serialNumber || '',
-          subjectAltNames: cert.subjectaltname ? cert.subjectaltname.split(', ') : [],
-          isValid: now >= validFrom && now <= validTo,
-          daysUntilExpiry: daysUntilExpiry,
-        };
-
-        Logger.info(`Successfully retrieved certificate info for ${hostname}:${port}`);
-        resolve(certInfo);
-      } catch (error) {
-        Logger.error(`Error parsing certificate for ${hostname}:${port}:`, error);
-        resolve(null);
-      } finally {
-        socket.destroy();
+    // Step 1: DNS Resolution
+    const dnsStartTime = Date.now();
+    dns.lookup(hostname, (dnsErr, address) => {
+      dnsResolveTime = Date.now() - dnsStartTime;
+      
+      if (dnsErr) {
+        Logger.error(`DNS resolution failed for ${hostname}:`, dnsErr);
+        const totalTime = Date.now() - startTime;
+        resolve({
+          subject: { CN: '<DNS Resolution Failed>' },
+          issuer: { CN: '<DNS Resolution Failed>' },
+          validFrom: '',
+          validTo: '',
+          fingerprint: '',
+          fingerprint256: '',
+          serialNumber: '',
+          isValid: false,
+          daysUntilExpiry: 0,
+          error: `DNS resolution failed: ${dnsErr.message}`,
+          timings: {
+            dnsResolve: dnsResolveTime,
+            totalTime: totalTime
+          }
+        });
+        return;
       }
-    });
 
-    socket.on('error', (error) => {
-      Logger.error(`TLS connection error for ${hostname}:${port}:`, error);
-      resolve(null);
-    });
+      Logger.info(`DNS resolved ${hostname} to ${address} in ${dnsResolveTime}ms`);
 
-    socket.on('timeout', () => {
-      Logger.error(`TLS connection timeout for ${hostname}:${port}`);
-      socket.destroy();
-      resolve(null);
-    });
+      // Step 2: TCP Connection
+      const tcpStartTime = Date.now();
+      const options = {
+        host: hostname,
+        port: port,
+        rejectUnauthorized: false, // Allow self-signed certificates
+        timeout: 5000, // 5 second timeout
+      };
 
-    socket.setTimeout(5000);
+      const socket = tls.connect(options, () => {
+        try {
+          tlsHandshakeTime = Date.now() - tcpStartTime;
+          tcpConnectTime = tlsHandshakeTime; // TCP + TLS combined for now
+          processingStartTime = Date.now();
+          
+          Logger.info(`TLS handshake completed for ${hostname}:${port} in ${tlsHandshakeTime}ms`);
+          
+          const cert = socket.getPeerCertificate(true);
+          
+          if (!cert || Object.keys(cert).length === 0) {
+            Logger.error(`No certificate found for ${hostname}:${port}`);
+            resolve(null);
+            return;
+          }
+
+          const now = new Date();
+          const validFrom = new Date(cert.valid_from);
+          const validTo = new Date(cert.valid_to);
+          const daysUntilExpiry = Math.floor((validTo.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+          // Extract algorithm information
+          const keyAlgorithm = (cert as any).pubkey?.asymmetricKeyType || 'unknown';
+          const keySize = (cert as any).bits || (cert as any).pubkey?.asymmetricKeySize || 0;
+          const signatureAlgorithm = (cert as any).sigalg || 'unknown';
+
+          const processingTime = Date.now() - processingStartTime;
+          const totalTime = Date.now() - startTime;
+
+          const certInfo: CertificateInfo = {
+            subject: {
+              CN: cert.subject?.CN || '<Not Part Of Certificate>',
+              O: cert.subject?.O || '<Not Part Of Certificate>',
+              OU: cert.subject?.OU || '<Not Part Of Certificate>',
+            },
+            issuer: {
+              CN: cert.issuer?.CN || '<Not Part Of Certificate>',
+              O: cert.issuer?.O || '<Not Part Of Certificate>',
+              OU: cert.issuer?.OU || '<Not Part Of Certificate>',
+            },
+            validFrom: validFrom.toLocaleString('en-US', {
+              weekday: 'long',
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric',
+              hour: 'numeric',
+              minute: 'numeric',
+              second: 'numeric',
+              timeZoneName: 'short'
+            }),
+            validTo: validTo.toLocaleString('en-US', {
+              weekday: 'long',
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric',
+              hour: 'numeric',
+              minute: 'numeric',
+              second: 'numeric',
+              timeZoneName: 'short'
+            }),
+            fingerprint: cert.fingerprint || '',
+            fingerprint256: cert.fingerprint256 || '',
+            serialNumber: cert.serialNumber || '',
+            subjectAltNames: cert.subjectaltname ? cert.subjectaltname.split(', ') : [],
+            isValid: now >= validFrom && now <= validTo,
+            daysUntilExpiry: daysUntilExpiry,
+            keyAlgorithm: keyAlgorithm,
+            keySize: keySize,
+            signatureAlgorithm: signatureAlgorithm,
+            timings: {
+              dnsResolve: dnsResolveTime,
+              tcpConnect: tcpConnectTime,
+              tlsHandshake: tlsHandshakeTime,
+              certificateProcessing: processingTime,
+              totalTime: totalTime
+            }
+          };
+
+          Logger.info(`Retrieved certificate for ${hostname} from live TLS connection on port ${port} - DNS: ${dnsResolveTime}ms, TLS: ${tlsHandshakeTime}ms, Processing: ${processingTime}ms, Total: ${totalTime}ms`);
+          resolve(certInfo);
+        } catch (error) {
+          Logger.error(`Error parsing certificate for ${hostname}:${port}:`, error);
+          resolve(null);
+        } finally {
+          socket.destroy();
+        }
+      });
+
+      socket.on('error', (error) => {
+        const totalTime = Date.now() - startTime;
+        Logger.error(`TLS connection error for ${hostname}:${port}:`, error);
+        resolve({
+          subject: { CN: '<Connection Failed>' },
+          issuer: { CN: '<Connection Failed>' },
+          validFrom: '',
+          validTo: '',
+          fingerprint: '',
+          fingerprint256: '',
+          serialNumber: '',
+          isValid: false,
+          daysUntilExpiry: 0,
+          error: `Connection failed: ${error.message}`,
+          timings: {
+            dnsResolve: dnsResolveTime,
+            totalTime: totalTime
+          }
+        });
+      });
+
+      socket.on('timeout', () => {
+        const totalTime = Date.now() - startTime;
+        Logger.error(`TLS connection timeout for ${hostname}:${port}`);
+        socket.destroy();
+        resolve({
+          subject: { CN: '<Connection Timeout>' },
+          issuer: { CN: '<Connection Timeout>' },
+          validFrom: '',
+          validTo: '',
+          fingerprint: '',
+          fingerprint256: '',
+          serialNumber: '',
+          isValid: false,
+          daysUntilExpiry: 0,
+          error: 'Connection timeout',
+          timings: {
+            dnsResolve: dnsResolveTime,
+            totalTime: totalTime
+          }
+        });
+      });
+
+      socket.setTimeout(5000);
+    });
   });
 }
 
@@ -158,6 +265,12 @@ export async function getCertificateInfoFromFile(certPath: string): Promise<Cert
       return acc;
     }, {});
 
+    // Extract algorithm information from X509Certificate
+    const publicKey = cert.publicKey;
+    const keyAlgorithm = publicKey.asymmetricKeyType || 'unknown';
+    const keySize = publicKey.asymmetricKeySize || 0;
+    const signatureAlgorithm = cert.signatureAlgorithm || 'unknown';
+
     const certInfo: CertificateInfo = {
       subject: {
         CN: subject.CN || '<Not Part Of Certificate>',
@@ -195,6 +308,9 @@ export async function getCertificateInfoFromFile(certPath: string): Promise<Cert
       subjectAltNames: cert.subjectAltName ? cert.subjectAltName.split(', ') : [],
       isValid: now >= validFrom && now <= validTo,
       daysUntilExpiry: daysUntilExpiry,
+      keyAlgorithm: keyAlgorithm,
+      keySize: keySize,
+      signatureAlgorithm: signatureAlgorithm,
     };
 
     Logger.info(`Successfully parsed certificate from file: ${certPath}`);
