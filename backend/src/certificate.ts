@@ -210,7 +210,32 @@ export async function getCertificateInfoFromFile(certPath: string): Promise<Cert
  * @param hostname The hostname to get certificate for
  * @returns CertificateInfo object or null if not found
  */
-export async function getCertificateInfoWithFallback(hostname: string): Promise<CertificateInfo | null> {
+// Helper function to determine which ports to test based on connection type
+function getPortsForConnection(connection?: any): number[] {
+  // If no connection provided, use default ports (for backward compatibility)
+  if (!connection) {
+    return [443, 8443, 9443];
+  }
+
+  // Check if this is an ISE connection with application subtype
+  if (connection.application_type === 'ise' && connection.ise_application_subtype) {
+    switch (connection.ise_application_subtype) {
+      case 'guest':
+        return [8443]; // Guest portal
+      case 'portal': 
+        return [8445]; // Portal (sponsor portal)
+      case 'admin':
+        return [443];  // Admin interface
+      default:
+        return [8443]; // Default to guest
+    }
+  }
+
+  // For non-ISE connections or ISE without subtype, use multiple ports
+  return [443, 8443, 9443];
+}
+
+export async function getCertificateInfoWithFallback(hostname: string, connection?: any): Promise<CertificateInfo | null> {
   Logger.info(`Getting certificate info for ${hostname}`);
   
   // First, try to get certificate from local files
@@ -224,7 +249,7 @@ export async function getCertificateInfoWithFallback(hostname: string): Promise<
   const certPath = path.join(domainDir, certSubDir, 'certificate.pem');
   
   // Primary: Try to get certificate from live TLS connection (what's actually deployed)
-  const ports = [443, 8443, 9443];
+  const ports = getPortsForConnection(connection);
   
   for (const port of ports) {
     try {

@@ -6,10 +6,26 @@
     "label": "Application Type",
     "options": [
       { "value": "vos", "label": "Cisco VOS Application" },
-      { "value": "ise", "label": "Cisco ISE Guest Portal" },
+      { "value": "ise", "label": "Cisco ISE" },
       { "value": "general", "label": "General Application" }
     ],
     "default": "vos"
+  },
+  {
+    "name": "ise_application_subtype",
+    "type": "SELECT",
+    "validator": { "name": "isIn", "options": ["guest", "portal", "admin"] },
+    "label": "ISE Application Subtype",
+    "options": [
+      { "value": "guest", "label": "Guest" },
+      { "value": "portal", "label": "Portal" },
+      { "value": "admin", "label": "Admin" }
+    ],
+    "default": "guest",
+    "conditional": {
+      "field": "application_type",
+      "value": "ise"
+    }
   },
   {
     "name": "application_type_info",

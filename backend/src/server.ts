@@ -21,13 +21,14 @@ import { initializeWebSocket } from './websocket-server';
 import { OperationStatusManager } from './services/operation-status-manager';
 import { PlatformFactory } from './platform-providers/platform-factory';
 import { ISEProvider } from './platform-providers/ise-provider';
+import { downloadAllRootCertificates, checkRootCertificates } from './utils/download-root-certs';
 
 dotenv.config({ path: '../.env' });
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 console.log('TABLE_COLUMNS from env:', process.env.TABLE_COLUMNS);
-const TABLE_COLUMNS = (process.env.TABLE_COLUMNS || 'name,hostname,username,password,version')
+const TABLE_COLUMNS = (process.env.TABLE_COLUMNS || 'application_type,ise_application_subtype,name,hostname,username,password,domain,ise_nodes,ise_certificate,ise_private_key,custom_csr,general_private_key,ise_cert_import_config,ssl_provider,dns_provider,alt_names,enable_ssh,auto_restart_service,auto_renew')
   .split(',')
   .map(col => col.trim());
 console.log('Processed TABLE_COLUMNS:', TABLE_COLUMNS);
@@ -311,6 +312,7 @@ app.put('/api/data/:id', asyncHandler(async (req: Request, res: Response) => {
   Logger.info('Updating connection with data:', { 
     id: id,
     application_type: req.body.application_type,
+    ise_application_subtype: req.body.ise_application_subtype,
     name: req.body.name,
     hostname: req.body.hostname,
     enable_ssh: req.body.enable_ssh,
@@ -325,6 +327,7 @@ app.put('/api/data/:id', asyncHandler(async (req: Request, res: Response) => {
   Logger.info('Sanitized data for update:', { 
     id: id,
     application_type: sanitizedData.application_type,
+    ise_application_subtype: sanitizedData.ise_application_subtype,
     name: sanitizedData.name,
     hostname: sanitizedData.hostname,
     enable_ssh: sanitizedData.enable_ssh,
@@ -917,7 +920,7 @@ app.get('/api/data/:id/certificate', asyncHandler(async (req: Request, res: Resp
     });
   }
 
-  const certInfo = await getCertificateInfoWithFallback(domain);
+  const certInfo = await getCertificateInfoWithFallback(domain, connection);
   
   if (!certInfo) {
     return res.status(404).json({ 
@@ -1329,6 +1332,16 @@ httpServer.listen(PORT, '0.0.0.0', async () => {
   // Migrate account files to new structure
   const accountsDir = process.env.ACCOUNTS_DIR || './accounts';
   await migrateAccountFiles(accountsDir);
+  
+  // Check and download root certificates if missing
+  const certStatus = checkRootCertificates(accountsDir);
+  if (certStatus.missing.length > 0) {
+    Logger.info(`Missing root certificates: ${certStatus.missing.join(', ')}`);
+    Logger.info('Attempting to download missing root certificates...');
+    await downloadAllRootCertificates(accountsDir);
+  } else {
+    Logger.info(`All root certificates present: ${certStatus.present.join(', ')}`);
+  }
   
   // Check and create Let's Encrypt accounts on startup
   const accountChecker = new LetsEncryptAccountChecker(database);

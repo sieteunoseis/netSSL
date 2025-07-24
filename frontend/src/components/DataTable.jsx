@@ -232,10 +232,39 @@ const DataTable = ({ data, onDataChange }) => {
     if (columnName === "application_type") {
       const types = {
         "vos": "Cisco VOS",
-        "ise": "Cisco ISE Guest Portal",
+        "ise": "Cisco ISE",
         "general": "General Application"
       };
       return types[value] || value;
+    }
+    
+    if (columnName === "ise_application_subtype") {
+      const subtypes = {
+        "guest": "Guest",
+        "portal": "Portal", 
+        "admin": "Admin"
+      };
+      // For ISE connections without a subtype, default to Guest
+      if (!value && record?.application_type === "ise") {
+        return "Guest (default)";
+      }
+      return subtypes[value] || value || "—";
+    }
+    
+    if (columnName === "ise_cert_import_config") {
+      if (!value) return "—";
+      try {
+        // Parse and pretty-print JSON
+        const jsonObject = typeof value === 'string' ? JSON.parse(value) : value;
+        return (
+          <pre className="bg-gray-100 dark:bg-gray-800 p-2 rounded text-xs overflow-x-auto whitespace-pre-wrap font-mono">
+            {JSON.stringify(jsonObject, null, 2)}
+          </pre>
+        );
+      } catch (error) {
+        // If not valid JSON, display as-is
+        return value;
+      }
     }
     
     return value || "—";
@@ -296,7 +325,7 @@ const DataTable = ({ data, onDataChange }) => {
     <div className="mt-4 w-full space-y-2">
       {data.length > 0 ? (
         data.map((record) => (
-          <div key={record.id} className={`bg-white dark:bg-gray-800 border rounded-lg shadow-sm overflow-hidden ${
+          <div key={record.id} className={`bg-white/85 dark:bg-gray-800/85 backdrop-blur-sm border rounded-lg shadow-sm overflow-hidden ${
             !isConnectionEnabled(record)
               ? 'border-gray-300 dark:border-gray-600 opacity-60' 
               : 'border-gray-200 dark:border-gray-700'
@@ -384,7 +413,7 @@ const DataTable = ({ data, onDataChange }) => {
             
             {/* Expanded Details */}
             {expandedRows.has(record.id) && (
-              <div className="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 p-4">
+              <div className="border-t border-gray-200 dark:border-gray-700 bg-gray-50/85 dark:bg-gray-900/85 backdrop-blur-sm p-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {getDetailColumns(record).map((col) => {
                     const columnName = col.name.trim();
@@ -477,7 +506,7 @@ const DataTable = ({ data, onDataChange }) => {
           </div>
         ))
       ) : (
-        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-8 text-center">
+        <div className="bg-white/85 dark:bg-gray-800/85 backdrop-blur-sm border border-gray-200 dark:border-gray-700 rounded-lg p-8 text-center">
           <div className="text-gray-500 dark:text-gray-400">
             No connections found. Add your first Cisco UC server connection above.
           </div>

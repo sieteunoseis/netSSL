@@ -38,6 +38,11 @@ export default function Component() {
                     Logs
                   </Link>
                 </NavigationMenuLink>
+                <NavigationMenuLink asChild>
+                  <Link to="/help" className="hover:text-blue-600 transition-colors">
+                    Help
+                  </Link>
+                </NavigationMenuLink>
               </>
             )}
           </NavigationMenuList>
@@ -79,6 +84,13 @@ export default function Component() {
                   onClick={() => setIsMenuOpen(false)}
                 >
                   Logs
+                </Link>
+                <Link 
+                  to="/help" 
+                  className="block px-3 py-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  Help
                 </Link>
               </>
             )}

@@ -31,7 +31,7 @@ interface AddConnectionModalTabbedProps {
 
 // Define the field groups
 const FIELD_GROUPS = {
-  basic: ["name", "application_type", "application_type_info", "application_type_info_ise", "application_type_info_general"],
+  basic: ["name", "application_type", "ise_application_subtype", "application_type_info", "application_type_info_ise", "application_type_info_general"],
   authentication: ["username", "password"],
   certificate: ["hostname", "domain", "ssl_provider", "dns_provider", "alt_names", "custom_csr", "general_private_key", "ise_nodes", "ise_certificate", "ise_private_key", "ise_cert_import_config"],
   advanced: ["enable_ssh", "auto_restart_service", "auto_renew", "is_enabled"]

@@ -270,7 +270,7 @@ const Home = () => {
 
         {/* Overall Status Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-          <Card>
+          <Card className="bg-card/85 backdrop-blur-sm">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Servers</CardTitle>
               <Server className="h-4 w-4 text-muted-foreground" />
@@ -280,7 +280,7 @@ const Home = () => {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="bg-card/85 backdrop-blur-sm">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Valid Certificates</CardTitle>
               <CheckCircle className="h-4 w-4 text-green-500" />
@@ -290,7 +290,7 @@ const Home = () => {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="bg-card/85 backdrop-blur-sm">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Expiring Soon</CardTitle>
               <Clock className="h-4 w-4 text-yellow-500" />
@@ -300,7 +300,7 @@ const Home = () => {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="bg-card/85 backdrop-blur-sm">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Expired</CardTitle>
               <AlertCircle className="h-4 w-4 text-red-500" />
@@ -318,7 +318,7 @@ const Home = () => {
             const StatusIcon = certStatus.icon;
 
             return (
-              <Card key={connection.id} className="w-full">
+              <Card key={connection.id} className="w-full bg-card/85 backdrop-blur-sm">
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
@@ -326,7 +326,14 @@ const Home = () => {
                       <div>
                         <CardTitle className="text-lg">{connection.name}</CardTitle>
                         <CardDescription className="flex items-center space-x-2">
-                          <span>{getConnectionDisplayHostname(connection)}</span>
+                          <a 
+                            href={`https://${getConnectionDisplayHostname(connection)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 underline"
+                          >
+                            {getConnectionDisplayHostname(connection)}
+                          </a>
                           {isWildcardCertificate(connection) && (
                             <Badge variant="outline" className="text-xs">
                               Wildcard

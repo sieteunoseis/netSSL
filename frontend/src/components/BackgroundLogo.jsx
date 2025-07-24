@@ -7,7 +7,8 @@ const BackgroundLogo = () => {
   // Check if logoText starts with "lucide-" to indicate it's an icon
   if (logoText.startsWith("lucide-")) {
     const iconName = logoText.replace("lucide-", "");
-    const IconComponent = LucideIcons[iconName.charAt(0).toUpperCase() + iconName.slice(1).toLowerCase()];
+    const IconComponent = LucideIcons[iconName.charAt(0).toUpperCase() + iconName.slice(1)];
+    
     
     if (IconComponent) {
       return (

@@ -9,6 +9,7 @@ export interface ConnectionRecord {
   dns_provider: string;
   dns_challenge_mode?: string;
   application_type?: 'vos' | 'ise' | 'general';
+  ise_application_subtype?: 'guest' | 'portal' | 'admin';
   version?: string;
   alt_names?: string;
   custom_csr?: string;

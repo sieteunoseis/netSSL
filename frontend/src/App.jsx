@@ -4,6 +4,7 @@ import Home from "./pages/Home";
 import Connections from "./pages/Connections";
 import Logs from "./pages/Logs";
 import ErrorPage from "./pages/Error";
+import Help from "./pages/Help";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ModeToggle } from "./components/mode-toggle";
 import { Toaster } from "@/components/ui/toaster";
@@ -23,6 +24,7 @@ function App() {
                 <Route path="/" element={<Home />} />
                 <Route path="/connections" element={<Connections />} />
                 <Route path="/logs" element={<Logs />} />
+                <Route path="/help" element={<Help />} />
                 <Route path="/error" element={<ErrorPage />} />
               </Routes>
             </main>

@@ -66,7 +66,7 @@ export class AutoRenewalCron {
       const { getCertificateInfoWithFallback } = await import('./certificate');
       const domain = `${connection.hostname}.${connection.domain}`;
       
-      const certInfo = await getCertificateInfoWithFallback(domain);
+      const certInfo = await getCertificateInfoWithFallback(domain, connection);
       if (!certInfo || !certInfo.isValid || !certInfo.validTo) {
         Logger.warn(`No valid certificate found for ${domain}`);
         return false;

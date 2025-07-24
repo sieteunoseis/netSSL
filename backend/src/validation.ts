@@ -148,6 +148,13 @@ export const validateConnectionData = (data: any): { isValid: boolean; errors: s
     }
   }
 
+  // ISE Application subtype is optional for ISE connections
+  if (data.ise_application_subtype !== undefined && data.ise_application_subtype !== null && data.ise_application_subtype !== '') {
+    if (!validator.isIn(data.ise_application_subtype, ['guest', 'portal', 'admin'])) {
+      errors.push('ISE Application subtype must be one of "guest", "portal", or "admin"');
+    }
+  }
+
   // Custom CSR is optional for general applications
   if (data.custom_csr !== undefined && data.custom_csr !== null && data.custom_csr !== '') {
     if (typeof data.custom_csr !== 'string') {
@@ -200,6 +207,7 @@ export const sanitizeConnectionData = (data: any): Partial<ConnectionRecord> => 
     ssl_provider: validator.escape(String(data.ssl_provider || '')),
     dns_provider: validator.escape(String(data.dns_provider || '')),
     application_type: (['vos', 'ise', 'general'].includes(data.application_type) ? data.application_type : 'vos') as 'vos' | 'ise' | 'general',
+    ise_application_subtype: (['guest', 'portal', 'admin'].includes(data.ise_application_subtype) ? data.ise_application_subtype : undefined),
     version: validator.escape(String(data.version || '')),
     alt_names: validator.escape(String(data.alt_names || '')),
     custom_csr: data.custom_csr ? String(data.custom_csr) : undefined, // Don't escape CSR content

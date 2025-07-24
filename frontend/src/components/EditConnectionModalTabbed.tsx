@@ -44,7 +44,7 @@ interface EditConnectionModalTabbedProps {
 
 // Define the field groups
 const FIELD_GROUPS = {
-  basic: ["name", "application_type"],
+  basic: ["name", "application_type", "ise_application_subtype"],
   authentication: ["username", "password"],
   certificate: ["hostname", "domain", "ssl_provider", "dns_provider", "dns_challenge_mode", "alt_names", "custom_csr", "general_private_key", "ise_nodes", "ise_certificate", "ise_private_key", "ise_cert_import_config"],
   advanced: ["enable_ssh", "auto_restart_service", "auto_renew", "is_enabled"]
@@ -92,6 +92,8 @@ const EditConnectionModalTabbed: React.FC<EditConnectionModalTabbedProps> = ({
       setFormData(initialData);
       setActiveTab("basic");
       setErrors({});
+      console.log('EditModal: Initialized form data:', initialData);
+      console.log('EditModal: Initial ISE Application Subtype:', initialData.ise_application_subtype);
     }
   }, [record, data]);
 
@@ -187,6 +189,8 @@ const EditConnectionModalTabbed: React.FC<EditConnectionModalTabbedProps> = ({
     
     try {
       setIsSubmitting(true);
+      console.log('EditModal: Submitting form data:', formData);
+      console.log('EditModal: ISE Application Subtype:', formData.ise_application_subtype);
       await apiCall(`/data/${record.id}`, {
         method: "PUT",
         body: JSON.stringify(formData),

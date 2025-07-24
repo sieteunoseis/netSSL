@@ -218,10 +218,10 @@ const Logs = () => {
             {filteredAccounts.map((account) => (
               <Card
                 key={account.connection.id}
-                className={`cursor-pointer transition-all hover:shadow-md ${
+                className={`cursor-pointer transition-all hover:shadow-md backdrop-blur-sm ${
                   selectedAccount?.connection.id === account.connection.id
-                    ? 'bg-blue-50 border-blue-200 dark:bg-blue-950 dark:border-blue-800'
-                    : 'hover:bg-gray-50 dark:hover:bg-gray-700'
+                    ? 'bg-blue-50/85 border-blue-200 dark:bg-blue-950/85 dark:border-blue-800'
+                    : 'bg-card/85 hover:bg-gray-50/85 dark:hover:bg-gray-700/85'
                 }`}
                 onClick={() => setSelectedAccount(account)}
               >
