@@ -13,20 +13,22 @@ export class AutoRenewalCron {
 
   /**
    * Start the auto-renewal cron job
-   * Runs every day at midnight (00:00) and checks for certificates that expire within 7 days
+   * Runs at the configured time and checks for certificates that expire within configured days
    */
-  start() {
-    // Cron pattern: "0 0 * * *" = every day at midnight
-    cron.schedule('0 0 * * *', async () => {
-      Logger.info('Starting auto-renewal check at midnight...');
+  async start() {
+    // Get cron schedule from settings, default to midnight
+    const cronSchedule = await this.getCronSchedule();
+    
+    cron.schedule(cronSchedule, async () => {
+      Logger.info('Starting auto-renewal check...');
       await this.checkAndRenewCertificates();
     });
 
-    Logger.info('Auto-renewal cron job scheduled to run daily at midnight');
+    Logger.info(`Auto-renewal cron job scheduled with pattern: ${cronSchedule}`);
   }
 
   /**
-   * Check for certificates expiring within 7 days and renew them
+   * Check for certificates expiring within configured days and renew them
    */
   private async checkAndRenewCertificates() {
     try {
@@ -39,14 +41,15 @@ export class AutoRenewalCron {
           continue;
         }
 
-        // Check if certificate expires within 7 days
-        const expiresWithin7Days = await this.checkCertificateExpiration(connection);
-        if (expiresWithin7Days) {
+        // Check if certificate expires within configured days
+        const expiresWithinThreshold = await this.checkCertificateExpiration(connection);
+        if (expiresWithinThreshold) {
           expiringConnections.push(connection);
         }
       }
 
-      Logger.info(`Found ${expiringConnections.length} connections with certificates expiring within 7 days`);
+      const renewalDays = await this.getRenewalDays();
+      Logger.info(`Found ${expiringConnections.length} connections with certificates expiring within ${renewalDays} days`);
 
       // Process renewals
       for (const connection of expiringConnections) {
@@ -59,7 +62,7 @@ export class AutoRenewalCron {
   }
 
   /**
-   * Check if a certificate expires within 7 days
+   * Check if a certificate expires within configured days
    */
   private async checkCertificateExpiration(connection: any): Promise<boolean> {
     try {
@@ -78,7 +81,8 @@ export class AutoRenewalCron {
 
       Logger.info(`Certificate for ${domain} expires in ${daysUntilExpiration} days`);
       
-      return daysUntilExpiration <= 7;
+      const renewalDays = await this.getRenewalDays();
+      return daysUntilExpiration <= renewalDays;
     } catch (error: any) {
       Logger.error(`Error checking certificate expiration for ${connection.hostname}:`, error);
       return false;
@@ -153,6 +157,32 @@ export class AutoRenewalCron {
       Logger.info(`Updated auto-renewal status for connection ${connectionId}: ${status}`);
     } catch (error: any) {
       Logger.error(`Failed to update auto-renewal status for connection ${connectionId}:`, error);
+    }
+  }
+
+  /**
+   * Get renewal days threshold from settings
+   */
+  private async getRenewalDays(): Promise<number> {
+    try {
+      const setting = await this.database.getSetting('CERT_RENEWAL_DAYS');
+      return setting ? parseInt(setting.key_value) : 7; // Default to 7 days
+    } catch (error) {
+      Logger.warn('Failed to get CERT_RENEWAL_DAYS setting, using default of 7 days');
+      return 7;
+    }
+  }
+
+  /**
+   * Get cron schedule from settings
+   */
+  private async getCronSchedule(): Promise<string> {
+    try {
+      const setting = await this.database.getSetting('CERT_CHECK_SCHEDULE');
+      return setting ? setting.key_value : '0 0 * * *'; // Default to midnight
+    } catch (error) {
+      Logger.warn('Failed to get CERT_CHECK_SCHEDULE setting, using default of midnight');
+      return '0 0 * * *';
     }
   }
 

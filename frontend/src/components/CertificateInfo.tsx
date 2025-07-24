@@ -6,6 +6,7 @@ import { Shield, Calendar, AlertCircle, CheckCircle, RefreshCw, FileText, X } fr
 import { useToast } from "@/hooks/use-toast";
 import { apiCall } from "@/lib/api";
 import { useCertificateRenewal } from "@/contexts/WebSocketContext";
+import { useCertificateSettings } from "@/hooks/useCertificateSettings";
 
 interface CertificateInfo {
   subject: {
@@ -38,6 +39,7 @@ interface CertificateInfoProps {
 
 const CertificateInfoComponent: React.FC<CertificateInfoProps> = ({ connectionId, onRenewCertificate, onRenewalComplete }) => {
   const { toast } = useToast();
+  const certificateSettings = useCertificateSettings();
   const [certInfo, setCertInfo] = useState<CertificateInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -189,7 +191,7 @@ const CertificateInfoComponent: React.FC<CertificateInfoProps> = ({ connectionId
     
     if (certInfo.daysUntilExpiry <= 0) {
       return { status: "expired", color: "bg-red-100 text-red-800", icon: AlertCircle };
-    } else if (certInfo.daysUntilExpiry <= 30) {
+    } else if (certInfo.daysUntilExpiry <= certificateSettings.warningDays) {
       return { status: "expiring", color: "bg-yellow-100 text-yellow-800", icon: AlertCircle };
     } else {
       return { status: "valid", color: "bg-green-100 text-green-800", icon: CheckCircle };

@@ -341,10 +341,22 @@ export class DatabaseManager {
           reject(err);
         } else {
           Logger.debug(`Retrieved ${rows.length} connections`);
-          // Convert integer is_enabled values back to booleans for API consistency
+          // Convert integer/string boolean values back to booleans for API consistency
           const convertedRows = rows.map((row: any) => {
             if (row.is_enabled !== undefined) {
               row.is_enabled = Boolean(row.is_enabled);
+            }
+            if (row.auto_renew !== undefined && row.auto_renew !== null) {
+              // Convert SQLite boolean values: "0"/"1" or 0/1 to proper boolean
+              row.auto_renew = !!(Number(row.auto_renew));
+            } else {
+              row.auto_renew = false;
+            }
+            if (row.auto_restart_service !== undefined) {
+              row.auto_restart_service = !!(Number(row.auto_restart_service));
+            }
+            if (row.enable_ssh !== undefined) {
+              row.enable_ssh = !!(Number(row.enable_ssh));
             }
             return row;
           });
@@ -366,9 +378,23 @@ export class DatabaseManager {
           reject(err);
         } else {
           Logger.debug(`Retrieved connection with ID: ${id}`);
-          // Convert integer is_enabled value back to boolean for API consistency
-          if (row && row.is_enabled !== undefined) {
-            row.is_enabled = Boolean(row.is_enabled);
+          // Convert integer/string boolean values back to booleans for API consistency
+          if (row) {
+            if (row.is_enabled !== undefined) {
+              row.is_enabled = Boolean(row.is_enabled);
+            }
+            if (row.auto_renew !== undefined && row.auto_renew !== null) {
+              // Convert SQLite boolean values: "0"/"1" or 0/1 to proper boolean
+              row.auto_renew = !!(Number(row.auto_renew));
+            } else {
+              row.auto_renew = false;
+            }
+            if (row.auto_restart_service !== undefined) {
+              row.auto_restart_service = !!(Number(row.auto_restart_service));
+            }
+            if (row.enable_ssh !== undefined) {
+              row.enable_ssh = !!(Number(row.enable_ssh));
+            }
           }
           resolve(row as ConnectionRecord || null);
         }

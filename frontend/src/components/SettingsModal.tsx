@@ -38,6 +38,22 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const providers = [
+    {
+      id: 'renewal',
+      name: 'Certificate Renewal',
+      keys: ['CERT_RENEWAL_DAYS', 'CERT_WARNING_DAYS', 'CERT_CHECK_SCHEDULE'],
+      description: 'Automatic certificate renewal settings',
+      keyInfo: {
+        'CERT_RENEWAL_DAYS': 'Number of days before certificate expiration to automatically renew (e.g., 7 = renew when 7 days left)',
+        'CERT_WARNING_DAYS': 'Number of days before expiration to display warning in UI (e.g., 30 = warn when 30 days left)',
+        'CERT_CHECK_SCHEDULE': 'Cron expression for when to check certificates (e.g., "0 0 * * *" = daily at midnight, "0 2 * * *" = daily at 2 AM)'
+      },
+      keyDefaults: {
+        'CERT_RENEWAL_DAYS': '7',
+        'CERT_WARNING_DAYS': '30',
+        'CERT_CHECK_SCHEDULE': '0 0 * * *'
+      }
+    },
     { 
       id: 'letsencrypt', 
       name: 'Let\'s Encrypt', 
@@ -402,12 +418,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
                       {provider.keys.map(keyName => (
                         <div key={keyName} className="space-y-2">
                           <Label htmlFor={keyName}>{keyName}</Label>
+                          {provider.keyInfo?.[keyName] && (
+                            <p className="text-xs text-muted-foreground">{provider.keyInfo[keyName]}</p>
+                          )}
                           <div className="flex space-x-2">
                             <div className="relative flex-1">
                               <Input
                                 id={keyName}
                                 type={visibleKeys[keyName] ? "text" : "password"}
-                                placeholder={`Enter ${keyName}`}
+                                placeholder={provider.keyDefaults?.[keyName] || `Enter ${keyName}`}
                                 value={providerSettings[provider.id]?.[keyName] || ''}
                                 onChange={(e) => {
                                   const value = e.target.value;

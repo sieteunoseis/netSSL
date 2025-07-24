@@ -155,7 +155,7 @@ export default function Help() {
                   </p>
                   <ul className="list-disc list-inside space-y-1 text-sm">
                     <li>Automatic certificate upload via REST API</li>
-                    <li>Support for admin, portal, and pxGrid certificates</li>
+                    <li>Support for admin, guest, and portal certificates</li>
                     <li>Requires both intermediate and root certificates</li>
                     <li>Duplicate certificate detection and management</li>
                     <li>Requires manual CSR generation before certificate request</li>
@@ -176,25 +176,15 @@ export default function Help() {
                 </div>
 
                 <div className="space-y-2">
-                  <h3 className="text-lg font-semibold">Cisco CUCM</h3>
+                  <h3 className="text-lg font-semibold">Cisco VOS</h3>
                   <p className="text-sm text-muted-foreground">
-                    Unified Communications Manager (coming soon)
+                    Voice Operating System - CUCM, CUC, CER
                   </p>
                   <ul className="list-disc list-inside space-y-1 text-sm">
                     <li>OS Administration certificate upload</li>
                     <li>Tomcat certificate management</li>
-                    <li>Certificate chain validation</li>
-                  </ul>
-                </div>
-
-                <div className="space-y-2">
-                  <h3 className="text-lg font-semibold">Cisco CUC</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Unity Connection (coming soon)
-                  </p>
-                  <ul className="list-disc list-inside space-y-1 text-sm">
                     <li>Web certificate management</li>
-                    <li>SMTP certificate configuration</li>
+                    <li>Certificate chain validation</li>
                   </ul>
                 </div>
 
@@ -258,8 +248,9 @@ export default function Help() {
                   Certificates are automatically renewed when:
                 </p>
                 <ul className="list-disc list-inside space-y-1 text-sm">
-                  <li>Less than 30 days until expiration</li>
-                  <li>Daily checks at 2:00 AM (configurable)</li>
+                  <li>Certificate expiration threshold is configurable (default: 7 days)</li>
+                  <li>Daily checks at configurable time (default: midnight)</li>
+                  <li>Warning threshold is configurable (default: 30 days)</li>
                   <li>Manual renewal available anytime</li>
                   <li>Automatic deployment to configured platforms</li>
                 </ul>

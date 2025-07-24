@@ -14,6 +14,7 @@ import CertificateDownloadButton from "@/components/CertificateDownloadButton";
 import { apiCall } from "@/lib/api";
 import { filterEnabledConnections, getConnectionDisplayHostname, isWildcardCertificate, getCertificateValidationDomain } from "@/lib/connection-utils";
 import { useWebSocket } from "@/contexts/WebSocketContext";
+import { useCertificateSettings } from "@/hooks/useCertificateSettings";
 import templateConfig from "../../template.config.json";
 import { 
   FileText, 
@@ -35,6 +36,7 @@ const Home = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
   const { getConnectionOperations } = useWebSocket();
+  const certificateSettings = useCertificateSettings();
 
   // Connection state
   const [connectionState, setConnectionState] = useState({
@@ -183,7 +185,7 @@ const Home = () => {
       };
     }
 
-    if (certInfo.daysUntilExpiry <= 30) {
+    if (certInfo.daysUntilExpiry <= certificateSettings.warningDays) {
       return {
         status: "expiring",
         text: `Expires in ${certInfo.daysUntilExpiry} days`,
@@ -265,6 +267,14 @@ const Home = () => {
           <div className="mt-6 flex space-x-4">
             <AddConnectionModal onConnectionAdded={handleConnectionAdded} />
             <SettingsModal />
+            <Button 
+              variant="outline" 
+              onClick={fetchConnectionsData}
+              className="flex items-center space-x-2"
+            >
+              <RefreshCw className="w-4 h-4" />
+              <span>Refresh</span>
+            </Button>
           </div>
         </div>
 
