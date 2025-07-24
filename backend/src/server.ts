@@ -920,7 +920,7 @@ app.get('/api/data/:id/certificate', asyncHandler(async (req: Request, res: Resp
     });
   }
 
-  const certInfo = await getCertificateInfoWithFallback(domain, connection);
+  const certInfo = await getCertificateInfoWithFallback(domain, connection, database);
   
   if (!certInfo) {
     return res.status(404).json({ 
@@ -940,7 +940,7 @@ app.get('/api/certificate/:hostname', asyncHandler(async (req: Request, res: Res
     return res.status(400).json({ error: 'Hostname parameter is required' });
   }
 
-  const certInfo = await getCertificateInfoWithFallback(hostname);
+  const certInfo = await getCertificateInfoWithFallback(hostname, null, database);
   
   if (!certInfo) {
     return res.status(404).json({ 
@@ -987,6 +987,79 @@ app.get('/api/data/:id/renewal-logs', asyncHandler(async (req: Request, res: Res
     });
   } catch (error) {
     Logger.error('Error retrieving renewal logs:', error);
+    return res.status(500).json({ 
+      error: 'Internal server error',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+}));
+
+// Get certificate metrics for a specific connection
+app.get('/api/data/:id/metrics', asyncHandler(async (req: Request, res: Response) => {
+  const connectionId = parseInt(req.params.id);
+  const limit = parseInt(req.query.limit as string) || 100;
+  const hours = parseInt(req.query.hours as string) || 24;
+  
+  if (isNaN(connectionId)) {
+    return res.status(400).json({ error: 'Invalid connection ID parameter' });
+  }
+
+  try {
+    const connection = await database.getConnectionById(connectionId);
+    if (!connection) {
+      return res.status(404).json({ error: 'Connection not found' });
+    }
+
+    const metrics = await database.getCertificateMetrics(connectionId, limit, hours);
+    const averageMetrics = await database.getAverageMetrics(connectionId, hours);
+    
+    return res.json({
+      connection: {
+        id: connection.id,
+        name: connection.name,
+        hostname: connection.hostname
+      },
+      metrics,
+      averageMetrics,
+      timeRange: { hours, limit }
+    });
+  } catch (error) {
+    Logger.error('Error retrieving certificate metrics:', error);
+    return res.status(500).json({ 
+      error: 'Internal server error',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+}));
+
+// Get average metrics for a specific connection
+app.get('/api/data/:id/metrics/average', asyncHandler(async (req: Request, res: Response) => {
+  const connectionId = parseInt(req.params.id);
+  const hours = parseInt(req.query.hours as string) || 24;
+  
+  if (isNaN(connectionId)) {
+    return res.status(400).json({ error: 'Invalid connection ID parameter' });
+  }
+
+  try {
+    const connection = await database.getConnectionById(connectionId);
+    if (!connection) {
+      return res.status(404).json({ error: 'Connection not found' });
+    }
+
+    const averageMetrics = await database.getAverageMetrics(connectionId, hours);
+    
+    return res.json({
+      connection: {
+        id: connection.id,
+        name: connection.name,
+        hostname: connection.hostname
+      },
+      averageMetrics,
+      timeRange: { hours }
+    });
+  } catch (error) {
+    Logger.error('Error retrieving average metrics:', error);
     return res.status(500).json({ 
       error: 'Internal server error',
       details: error instanceof Error ? error.message : 'Unknown error'

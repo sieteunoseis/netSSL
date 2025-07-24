@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import BackgroundLogo from "@/components/BackgroundLogo";
@@ -32,7 +32,7 @@ import {
   Wrench
 } from "lucide-react";
 
-const Home = () => {
+const Home = ({ onStatusUpdate }) => {
   const { toast } = useToast();
   const navigate = useNavigate();
   const { getConnectionOperations } = useWebSocket();
@@ -219,7 +219,7 @@ const Home = () => {
   };
 
 
-  const getOverallStatus = () => {
+  const overallStatus = useMemo(() => {
     // Filter to only enabled connections
     const enabledConnections = filterEnabledConnections(connectionState.connections);
     
@@ -236,9 +236,14 @@ const Home = () => {
     }, { total: 0, valid: 0, expiring: 0, expired: 0, autoRenew: 0 });
 
     return summary;
-  };
-
-  const overallStatus = getOverallStatus();
+  }, [connectionState.connections, certificateStatuses, certificateSettings.warningDays]);
+  
+  // Update parent component when status changes
+  useEffect(() => {
+    if (onStatusUpdate) {
+      onStatusUpdate(overallStatus);
+    }
+  }, [overallStatus, onStatusUpdate]);
 
   if (connectionState.isLoading) {
     return (
@@ -469,6 +474,7 @@ const Home = () => {
                     <CertificateInfo 
                       connectionId={connection.id} 
                       hostname={getCertificateValidationDomain(connection) || ''}
+                      connectionName={connection.name}
                       onRenewalComplete={() => setDownloadRefreshTrigger(prev => prev + 1)}
                     />
                   )}

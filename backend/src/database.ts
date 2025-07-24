@@ -162,6 +162,54 @@ export class DatabaseManager {
         });
       }
     });
+
+    const createCertificateMetricsTableQuery = `
+      CREATE TABLE IF NOT EXISTS certificate_metrics (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        connection_id INTEGER NOT NULL,
+        hostname TEXT NOT NULL,
+        port INTEGER DEFAULT 443,
+        check_type TEXT NOT NULL, -- 'live_tls' or 'file_based'
+        dns_resolve_time INTEGER, -- milliseconds
+        tcp_connect_time INTEGER, -- milliseconds
+        tls_handshake_time INTEGER, -- milliseconds
+        certificate_processing_time INTEGER, -- milliseconds
+        total_time INTEGER, -- milliseconds
+        key_algorithm TEXT,
+        key_size INTEGER,
+        signature_algorithm TEXT,
+        certificate_valid BOOLEAN,
+        days_until_expiry INTEGER,
+        error_message TEXT,
+        checked_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE CASCADE
+      )
+    `;
+
+    this.db.run(createCertificateMetricsTableQuery, [], (err: any) => {
+      if (err) {
+        Logger.error('Failed to create certificate_metrics table:', err);
+        throw err;
+      } else {
+        Logger.info('Database certificate_metrics table created');
+        
+        // Create indexes for better performance
+        const metricsIndexes = [
+          'CREATE INDEX IF NOT EXISTS idx_certificate_metrics_connection ON certificate_metrics(connection_id)',
+          'CREATE INDEX IF NOT EXISTS idx_certificate_metrics_checked_at ON certificate_metrics(checked_at)',
+          'CREATE INDEX IF NOT EXISTS idx_certificate_metrics_hostname ON certificate_metrics(hostname)',
+          'CREATE INDEX IF NOT EXISTS idx_certificate_metrics_connection_time ON certificate_metrics(connection_id, checked_at)'
+        ];
+        
+        metricsIndexes.forEach(indexQuery => {
+          this.db.run(indexQuery, [], (indexErr: any) => {
+            if (indexErr) {
+              Logger.error('Failed to create certificate_metrics index:', indexErr);
+            }
+          });
+        });
+      }
+    });
   }
 
   private createTable(): void {
@@ -927,6 +975,152 @@ export class DatabaseManager {
       } else {
         Logger.info('Database connection closed');
       }
+    });
+  }
+
+  // Certificate Metrics Management
+  async saveCertificateMetrics(
+    connectionId: number,
+    hostname: string,
+    port: number,
+    checkType: 'live_tls' | 'file_based',
+    timings?: {
+      dnsResolve?: number;
+      tcpConnect?: number;
+      tlsHandshake?: number;
+      certificateProcessing?: number;
+      totalTime?: number;
+    },
+    keyAlgorithm?: string,
+    keySize?: number,
+    signatureAlgorithm?: string,
+    certificateValid?: boolean,
+    daysUntilExpiry?: number,
+    errorMessage?: string
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const query = `
+        INSERT INTO certificate_metrics (
+          connection_id, hostname, port, check_type,
+          dns_resolve_time, tcp_connect_time, tls_handshake_time, 
+          certificate_processing_time, total_time,
+          key_algorithm, key_size, signature_algorithm,
+          certificate_valid, days_until_expiry, error_message
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `;
+
+      this.db.run(query, [
+        connectionId, hostname, port, checkType,
+        timings?.dnsResolve, timings?.tcpConnect, timings?.tlsHandshake,
+        timings?.certificateProcessing, timings?.totalTime,
+        keyAlgorithm, keySize, signatureAlgorithm,
+        certificateValid, daysUntilExpiry, errorMessage
+      ], (err: any) => {
+        if (err) {
+          Logger.error('Failed to save certificate metrics:', err);
+          reject(err);
+        } else {
+          Logger.debug(`Saved certificate metrics for ${hostname}:${port}`);
+          resolve();
+        }
+      });
+    });
+  }
+
+  async getCertificateMetrics(
+    connectionId: number,
+    limit: number = 100,
+    hours: number = 24
+  ): Promise<any[]> {
+    return new Promise((resolve, reject) => {
+      const query = `
+        SELECT * FROM certificate_metrics 
+        WHERE connection_id = ? 
+        AND checked_at >= datetime('now', '-${hours} hours')
+        ORDER BY checked_at DESC 
+        LIMIT ?
+      `;
+
+      this.db.all(query, [connectionId, limit], (err: any, rows: any[]) => {
+        if (err) {
+          Logger.error('Failed to get certificate metrics:', err);
+          reject(err);
+        } else {
+          resolve(rows);
+        }
+      });
+    });
+  }
+
+  async getAllCertificateMetrics(
+    limit: number = 1000,
+    hours: number = 24
+  ): Promise<any[]> {
+    return new Promise((resolve, reject) => {
+      const query = `
+        SELECT cm.*, c.name as connection_name 
+        FROM certificate_metrics cm
+        LEFT JOIN connections c ON cm.connection_id = c.id
+        WHERE cm.checked_at >= datetime('now', '-${hours} hours')
+        ORDER BY cm.checked_at DESC 
+        LIMIT ?
+      `;
+
+      this.db.all(query, [limit], (err: any, rows: any[]) => {
+        if (err) {
+          Logger.error('Failed to get all certificate metrics:', err);
+          reject(err);
+        } else {
+          resolve(rows);
+        }
+      });
+    });
+  }
+
+  async getAverageMetrics(
+    connectionId: number,
+    hours: number = 24
+  ): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const query = `
+        SELECT 
+          AVG(dns_resolve_time) as avg_dns_resolve_time,
+          AVG(tcp_connect_time) as avg_tcp_connect_time,
+          AVG(tls_handshake_time) as avg_tls_handshake_time,
+          AVG(certificate_processing_time) as avg_certificate_processing_time,
+          AVG(total_time) as avg_total_time,
+          COUNT(*) as check_count,
+          MAX(checked_at) as last_check
+        FROM certificate_metrics 
+        WHERE connection_id = ? 
+        AND checked_at >= datetime('now', '-${hours} hours')
+        AND check_type = 'live_tls'
+      `;
+
+      this.db.get(query, [connectionId], (err: any, row: any) => {
+        if (err) {
+          Logger.error('Failed to get average metrics:', err);
+          reject(err);
+        } else {
+          resolve(row);
+        }
+      });
+    });
+  }
+
+  async cleanupOldCertificateMetrics(daysOld: number = 30): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const query = `DELETE FROM certificate_metrics WHERE checked_at < datetime('now', '-${daysOld} days')`;
+      
+      this.db.run(query, [], (err: any) => {
+        if (err) {
+          Logger.error('Failed to cleanup old certificate metrics:', err);
+          reject(err);
+        } else {
+          Logger.debug(`Cleaned up certificate metrics older than ${daysOld} days`);
+          resolve();
+        }
+      });
     });
   }
 }

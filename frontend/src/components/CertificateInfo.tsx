@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiCall } from "@/lib/api";
 import { useCertificateRenewal } from "@/contexts/WebSocketContext";
 import { useCertificateSettings } from "@/hooks/useCertificateSettings";
+import PerformanceMetricsChart from "./PerformanceMetricsChart";
 
 interface CertificateInfo {
   subject: {
@@ -45,11 +46,12 @@ interface CertificateInfo {
 interface CertificateInfoProps {
   connectionId: number;
   hostname: string;
+  connectionName?: string;
   onRenewCertificate?: () => void;
   onRenewalComplete?: () => void;
 }
 
-const CertificateInfoComponent: React.FC<CertificateInfoProps> = ({ connectionId, onRenewCertificate, onRenewalComplete }) => {
+const CertificateInfoComponent: React.FC<CertificateInfoProps> = ({ connectionId, connectionName, onRenewCertificate, onRenewalComplete }) => {
   const { toast } = useToast();
   const certificateSettings = useCertificateSettings();
   const [certInfo, setCertInfo] = useState<CertificateInfo | null>(null);
@@ -597,6 +599,14 @@ const CertificateInfoComponent: React.FC<CertificateInfoProps> = ({ connectionId
                   </div>
                 </div>
               )}
+
+              {/* Performance Metrics Chart */}
+              <div className="mt-6">
+                <PerformanceMetricsChart 
+                  connectionId={connectionId}
+                  connectionName={connectionName || `Connection ${connectionId}`}
+                />
+              </div>
 
               {/* Refresh Button */}
               <div className="flex justify-end pt-2">

@@ -4,6 +4,7 @@ import dns from 'dns';
 import fs from 'fs';
 import path from 'path';
 import { Logger } from './logger';
+import { DatabaseManager } from './database';
 
 export interface CertificateInfo {
   subject: {
@@ -226,6 +227,106 @@ export async function getCertificateInfo(hostname: string, port: number = 443): 
 }
 
 /**
+ * Get certificate information and save metrics to database
+ * @param hostname The hostname to check
+ * @param port The port to check (default 443)
+ * @param connectionId The connection ID for database storage
+ * @param database The database manager instance
+ * @returns CertificateInfo object or null if failed
+ */
+export async function getCertificateInfoWithMetrics(
+  hostname: string, 
+  port: number = 443, 
+  connectionId: number, 
+  database: DatabaseManager
+): Promise<CertificateInfo | null> {
+  const certInfo = await getCertificateInfo(hostname, port);
+  
+  if (certInfo) {
+    // Save metrics to database
+    try {
+      await database.saveCertificateMetrics(
+        connectionId,
+        hostname,
+        port,
+        'live_tls',
+        certInfo.timings,
+        certInfo.keyAlgorithm,
+        certInfo.keySize,
+        certInfo.signatureAlgorithm,
+        certInfo.isValid,
+        certInfo.daysUntilExpiry,
+        certInfo.error
+      );
+    } catch (error) {
+      Logger.error('Failed to save certificate metrics to database:', error);
+      // Don't fail the whole operation if metrics storage fails
+    }
+  } else {
+    // Save error metrics
+    try {
+      await database.saveCertificateMetrics(
+        connectionId,
+        hostname,
+        port,
+        'live_tls',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        undefined,
+        'Certificate check failed'
+      );
+    } catch (error) {
+      Logger.error('Failed to save error metrics to database:', error);
+    }
+  }
+  
+  return certInfo;
+}
+
+/**
+ * Get certificate information from file and save metrics to database
+ * @param certPath Path to the certificate file
+ * @param connectionId The connection ID for database storage
+ * @param database The database manager instance
+ * @param hostname The hostname for metrics storage
+ * @returns CertificateInfo object or null if failed
+ */
+export async function getCertificateInfoFromFileWithMetrics(
+  certPath: string, 
+  connectionId: number, 
+  database: DatabaseManager,
+  hostname: string
+): Promise<CertificateInfo | null> {
+  const certInfo = await getCertificateInfoFromFile(certPath);
+  
+  if (certInfo) {
+    // Save metrics to database
+    try {
+      await database.saveCertificateMetrics(
+        connectionId,
+        hostname,
+        443, // Default port for file-based checks
+        'file_based',
+        undefined, // No timing metrics for file-based checks
+        certInfo.keyAlgorithm,
+        certInfo.keySize,
+        certInfo.signatureAlgorithm,
+        certInfo.isValid,
+        certInfo.daysUntilExpiry,
+        certInfo.error
+      );
+    } catch (error) {
+      Logger.error('Failed to save file-based certificate metrics to database:', error);
+    }
+  }
+  
+  return certInfo;
+}
+
+/**
  * Parse a PEM certificate file and extract certificate information
  * @param certPath Path to the certificate.pem file
  * @returns CertificateInfo object or null if parsing fails
@@ -351,7 +452,7 @@ function getPortsForConnection(connection?: any): number[] {
   return [443, 8443, 9443];
 }
 
-export async function getCertificateInfoWithFallback(hostname: string, connection?: any): Promise<CertificateInfo | null> {
+export async function getCertificateInfoWithFallback(hostname: string, connection?: any, database?: any): Promise<CertificateInfo | null> {
   Logger.info(`Getting certificate info for ${hostname}`);
   
   // First, try to get certificate from local files
@@ -370,7 +471,10 @@ export async function getCertificateInfoWithFallback(hostname: string, connectio
   for (const port of ports) {
     try {
       Logger.info(`Attempting to get certificate for ${hostname}:${port}`);
-      const certInfo = await getCertificateInfo(hostname, port);
+      // Use metrics version if database and connection are available
+      const certInfo = (database && connection?.id) 
+        ? await getCertificateInfoWithMetrics(hostname, port, connection.id, database)
+        : await getCertificateInfo(hostname, port);
       if (certInfo) {
         Logger.info(`Retrieved certificate for ${hostname} from live TLS connection on port ${port}`);
         return certInfo;

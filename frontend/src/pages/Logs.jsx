@@ -156,10 +156,10 @@ const Logs = () => {
   };
 
   return (
-    <div className="fixed inset-0 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-slate-900 dark:to-indigo-950">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-slate-900 dark:to-indigo-950 relative">
       <BackgroundLogo />
-      <div className="absolute inset-0 pt-24 pb-12 px-16">        
-        <div className="h-full flex bg-gray-50 dark:bg-gray-900/80 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700/60">
+      <div className="pt-8 pb-12 px-4 md:px-8 lg:px-16">        
+        <div className="h-[calc(100vh-8rem)] flex bg-gray-50 dark:bg-gray-900 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700/60">
           {/* Left Sidebar - Accounts */}
           <div className="w-80 flex-shrink-0 bg-white dark:bg-gray-800/80 border-r border-gray-200 dark:border-gray-700/60 flex flex-col">
         <div className="p-4 border-b border-gray-200 dark:border-gray-700">
