@@ -849,6 +849,33 @@ app.get('/api/settings', asyncHandler(async (req: Request, res: Response) => {
 
 app.get('/api/settings/:provider', asyncHandler(async (req: Request, res: Response) => {
   const provider = req.params.provider;
+  
+  // Return certificate renewal settings from environment variables
+  if (provider === 'renewal') {
+    const renewalSettings = [
+      {
+        key_name: 'CERT_RENEWAL_DAYS',
+        key_value: process.env.CERT_RENEWAL_DAYS || '7',
+        provider: 'renewal',
+        description: 'Number of days before certificate expiration to automatically renew'
+      },
+      {
+        key_name: 'CERT_WARNING_DAYS',
+        key_value: process.env.CERT_WARNING_DAYS || '30',
+        provider: 'renewal',
+        description: 'Number of days before expiration to display warning in UI'
+      },
+      {
+        key_name: 'CERT_CHECK_SCHEDULE',
+        key_value: process.env.CERT_CHECK_SCHEDULE || '0 0 * * *',
+        provider: 'renewal',
+        description: 'Cron expression for when to check certificates'
+      }
+    ];
+    return res.json(renewalSettings);
+  }
+  
+  // For other providers, get from database
   const settings = await database.getSettingsByProvider(provider);
   return res.json(settings);
 }));
@@ -860,12 +887,25 @@ app.post('/api/settings', asyncHandler(async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'key_name, key_value, and provider are required' });
   }
 
+  // Prevent updating certificate renewal settings that are now in .env
+  const envOnlySettings = ['CERT_RENEWAL_DAYS', 'CERT_WARNING_DAYS', 'CERT_CHECK_SCHEDULE'];
+  if (envOnlySettings.includes(key_name)) {
+    return res.status(400).json({ error: `${key_name} must be configured in the .env file` });
+  }
+
   await database.upsertSetting(key_name, key_value, provider, description);
   return res.status(201).json({ message: 'Setting saved successfully' });
 }));
 
 app.delete('/api/settings/:keyName', asyncHandler(async (req: Request, res: Response) => {
   const keyName = req.params.keyName;
+  
+  // Prevent deleting certificate renewal settings that are now in .env
+  const envOnlySettings = ['CERT_RENEWAL_DAYS', 'CERT_WARNING_DAYS', 'CERT_CHECK_SCHEDULE'];
+  if (envOnlySettings.includes(keyName)) {
+    return res.status(400).json({ error: `${keyName} must be configured in the .env file` });
+  }
+  
   await database.deleteSetting(keyName);
   return res.status(204).send();
 }));

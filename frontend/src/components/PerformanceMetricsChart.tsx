@@ -135,16 +135,45 @@ const PerformanceMetricsChart: React.FC<PerformanceMetricsChartProps> = ({ conne
     return `${(ms / 1000).toFixed(1)}s`;
   };
 
-  // Prepare data for timeline chart - use seconds to avoid duplicate timestamps
-  const timelineData: TimelineDataPoint[] = metrics.map((metric, index) => ({
-    timestamp: formatTimestampWithSeconds(metric.checked_at),
-    fullTimestamp: metric.checked_at,
-    dnsResolve: metric.dns_resolve_time || 0,
-    tcpConnect: metric.tcp_connect_time || 0,
-    tlsHandshake: metric.tls_handshake_time || 0,
-    certProcessing: metric.certificate_processing_time || 0,
-    totalTime: metric.total_time || 0
-  })).sort((a, b) => new Date(a.fullTimestamp).getTime() - new Date(b.fullTimestamp).getTime());
+  // Aggregate data to reduce chart clutter - group by time intervals
+  const aggregateData = (data: MetricData[], maxPoints: number = 20): TimelineDataPoint[] => {
+    if (data.length <= maxPoints) {
+      // If we have few data points, show them all
+      return data.map((metric) => ({
+        timestamp: formatTimestampWithSeconds(metric.checked_at),
+        fullTimestamp: metric.checked_at,
+        dnsResolve: metric.dns_resolve_time || 0,
+        tcpConnect: metric.tcp_connect_time || 0,
+        tlsHandshake: metric.tls_handshake_time || 0,
+        certProcessing: metric.certificate_processing_time || 0,
+        totalTime: metric.total_time || 0
+      })).sort((a, b) => new Date(a.fullTimestamp).getTime() - new Date(b.fullTimestamp).getTime());
+    }
+
+    // Group data into time buckets for aggregation
+    const sortedData = [...data].sort((a, b) => new Date(a.checked_at).getTime() - new Date(b.checked_at).getTime());
+    const bucketSize = Math.ceil(sortedData.length / maxPoints);
+    const aggregated: TimelineDataPoint[] = [];
+
+    for (let i = 0; i < sortedData.length; i += bucketSize) {
+      const bucket = sortedData.slice(i, i + bucketSize);
+      const bucketAverage = {
+        timestamp: formatTimestampWithSeconds(bucket[Math.floor(bucket.length / 2)].checked_at), // Use middle timestamp
+        fullTimestamp: bucket[Math.floor(bucket.length / 2)].checked_at,
+        dnsResolve: Math.round(bucket.reduce((sum, m) => sum + (m.dns_resolve_time || 0), 0) / bucket.length),
+        tcpConnect: Math.round(bucket.reduce((sum, m) => sum + (m.tcp_connect_time || 0), 0) / bucket.length),
+        tlsHandshake: Math.round(bucket.reduce((sum, m) => sum + (m.tls_handshake_time || 0), 0) / bucket.length),
+        certProcessing: Math.round(bucket.reduce((sum, m) => sum + (m.certificate_processing_time || 0), 0) / bucket.length),
+        totalTime: Math.round(bucket.reduce((sum, m) => sum + (m.total_time || 0), 0) / bucket.length)
+      };
+      aggregated.push(bucketAverage);
+    }
+
+    return aggregated;
+  };
+
+  // Prepare data for timeline chart with aggregation
+  const timelineData: TimelineDataPoint[] = aggregateData(metrics, 15); // Limit to 15 points max
 
   // Prepare data for average comparison chart
   const averageData: AverageDataPoint[] = averageMetrics ? [
@@ -294,7 +323,7 @@ const PerformanceMetricsChart: React.FC<PerformanceMetricsChartProps> = ({ conne
                   angle={-45}
                   textAnchor="end"
                   height={80}
-                  interval={0}
+                  interval="preserveStartEnd"
                 />
                 <YAxis 
                   tick={{ fontSize: 11 }}
@@ -392,7 +421,12 @@ const PerformanceMetricsChart: React.FC<PerformanceMetricsChartProps> = ({ conne
         {/* Data Points Summary */}
         <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between text-sm text-muted-foreground">
-            <span>{metrics.length} data points over last {timeRange}h</span>
+            <div className="flex flex-col">
+              <span>{metrics.length} total data points over last {timeRange}h</span>
+              {metrics.length > 15 && (
+                <span className="text-xs">Showing {timelineData.length} aggregated points for clarity</span>
+              )}
+            </div>
             <Button onClick={fetchMetrics} variant="ghost" size="sm">
               <TrendingUp className="w-4 h-4 mr-1" />
               Refresh

@@ -75,9 +75,8 @@ export class AutoRenewalCron {
         return false;
       }
 
-      const expirationDate = new Date(certInfo.validTo);
-      const now = new Date();
-      const daysUntilExpiration = Math.ceil((expirationDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+      // Use daysUntilExpiry directly from certInfo instead of parsing validTo string
+      const daysUntilExpiration = certInfo.daysUntilExpiry || 0;
 
       Logger.info(`Certificate for ${domain} expires in ${daysUntilExpiration} days`);
       
@@ -161,29 +160,21 @@ export class AutoRenewalCron {
   }
 
   /**
-   * Get renewal days threshold from settings
+   * Get renewal days threshold from environment variable
    */
   private async getRenewalDays(): Promise<number> {
-    try {
-      const setting = await this.database.getSetting('CERT_RENEWAL_DAYS');
-      return setting ? parseInt(setting.key_value) : 7; // Default to 7 days
-    } catch (error) {
-      Logger.warn('Failed to get CERT_RENEWAL_DAYS setting, using default of 7 days');
-      return 7;
-    }
+    const renewalDays = process.env.CERT_RENEWAL_DAYS ? parseInt(process.env.CERT_RENEWAL_DAYS) : 7;
+    Logger.debug(`Using CERT_RENEWAL_DAYS: ${renewalDays}`);
+    return renewalDays;
   }
 
   /**
-   * Get cron schedule from settings
+   * Get cron schedule from environment variable
    */
   private async getCronSchedule(): Promise<string> {
-    try {
-      const setting = await this.database.getSetting('CERT_CHECK_SCHEDULE');
-      return setting ? setting.key_value : '0 0 * * *'; // Default to midnight
-    } catch (error) {
-      Logger.warn('Failed to get CERT_CHECK_SCHEDULE setting, using default of midnight');
-      return '0 0 * * *';
-    }
+    const cronSchedule = process.env.CERT_CHECK_SCHEDULE || '0 0 * * *';
+    Logger.debug(`Using CERT_CHECK_SCHEDULE: ${cronSchedule}`);
+    return cronSchedule;
   }
 
   /**

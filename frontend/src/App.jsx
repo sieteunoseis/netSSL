@@ -1,5 +1,5 @@
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import NavBar from "./components/NavBar";
 import RightSidebar from "./components/RightSidebar";
 import Home from "./pages/Home";
@@ -15,8 +15,26 @@ import { Menu } from 'lucide-react';
 import templateConfig from "../template.config.json";
 
 function App() {
-  const [isSidebarExpanded, setIsSidebarExpanded] = useState(true);
+  // Start with sidebar closed on screens 1280px or smaller
+  const [isSidebarExpanded, setIsSidebarExpanded] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth > 1280;
+    }
+    return true;
+  });
   const [overallStatus, setOverallStatus] = useState({ total: 0, valid: 0, expiring: 0, expired: 0, autoRenew: 0 });
+
+  // Handle window resize to auto-collapse sidebar on small screens
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth <= 1280 && isSidebarExpanded) {
+        setIsSidebarExpanded(false);
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [isSidebarExpanded]);
 
   const toggleSidebar = () => setIsSidebarExpanded(!isSidebarExpanded);
   const collapseSidebar = (forceCollapse = false) => {

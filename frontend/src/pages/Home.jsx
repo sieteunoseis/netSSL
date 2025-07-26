@@ -42,6 +42,8 @@ const Home = ({ onStatusUpdate }) => {
   const [connectionState, setConnectionState] = useState({
     connections: [],
     isLoading: true,
+    isRetrying: false,
+    retryAttempt: 0,
   });
 
   const [certificateStatuses, setCertificateStatuses] = useState({});
@@ -63,13 +65,19 @@ const Home = ({ onStatusUpdate }) => {
     }
 
     try {
-      const response = await apiCall('/data');
+      // Add custom retry options for initial load
+      const response = await apiCall('/data', {
+        retries: 5, // More retries on initial load
+        retryDelay: 2000, // Start with 2 second delay
+      });
       const data = await response.json();
       
       setConnectionState((prev) => ({
         ...prev,
         connections: data,
         isLoading: false,
+        isRetrying: false,
+        retryAttempt: 0,
       }));
 
       // Fetch certificate information only for enabled connections
@@ -86,7 +94,27 @@ const Home = ({ onStatusUpdate }) => {
       }
     } catch (error) {
       console.error(error);
-      navigate("/error");
+      
+      // Check if it's a connection error (backend starting up)
+      const isConnectionError = 
+        error instanceof TypeError && error.message.includes('fetch') ||
+        error.message?.includes('ECONNREFUSED');
+      
+      if (isConnectionError) {
+        // Show a more user-friendly message for backend startup
+        toast({
+          title: "Waiting for backend",
+          description: "The backend server is starting up. This page will refresh automatically.",
+          duration: 5000,
+        });
+        
+        // Wait a bit longer then try to navigate to error page
+        setTimeout(() => {
+          navigate("/error");
+        }, 8000);
+      } else {
+        navigate("/error");
+      }
     }
   };
 
@@ -250,8 +278,16 @@ const Home = ({ onStatusUpdate }) => {
       <div className="min-h-full w-full py-20 relative bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-slate-900 dark:to-indigo-950">
         <BackgroundLogo />
         <div className="max-w-6xl mx-auto px-4">
-          <div className="flex items-center justify-center h-64">
+          <div className="flex flex-col items-center justify-center h-64 space-y-4">
             <RefreshCw className="w-8 h-8 animate-spin text-blue-500" />
+            <div className="text-center">
+              <p className="text-lg font-medium text-gray-700 dark:text-gray-300">
+                Connecting to backend server...
+              </p>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                This may take a moment if the server is starting up
+              </p>
+            </div>
           </div>
         </div>
       </div>

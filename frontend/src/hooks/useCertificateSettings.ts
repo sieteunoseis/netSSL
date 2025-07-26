@@ -17,7 +17,10 @@ export const useCertificateSettings = () => {
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const response = await apiCall('/settings/renewal');
+        const response = await apiCall('/settings/renewal', {
+          retries: 5,
+          retryDelay: 2000,
+        });
         const data = await response.json();
         
         const renewalSettings: CertificateSettings = {
