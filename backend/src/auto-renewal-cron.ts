@@ -36,8 +36,8 @@ export class AutoRenewalCron {
       const expiringConnections = [];
 
       for (const connection of connections) {
-        // Only process VOS applications with auto_renew enabled
-        if (connection.application_type !== 'vos' || !connection.auto_renew) {
+        // Only process connections with auto_renew enabled and API-based DNS providers
+        if (!connection.auto_renew || connection.dns_provider === 'custom') {
           continue;
         }
 

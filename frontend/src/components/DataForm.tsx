@@ -27,6 +27,10 @@ interface Column {
     field: string;
     values: (string | boolean)[];
   }[];
+  conditionalNot?: {
+    field: string;
+    value: string | boolean;
+  };
   validator?: {
     name: keyof typeof validator;
     options?: unknown;
@@ -270,6 +274,16 @@ const DataForm: React.FC<DataFormProps> = ({
           shouldShow = col.conditionalMultiple.some(condition => 
             condition.values.includes(formData[condition.field])
           );
+        } else if (col.conditionalNot) {
+          const fieldValue = formData[col.conditionalNot.field];
+          const conditionValue = col.conditionalNot.value;
+          
+          // Handle boolean comparisons properly
+          if (typeof conditionValue === 'boolean') {
+            shouldShow = Boolean(fieldValue === true || fieldValue === 1 || fieldValue === "1") !== conditionValue;
+          } else {
+            shouldShow = fieldValue !== conditionValue;
+          }
         }
         
         // For conditional fields like custom_csr, make them required when their condition is met

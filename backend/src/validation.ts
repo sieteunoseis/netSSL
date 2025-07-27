@@ -236,7 +236,12 @@ export const sanitizeConnectionData = (data: any): Partial<ConnectionRecord> => 
   }
   
   if (data.auto_renew !== undefined) {
-    sanitized.auto_renew = Boolean(data.auto_renew);
+    // Don't allow auto_renew for manual DNS connections
+    if (data.dns_provider === 'custom') {
+      sanitized.auto_renew = false;
+    } else {
+      sanitized.auto_renew = Boolean(data.auto_renew);
+    }
   }
   
   if (data.auto_renew_status !== undefined) {

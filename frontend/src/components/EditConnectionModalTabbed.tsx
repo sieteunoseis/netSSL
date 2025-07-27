@@ -29,6 +29,10 @@ interface Column {
     field: string;
     values: (string | boolean)[];
   }[];
+  conditionalNot?: {
+    field: string;
+    value: string | boolean;
+  };
   validator: {
     name: keyof typeof validator;
     options?: any;
@@ -237,7 +241,7 @@ const EditConnectionModalTabbed: React.FC<EditConnectionModalTabbedProps> = ({
     return fields.some(fieldName => {
       const field = data.find(f => f.name === fieldName);
       if (!field) return false;
-      if (!field.conditional && !field.conditionalMultiple) return true;
+      if (!field.conditional && !field.conditionalMultiple && !field.conditionalNot) return true;
       
       if (field.conditional) {
         return formData[field.conditional.field] === field.conditional.value;
@@ -247,6 +251,10 @@ const EditConnectionModalTabbed: React.FC<EditConnectionModalTabbedProps> = ({
         return field.conditionalMultiple.some(condition => 
           condition.values.includes(formData[condition.field])
         );
+      }
+      
+      if (field.conditionalNot) {
+        return formData[field.conditionalNot.field] !== field.conditionalNot.value;
       }
       
       return true;
@@ -259,7 +267,7 @@ const EditConnectionModalTabbed: React.FC<EditConnectionModalTabbedProps> = ({
     return data.filter(field => {
       if (!fieldNames.includes(field.name)) return false;
       
-      if (!field.conditional && !field.conditionalMultiple) return true;
+      if (!field.conditional && !field.conditionalMultiple && !field.conditionalNot) return true;
       
       if (field.conditional) {
         return formData[field.conditional.field] === field.conditional.value;
@@ -269,6 +277,10 @@ const EditConnectionModalTabbed: React.FC<EditConnectionModalTabbedProps> = ({
         return field.conditionalMultiple.some(condition => 
           condition.values.includes(formData[condition.field])
         );
+      }
+      
+      if (field.conditionalNot) {
+        return formData[field.conditionalNot.field] !== field.conditionalNot.value;
       }
       
       return true;

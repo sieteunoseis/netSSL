@@ -259,7 +259,7 @@ const Home = ({ onStatusUpdate }) => {
       if (status.status === "valid") acc.valid++;
       else if (status.status === "expiring") acc.expiring++;
       else if (status.status === "expired") acc.expired++;
-      if (conn.auto_renew) acc.autoRenew++;
+      if (conn.dns_provider !== 'custom' && conn.auto_renew) acc.autoRenew++;
       return acc;
     }, { total: 0, valid: 0, expiring: 0, expired: 0, autoRenew: 0 });
 

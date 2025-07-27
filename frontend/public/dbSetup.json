@@ -275,14 +275,12 @@
     "type": "SWITCH",
     "validator": { "name": "isAscii", "options": "" },
     "label": "Auto Renew Certificate",
-    "description": "Automatically renew certificate 7 days before expiration at midnight",
+    "description": "Automatically renew certificate before expiration (requires API-based DNS provider)",
     "default": false,
-    "conditionalMultiple": [
-      {
-        "field": "application_type",
-        "values": ["vos", "ise"]
-      }
-    ]
+    "conditionalNot": {
+      "field": "dns_provider",
+      "value": "custom"
+    }
   },
   {
     "name": "is_enabled",

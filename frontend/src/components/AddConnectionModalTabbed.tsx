@@ -22,6 +22,7 @@ interface FormField {
   default?: string | boolean;
   conditional?: FieldCondition;
   conditionalMultiple?: FieldConditionMultiple[];
+  conditionalNot?: FieldCondition;
 }
 
 interface AddConnectionModalTabbedProps {
@@ -100,7 +101,7 @@ const AddConnectionModalTabbed: React.FC<AddConnectionModalTabbedProps> = ({
     return fields.some(fieldName => {
       const field = data.find(f => f.name === fieldName);
       if (!field) return false;
-      if (!field.conditional && !field.conditionalMultiple) return true;
+      if (!field.conditional && !field.conditionalMultiple && !field.conditionalNot) return true;
       
       if (field.conditional) {
         return formData[field.conditional.field] === field.conditional.value;
@@ -110,6 +111,10 @@ const AddConnectionModalTabbed: React.FC<AddConnectionModalTabbedProps> = ({
         return field.conditionalMultiple.some((condition: FieldConditionMultiple) => 
           condition.values.includes(formData[condition.field])
         );
+      }
+      
+      if (field.conditionalNot) {
+        return formData[field.conditionalNot.field] !== field.conditionalNot.value;
       }
       
       return true;
@@ -122,7 +127,7 @@ const AddConnectionModalTabbed: React.FC<AddConnectionModalTabbedProps> = ({
     return data.filter(field => {
       if (!fieldNames.includes(field.name)) return false;
       
-      if (!field.conditional && !field.conditionalMultiple) return true;
+      if (!field.conditional && !field.conditionalMultiple && !field.conditionalNot) return true;
       
       if (field.conditional) {
         return formData[field.conditional.field] === field.conditional.value;
@@ -132,6 +137,10 @@ const AddConnectionModalTabbed: React.FC<AddConnectionModalTabbedProps> = ({
         return field.conditionalMultiple.some((condition: FieldConditionMultiple) => 
           condition.values.includes(formData[condition.field])
         );
+      }
+      
+      if (field.conditionalNot) {
+        return formData[field.conditionalNot.field] !== field.conditionalNot.value;
       }
       
       return true;
