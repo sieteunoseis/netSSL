@@ -56,7 +56,7 @@ const CertificateBadges = ({ overallStatus }) => {
         return (
           <Badge 
             key={index}
-            className={`flex items-center space-x-1 px-1 py-1 md:px-2 ${badge.color}`}
+            className={`flex items-center space-x-1 px-1 py-1 md:px-2 rounded-[4px] ${badge.color}`}
           >
             <Icon size={10} className="md:hidden" />
             <Icon size={12} className="hidden md:block" />

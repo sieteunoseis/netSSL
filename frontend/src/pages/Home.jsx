@@ -5,38 +5,50 @@ import BackgroundLogo from "@/components/BackgroundLogo";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import AddConnectionModal from "@/components/AddConnectionModalTabbed";
 import SettingsModal from "@/components/SettingsModal";
 import CertificateInfo from "@/components/CertificateInfo";
 import ServiceRestartButton from "@/components/ServiceRestartButton";
 import CertificateRenewalButton from "@/components/CertificateRenewalButton";
 import CertificateDownloadButton from "@/components/CertificateDownloadButton";
+import EditConnectionModalTabbed from "@/components/EditConnectionModalTabbed";
 import { apiCall } from "@/lib/api";
-import { filterEnabledConnections, getConnectionDisplayHostname, isWildcardCertificate, getCertificateValidationDomain } from "@/lib/connection-utils";
+import { filterEnabledConnections, getConnectionDisplayHostname, isWildcardCertificate, getCertificateValidationDomain, isConnectionEnabled } from "@/lib/connection-utils";
 import { useWebSocket } from "@/contexts/WebSocketContext";
 import { useCertificateSettings } from "@/hooks/useCertificateSettings";
+import PerformanceMetricsChart from "@/components/PerformanceMetricsChart";
 import templateConfig from "../../template.config.json";
 import { 
-  FileText, 
-  Server, 
-  AlertCircle, 
-  CheckCircle, 
-  Clock, 
-  RefreshCw, 
-  Shield,
-  Zap,
-  Globe,
-  Terminal,
-  RotateCcw,
-  Settings,
-  Wrench
+  FileText, Server, AlertCircle, CheckCircle, Clock, RefreshCw, Shield,
+  Zap, Globe, Terminal, RotateCcw, Settings, Wrench, Plus, Search,
+  SortAsc, SortDesc, LayoutGrid, Table as TableIcon, ChevronDown, 
+  ChevronRight, Info, Activity, Wifi, AlertTriangle, Download, Upload,
+  ExternalLink, Edit
 } from "lucide-react";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 
 const Home = ({ onStatusUpdate }) => {
   const { toast } = useToast();
   const navigate = useNavigate();
   const { getConnectionOperations } = useWebSocket();
   const certificateSettings = useCertificateSettings();
+
+  // View state
+  const [viewMode, setViewMode] = useState('full'); // 'full', 'compact'
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('name');
+  const [sortOrder, setSortOrder] = useState('asc');
+  const [expandedRows, setExpandedRows] = useState(new Set());
+  const [expandedCards, setExpandedCards] = useState(new Set());
 
   // Connection state
   const [connectionState, setConnectionState] = useState({
@@ -48,165 +60,161 @@ const Home = ({ onStatusUpdate }) => {
 
   const [certificateStatuses, setCertificateStatuses] = useState({});
   const [downloadRefreshTrigger, setDownloadRefreshTrigger] = useState(0);
+  const [editingConnection, setEditingConnection] = useState(null);
 
-  const [restartingService, setRestartingService] = useState(new Set());
-  const [confirmRestart, setConfirmRestart] = useState(null); // {id, name} for confirmation dialog
-  const [confirmCertRenewal, setConfirmCertRenewal] = useState(null); // {id, name} for confirmation dialog
-
-  // Fetch connections data
-  const fetchConnectionsData = async () => {
-    if (!templateConfig.useBackend) {
-      // Skip API call if backend is disabled
-      setConnectionState((prev) => ({
-        ...prev,
-        isLoading: false,
-      }));
-      return;
-    }
-
+  const fetchConnections = async (retryCount = 0) => {
     try {
-      // Add custom retry options for initial load
-      const response = await apiCall('/data', {
-        retries: 5, // More retries on initial load
-        retryDelay: 2000, // Start with 2 second delay
-      });
-      const data = await response.json();
+      setConnectionState(prev => ({ ...prev, isRetrying: retryCount > 0, retryAttempt: retryCount }));
       
-      setConnectionState((prev) => ({
-        ...prev,
-        connections: data,
-        isLoading: false,
-        isRetrying: false,
-        retryAttempt: 0,
-      }));
+      const response = await apiCall('/data');
+      const data = await response.json();
+      console.log('Fetched connections:', data);
+      
+      // Debug ISE connections specifically
+      const iseConnections = data.filter(conn => conn.name.includes('ISE'));
+      console.log('ISE connections found:', iseConnections);
+      iseConnections.forEach(conn => {
+        console.log(`${conn.name}: app_type=${conn.application_type}, enable_ssh=${conn.enable_ssh}`);
+      });
+      
+      setConnectionState({ connections: data, isLoading: false, isRetrying: false, retryAttempt: 0 });
 
-      // Fetch certificate information only for enabled connections
+      // Fetch certificate status for enabled connections
       const enabledConnections = filterEnabledConnections(data);
-      await fetchCertificateStatuses(enabledConnections);
-
-      if (data.length === 0) {
-        toast({
-          title: "No connections found",
-          description: "Use the 'Add Connection' button to create your first server connection.",
-          variant: "destructive",
-          duration: 3000,
-        });
+      for (const connection of enabledConnections) {
+        await fetchCertificateStatus(connection);
       }
     } catch (error) {
-      console.error(error);
-      
-      // Check if it's a connection error (backend starting up)
-      const isConnectionError = 
-        error instanceof TypeError && error.message.includes('fetch') ||
-        error.message?.includes('ECONNREFUSED');
-      
-      if (isConnectionError) {
-        // Show a more user-friendly message for backend startup
+      console.error("Error fetching connections:", error);
+      if (error.code === 'ECONNREFUSED' && retryCount < 10) {
+        setTimeout(() => fetchConnections(retryCount + 1), 2000);
+      } else {
+        setConnectionState(prev => ({ ...prev, isLoading: false, isRetrying: false }));
         toast({
-          title: "Waiting for backend",
-          description: "The backend server is starting up. This page will refresh automatically.",
+          title: "Error",
+          description: error.message || "Failed to fetch connections",
+          variant: "destructive",
+        });
+      }
+    }
+  };
+
+  const fetchCertificateStatus = async (connection) => {
+    try {
+      const response = await apiCall(`/data/${connection.id}/certificate`);
+      const data = await response.json();
+      setCertificateStatuses(prev => ({ ...prev, [connection.id]: data }));
+    } catch (error) {
+      console.error(`Error fetching certificate status for ${connection.name}:`, error);
+      setCertificateStatuses(prev => ({ ...prev, [connection.id]: { error: error.message } }));
+    }
+  };
+
+  const handleConnectionAdded = () => {
+    fetchConnections();
+  };
+
+  const handleConnectionUpdated = async () => {
+    setEditingConnection(null);
+    await fetchConnections();
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    
+    // If the string is already a formatted date (contains "at" and timezone), return as is
+    if (typeof dateString === 'string' && dateString.includes(' at ') && 
+        (dateString.includes('PDT') || dateString.includes('PST') || dateString.includes('EST') || dateString.includes('EDT'))) {
+      return dateString;
+    }
+    
+    try {
+      // Handle various date formats
+      let date;
+      
+      // If it's already a Date object
+      if (dateString instanceof Date) {
+        date = dateString;
+      }
+      // If it's a number (timestamp)
+      else if (typeof dateString === 'number') {
+        date = new Date(dateString);
+      }
+      // If it's a string
+      else {
+        date = new Date(dateString);
+      }
+      
+      if (isNaN(date.getTime())) {
+        // Don't log warning for already formatted dates - just return the string
+        return dateString;
+      }
+      
+      return date.toLocaleDateString();
+    } catch (error) {
+      // Don't log error for already formatted dates - just return the string
+      return dateString;
+    }
+  };
+
+  const handleSSHTest = async (connection) => {
+    try {
+      toast({
+        title: "Testing SSH Connection",
+        description: `Testing SSH connection to ${connection.name}...`,
+        duration: 3000,
+      });
+
+      const response = await apiCall(`/data/${connection.id}/test-ssh`, {
+        method: 'POST'
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        toast({
+          title: "SSH Test Successful",
+          description: `Successfully connected to ${connection.name} via SSH`,
           duration: 5000,
         });
-        
-        // Wait a bit longer then try to navigate to error page
-        setTimeout(() => {
-          navigate("/error");
-        }, 8000);
       } else {
-        navigate("/error");
+        throw new Error('SSH test failed');
       }
+    } catch (error) {
+      console.error('SSH test error:', error);
+      toast({
+        title: "SSH Test Failed",
+        description: `Failed to connect to ${connection.name} via SSH. Check credentials and connectivity.`,
+        variant: "destructive",
+        duration: 5000,
+      });
     }
-  };
-
-  // Fetch initial connections
-  useEffect(() => {
-    fetchConnectionsData();
-  }, [navigate, toast]);
-
-  // Refresh data when the page becomes visible (e.g., returning from Connections page)
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        fetchConnectionsData();
-      }
-    };
-
-    const handleFocus = () => {
-      fetchConnectionsData();
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', handleFocus);
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', handleFocus);
-    };
-  }, []);
-
-
-
-  const fetchCertificateStatuses = async (connections) => {
-    const statuses = {};
-    
-    for (const connection of connections) {
-      try {
-        const response = await apiCall(`/data/${connection.id}/certificate`);
-        if (response.ok) {
-          const certInfo = await response.json();
-          statuses[connection.id] = certInfo;
-        } else if (response.status === 404) {
-          // Certificate not found - this is normal for test servers or unreachable hosts
-          statuses[connection.id] = null;
-        }
-      } catch (error) {
-        // Silently handle certificate fetch errors for unreachable servers
-        statuses[connection.id] = null;
-      }
-    }
-    
-    setCertificateStatuses(statuses);
-  };
-
-  const handleConnectionAdded = async () => {
-    await fetchConnectionsData();
-    
-    toast({
-      title: "Connection Added",
-      description: "New server connection has been added successfully.",
-      duration: 3000,
-    });
   };
 
   const getCertificateStatus = (connection) => {
+    // Check if connection is disabled first
+    if (!isConnectionEnabled(connection)) {
+      return {
+        status: "disabled",
+        text: "Disabled",
+        color: "bg-gray-100 text-gray-800",
+        icon: AlertCircle
+      };
+    }
+
     const certInfo = certificateStatuses[connection.id];
-    
-    if (!certInfo) {
+    if (!certInfo || certInfo.error) {
       return {
         status: "unknown",
-        text: "Certificate info unavailable",
+        text: certInfo?.error || "Unable to check certificate",
         color: "bg-gray-100 text-gray-800",
-        icon: AlertCircle,
-        days: null
+        icon: AlertCircle
       };
     }
 
-    // Check expiry first (this handles both expired and invalid due to expiry)
-    if (certInfo.daysUntilExpiry <= 0) {
-      return {
-        status: "expired",
-        text: "Certificate expired",
-        color: "bg-red-100 text-red-800",
-        icon: AlertCircle,
-        days: certInfo.daysUntilExpiry
-      };
-    }
-
-    // Check other invalid conditions (self-signed, etc.)
     if (!certInfo.isValid) {
       return {
-        status: "invalid",
-        text: "Certificate invalid",
+        status: "expired",
+        text: "Certificate Expired",
         color: "bg-red-100 text-red-800",
         icon: AlertCircle,
         days: certInfo.daysUntilExpiry
@@ -246,9 +254,8 @@ const Home = ({ onStatusUpdate }) => {
     return providers[provider] || provider;
   };
 
-
+  // Calculate overall status
   const overallStatus = useMemo(() => {
-    // Filter to only enabled connections
     const enabledConnections = filterEnabledConnections(connectionState.connections);
     
     if (enabledConnections.length === 0) return { total: 0, valid: 0, expiring: 0, expired: 0, autoRenew: 0 };
@@ -265,30 +272,624 @@ const Home = ({ onStatusUpdate }) => {
 
     return summary;
   }, [connectionState.connections, certificateStatuses, certificateSettings.warningDays]);
-  
-  // Update parent component when status changes
+
+  // Update parent component status
   useEffect(() => {
-    if (onStatusUpdate) {
-      onStatusUpdate(overallStatus);
-    }
+    onStatusUpdate?.(overallStatus);
   }, [overallStatus, onStatusUpdate]);
 
-  if (connectionState.isLoading) {
+  // Filtered and sorted connections
+  const filteredConnections = useMemo(() => {
+    // Show all connections (enabled and disabled) but apply styling differences
+    let filtered = connectionState.connections.filter(conn => {
+      const matchesSearch = conn.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                          conn.hostname.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                          conn.domain.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      const matchesType = typeFilter === 'all' || conn.application_type === typeFilter;
+      
+      const status = getCertificateStatus(conn);
+      let matchesStatus = true;
+      if (statusFilter === 'valid') matchesStatus = status.status === 'valid';
+      if (statusFilter === 'expiring') matchesStatus = status.status === 'expiring';
+      if (statusFilter === 'expired') matchesStatus = status.status === 'expired';
+      
+      return matchesSearch && matchesType && matchesStatus;
+    });
+
+    // Sort connections
+    filtered.sort((a, b) => {
+      let aVal, bVal;
+      switch (sortBy) {
+        case 'name':
+          aVal = a.name.toLowerCase();
+          bVal = b.name.toLowerCase();
+          break;
+        case 'status':
+          aVal = getCertificateStatus(a).days || 0;
+          bVal = getCertificateStatus(b).days || 0;
+          break;
+        case 'type':
+          aVal = a.application_type;
+          bVal = b.application_type;
+          break;
+        case 'expiry':
+          aVal = getCertificateStatus(a).days || 0;
+          bVal = getCertificateStatus(b).days || 0;
+          break;
+        default:
+          return 0;
+      }
+      
+      if (aVal < bVal) return sortOrder === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortOrder === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    return filtered;
+  }, [connectionState.connections, searchTerm, statusFilter, typeFilter, sortBy, sortOrder, certificateStatuses]);
+
+  useEffect(() => {
+    fetchConnections();
+  }, []);
+
+  const toggleRowExpansion = (connectionId) => {
+    const newExpanded = new Set(expandedRows);
+    if (newExpanded.has(connectionId)) {
+      newExpanded.delete(connectionId);
+    } else {
+      newExpanded.add(connectionId);
+    }
+    setExpandedRows(newExpanded);
+  };
+
+  const toggleCardExpansion = (connectionId) => {
+    const newExpanded = new Set(expandedCards);
+    if (newExpanded.has(connectionId)) {
+      newExpanded.delete(connectionId);
+    } else {
+      newExpanded.add(connectionId);
+    }
+    setExpandedCards(newExpanded);
+  };
+
+  const getStatusBadge = (connection) => {
+    const status = getCertificateStatus(connection);
+    const statusColors = {
+      valid: "success",
+      expiring: "warning", 
+      expired: "destructive",
+      unknown: "secondary",
+      disabled: "secondary"
+    };
+    return <Badge variant={statusColors[status.status] || "secondary"} className="rounded-[4px]">{status.text}</Badge>;
+  };
+
+  const renderConnectionCard = (connection) => {
+    const status = getCertificateStatus(connection);
+    const certInfo = certificateStatuses[connection.id];
+    const isExpanded = expandedCards.has(connection.id);
+    const operations = getConnectionOperations(connection.id);
+    const activeOperation = operations.find(op => 
+      ['pending', 'in_progress'].includes(op.status)
+    );
+    const isEnabled = isConnectionEnabled(connection);
+
     return (
-      <div className="min-h-full w-full py-20 relative bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-slate-900 dark:to-indigo-950">
-        <BackgroundLogo />
-        <div className="max-w-6xl mx-auto px-4">
-          <div className="flex flex-col items-center justify-center h-64 space-y-4">
-            <RefreshCw className="w-8 h-8 animate-spin text-blue-500" />
-            <div className="text-center">
-              <p className="text-lg font-medium text-gray-700 dark:text-gray-300">
-                Connecting to backend server...
-              </p>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-                This may take a moment if the server is starting up
-              </p>
-            </div>
+      <Card key={connection.id} className={`overflow-hidden bg-card/85 backdrop-blur-sm ${!isEnabled ? 'opacity-50 grayscale' : ''}`}>
+        <Collapsible open={isExpanded} onOpenChange={() => toggleCardExpansion(connection.id)}>
+          <CollapsibleTrigger className="w-full">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between w-full">
+                <div className="flex items-center justify-between w-full">
+                  <div className="flex items-center gap-4 flex-1">
+                    <div className="flex-1 text-left">
+                      <div className="flex items-center gap-3 mb-1">
+                        <h3 className="font-semibold">{connection.name}</h3>
+                        <div className="w-px h-4 bg-gray-300 dark:bg-gray-600"></div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-xs px-2 py-1 rounded-[4px]">
+                            {connection.application_type.toUpperCase()}
+                          </Badge>
+                          {connection.auto_renew && connection.dns_provider !== 'custom' && (
+                            <Badge variant="secondary" className="text-xs px-2 py-1 rounded-[4px]">
+                              <RefreshCw className="h-3 w-3 mr-1" />
+                              AUTO-RENEW
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                        <span>{getConnectionDisplayHostname(connection)}</span>
+                        <span>•</span>
+                        <span>{connection.ssl_provider}</span>
+                        <span>•</span>
+                        <span>{connection.dns_provider}</span>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-3">
+                      <Badge variant={status.status === 'valid' ? 'success' : status.status === 'expiring' ? 'warning' : 'destructive'} className="flex items-center gap-1 rounded-[4px]">
+                        <status.icon className="h-4 w-4" />
+                        <span>{status.text}</span>
+                      </Badge>
+                      
+                      <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </CardHeader>
+          </CollapsibleTrigger>
+          
+          <CollapsibleContent>
+            <CardContent className="pt-0 pb-4">
+              <Tabs defaultValue="overview" className="w-full">
+                <TabsList className="grid w-full grid-cols-5 h-9">
+                  <TabsTrigger value="overview" className="text-xs">
+                    <Info className="h-3 w-3 mr-1" />
+                    Overview
+                  </TabsTrigger>
+                  <TabsTrigger value="certificate" className="text-xs">
+                    <Shield className="h-3 w-3 mr-1" />
+                    Certificate
+                  </TabsTrigger>
+                  <TabsTrigger value="performance" className="text-xs">
+                    <Zap className="h-3 w-3 mr-1" />
+                    Performance
+                  </TabsTrigger>
+                  <TabsTrigger value="tools" className="text-xs">
+                    <Wrench className="h-3 w-3 mr-1" />
+                    Tools
+                  </TabsTrigger>
+                  <TabsTrigger value="settings" className="text-xs">
+                    <Settings className="h-3 w-3 mr-1" />
+                    Settings
+                  </TabsTrigger>
+                </TabsList>
+                
+                <div className="mt-4">
+                  <TabsContent value="overview" className="mt-0">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Full Domain</p>
+                        <p className="text-sm">{getConnectionDisplayHostname(connection)}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Application Type</p>
+                        <p className="text-sm capitalize">{connection.application_type}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">SSL Provider</p>
+                        <p className="text-sm capitalize">{connection.ssl_provider}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">DNS Provider</p>
+                        <p className="text-sm capitalize">{connection.dns_provider}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Certificate Status</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          {(() => {
+                            const status = getCertificateStatus(connection);
+                            const StatusIcon = status.icon;
+                            return (
+                              <>
+                                <StatusIcon className="h-4 w-4" />
+                                <span className="text-sm">{status.text}</span>
+                              </>
+                            );
+                          })()}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Auto-renewal</p>
+                        <p className="text-sm">{connection.auto_renew && connection.dns_provider !== 'custom' ? 'Enabled' : 'Disabled'}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">SSH Access</p>
+                        <p className="text-sm">{connection.enable_ssh ? 'Enabled' : 'Disabled'}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Last Issued</p>
+                        <p className="text-sm">{connection.last_cert_issued ? new Date(connection.last_cert_issued).toLocaleDateString() : 'Never'}</p>
+                      </div>
+                    </div>
+                  </TabsContent>
+                  
+                  <TabsContent value="certificate" className="mt-0">
+                    {(() => {
+                      const certInfo = certificateStatuses[connection.id];
+                      if (!certInfo) {
+                        return <div className="text-sm text-muted-foreground">Certificate information not available</div>;
+                      }
+                      return (
+                        <div className="space-y-4">
+                          {/* Subject Information */}
+                          <div>
+                            <h4 className="font-medium text-sm mb-3">Subject Certificate</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                              <div>
+                                <span className="font-medium text-muted-foreground">Common Name (CN):</span>
+                                <p className="mt-1">{certInfo.subject?.CN || 'N/A'}</p>
+                              </div>
+                              <div>
+                                <span className="font-medium text-muted-foreground">Organization (O):</span>
+                                <p className="mt-1">{certInfo.subject?.O || 'N/A'}</p>
+                              </div>
+                              <div>
+                                <span className="font-medium text-muted-foreground">Organizational Unit (OU):</span>
+                                <p className="mt-1">{certInfo.subject?.OU || 'N/A'}</p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Issuer Information */}
+                          <div>
+                            <h4 className="font-medium text-sm mb-3">Issuer Certificate</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                              <div>
+                                <span className="font-medium text-muted-foreground">Common Name (CN):</span>
+                                <p className="mt-1">{certInfo.issuer?.CN || 'N/A'}</p>
+                              </div>
+                              <div>
+                                <span className="font-medium text-muted-foreground">Organization (O):</span>
+                                <p className="mt-1">{certInfo.issuer?.O || 'N/A'}</p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Certificate Details */}
+                          <div>
+                            <h4 className="font-medium text-sm mb-3">Certificate Details</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                              <div>
+                                <span className="font-medium text-muted-foreground">Valid From:</span>
+                                <p className="mt-1">{formatDate(certInfo.validFrom)}</p>
+                              </div>
+                              <div>
+                                <span className="font-medium text-muted-foreground">Valid To:</span>
+                                <p className="mt-1">{formatDate(certInfo.validTo)}</p>
+                              </div>
+                              <div>
+                                <span className="font-medium text-muted-foreground">Serial Number:</span>
+                                <p className="mt-1 font-mono text-xs">{certInfo.serialNumber || 'N/A'}</p>
+                              </div>
+                              <div>
+                                <span className="font-medium text-muted-foreground">Algorithm:</span>
+                                <p className="mt-1">{certInfo.signatureAlgorithm || 'N/A'}</p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Subject Alternative Names */}
+                          {certInfo.subjectAltNames && certInfo.subjectAltNames.length > 0 && (
+                            <div>
+                              <h4 className="font-medium text-sm mb-3">Subject Alternative Names</h4>
+                              <div className="text-sm">
+                                <div className="flex flex-wrap gap-2">
+                                  {certInfo.subjectAltNames.map((san, index) => (
+                                    <Badge key={index} variant="secondary" className="text-xs rounded-[4px]">
+                                      {san}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </TabsContent>
+                  
+                  <TabsContent value="performance" className="mt-0">
+                    <PerformanceMetricsChart 
+                      connectionId={connection.id}
+                      connectionName={connection.name}
+                      showIcons={true}
+                      showGrade={true}
+                    />
+                  </TabsContent>
+                  
+                  <TabsContent value="tools" className="mt-0">
+                    <div className="grid grid-cols-2 gap-2">
+                      <CertificateRenewalButton
+                        connection={connection}
+                        onSuccess={() => {
+                          fetchCertificateStatus(connection);
+                          fetchConnections();
+                        }}
+                        refresh={() => fetchCertificateStatus(connection)}
+                        isDisabled={activeOperation}
+                      />
+                      
+                      <CertificateDownloadButton
+                        connection={connection}
+                        refreshTrigger={downloadRefreshTrigger}
+                      />
+
+                      {connection.application_type === 'vos' && connection.enable_ssh && (
+                        <ServiceRestartButton
+                          connection={connection}
+                          onSuccess={() => fetchCertificateStatus(connection)}
+                          isDisabled={activeOperation}
+                        />
+                      )}
+
+                      {connection.enable_ssh && (
+                        <Button
+                          onClick={() => {
+                            console.log('SSH Test - Connection:', connection);
+                            console.log('SSH Test - App Type:', connection.application_type);
+                            console.log('SSH Test - Enable SSH:', connection.enable_ssh);
+                            handleSSHTest(connection);
+                          }}
+                          size="sm"
+                          variant="outline"
+                          className="justify-center border-blue-200 hover:border-blue-300 hover:bg-blue-50 dark:border-blue-800 dark:hover:border-blue-700 dark:hover:bg-blue-950"
+                        >
+                          <Terminal className="h-4 w-4 mr-2 text-blue-600 dark:text-blue-400" />
+                          Test SSH
+                        </Button>
+                      )}
+
+                      <Button
+                        onClick={() => window.open(`https://${getConnectionDisplayHostname(connection)}`, '_blank')}
+                        size="sm"
+                        variant="outline"
+                        className="justify-center border-green-200 hover:border-green-300 hover:bg-green-50 dark:border-green-800 dark:hover:border-green-700 dark:hover:bg-green-950"
+                      >
+                        <ExternalLink className="h-4 w-4 mr-2 text-green-600 dark:text-green-400" />
+                        View in Browser
+                      </Button>
+                    </div>
+                  </TabsContent>
+                  
+                  <TabsContent value="settings" className="mt-0">
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
+                      <div className="flex items-center justify-between p-3 bg-background rounded-lg border">
+                        <div>
+                          <p className="font-medium text-sm">Auto-renewal</p>
+                          <p className="text-xs text-muted-foreground">Automatic certificate renewal</p>
+                        </div>
+                        <Badge variant={connection.auto_renew && connection.dns_provider !== 'custom' ? "default" : "secondary"} className="rounded-[4px]">
+                          {connection.auto_renew && connection.dns_provider !== 'custom' ? "On" : "Off"}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center justify-between p-3 bg-background rounded-lg border">
+                        <div>
+                          <p className="font-medium text-sm">SSH Access</p>
+                          <p className="text-xs text-muted-foreground">Allow SSH connections</p>
+                        </div>
+                        <Badge variant={connection.enable_ssh ? "default" : "secondary"} className="rounded-[4px]">
+                          {connection.enable_ssh ? "On" : "Off"}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center justify-between p-3 bg-background rounded-lg border">
+                        <div>
+                          <p className="font-medium text-sm">Auto Restart</p>
+                          <p className="text-xs text-muted-foreground">Restart service after cert</p>
+                        </div>
+                        <Badge variant={connection.auto_restart_service ? "default" : "secondary"} className="rounded-[4px]">
+                          {connection.auto_restart_service ? "On" : "Off"}
+                        </Badge>
+                      </div>
+                    </div>
+                    <Button 
+                      onClick={() => {
+                        console.log('Edit (Full) - Connection being edited:', connection);
+                        console.log('Edit (Full) - App Type:', connection.application_type);
+                        setEditingConnection(connection);
+                      }}
+                      size="sm" 
+                      variant="outline"
+                    >
+                      <Edit className="h-4 w-4 mr-2" />
+                      Edit Connection
+                    </Button>
+                  </TabsContent>
+                </div>
+              </Tabs>
+            </CardContent>
+          </CollapsibleContent>
+        </Collapsible>
+      </Card>
+    );
+  };
+
+  const renderExpandedRow = (connection) => {
+    const certInfo = certificateStatuses[connection.id];
+    const operations = getConnectionOperations(connection.id);
+    const activeOperation = operations.find(op => 
+      ['pending', 'in_progress'].includes(op.status)
+    );
+    
+    return (
+      <tr key={`${connection.id}-expanded`}>
+        <td colSpan="8" className="p-0">
+          <div className="bg-muted/30 border-t">
+            <Tabs defaultValue="overview" className="w-full">
+              <TabsList className="w-full justify-start rounded-none bg-transparent border-b h-12 px-4">
+                <TabsTrigger value="overview" className="gap-2">
+                  <Info className="h-4 w-4" />
+                  Overview
+                </TabsTrigger>
+                <TabsTrigger value="certificate" className="gap-2">
+                  <Shield className="h-4 w-4" />
+                  Certificate
+                </TabsTrigger>
+                <TabsTrigger value="performance" className="gap-2">
+                  <Zap className="h-4 w-4" />
+                  Performance
+                </TabsTrigger>
+                <TabsTrigger value="tools" className="gap-2">
+                  <Wrench className="h-4 w-4" />
+                  Tools
+                </TabsTrigger>
+                <TabsTrigger value="settings" className="gap-2">
+                  <Settings className="h-4 w-4" />
+                  Settings
+                </TabsTrigger>
+              </TabsList>
+              
+              <div className="p-4">
+                <TabsContent value="overview" className="mt-0">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div>
+                      <p className="text-sm font-medium text-muted-foreground">Full Domain</p>
+                      <p className="text-sm">{getConnectionDisplayHostname(connection)}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-muted-foreground">SSL Provider</p>
+                      <p className="text-sm capitalize">{connection.ssl_provider}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-muted-foreground">DNS Provider</p>
+                      <p className="text-sm capitalize">{connection.dns_provider}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-muted-foreground">Last Issued</p>
+                      <p className="text-sm">{connection.last_cert_issued ? new Date(connection.last_cert_issued).toLocaleDateString() : 'Never'}</p>
+                    </div>
+                  </div>
+                </TabsContent>
+                
+                <TabsContent value="certificate" className="mt-0">
+                  <CertificateInfo connectionId={connection.id} detailed />
+                </TabsContent>
+                
+                <TabsContent value="performance" className="mt-0">
+                  <PerformanceMetricsChart 
+                    connectionId={connection.id}
+                    connectionName={connection.name}
+                    showIcons={true}
+                    showGrade={true}
+                  />
+                </TabsContent>
+                
+                <TabsContent value="tools" className="mt-0">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                    <CertificateRenewalButton
+                      connection={connection}
+                      onSuccess={() => {
+                        fetchCertificateStatus(connection);
+                        fetchConnections();
+                      }}
+                      refresh={() => fetchCertificateStatus(connection)}
+                      isDisabled={activeOperation}
+                    />
+                    
+                    <CertificateDownloadButton
+                      connection={connection}
+                      refreshTrigger={downloadRefreshTrigger}
+                    />
+
+                    {connection.application_type === 'vos' && connection.enable_ssh && (
+                      <ServiceRestartButton
+                        connection={connection}
+                        onSuccess={() => fetchCertificateStatus(connection)}
+                        isDisabled={activeOperation}
+                      />
+                    )}
+
+                    {connection.enable_ssh && (
+                      <Button
+                        onClick={() => {
+                          console.log('SSH Test (Compact) - Connection:', connection);
+                          console.log('SSH Test (Compact) - App Type:', connection.application_type);
+                          console.log('SSH Test (Compact) - Enable SSH:', connection.enable_ssh);
+                          handleSSHTest(connection);
+                        }}
+                        size="sm"
+                        variant="outline"
+                        className="justify-center border-blue-200 hover:border-blue-300 hover:bg-blue-50 dark:border-blue-800 dark:hover:border-blue-700 dark:hover:bg-blue-950"
+                      >
+                        <Terminal className="h-4 w-4 mr-2 text-blue-600 dark:text-blue-400" />
+                        Test SSH
+                      </Button>
+                    )}
+
+                    <Button
+                      onClick={() => window.open(`https://${getConnectionDisplayHostname(connection)}`, '_blank')}
+                      size="sm"
+                      variant="outline"
+                      className="justify-center border-green-200 hover:border-green-300 hover:bg-green-50 dark:border-green-800 dark:hover:border-green-700 dark:hover:bg-green-950"
+                    >
+                      <ExternalLink className="h-4 w-4 mr-2 text-green-600 dark:text-green-400" />
+                      View
+                    </Button>
+                    
+                    <Button 
+                      onClick={() => {
+                        console.log('Edit (Compact) - Connection being edited:', connection);
+                        console.log('Edit (Compact) - App Type:', connection.application_type);
+                        setEditingConnection(connection);
+                      }}
+                      size="sm" 
+                      variant="outline"
+                      className="justify-center border-purple-200 hover:border-purple-300 hover:bg-purple-50 dark:border-purple-800 dark:hover:border-purple-700 dark:hover:bg-purple-950"
+                    >
+                      <Edit className="h-4 w-4 mr-2 text-purple-600 dark:text-purple-400" />
+                      Edit
+                    </Button>
+                  </div>
+                </TabsContent>
+                
+                <TabsContent value="settings" className="mt-0">
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    <div className="flex items-center justify-between p-3 bg-background rounded-lg border">
+                      <div>
+                        <p className="font-medium text-sm">Auto-renewal</p>
+                        <p className="text-xs text-muted-foreground">Automatic certificate renewal</p>
+                      </div>
+                      <Badge variant={connection.auto_renew && connection.dns_provider !== 'custom' ? "default" : "secondary"} className="rounded-[4px]">
+                        {connection.auto_renew && connection.dns_provider !== 'custom' ? "On" : "Off"}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center justify-between p-3 bg-background rounded-lg border">
+                      <div>
+                        <p className="font-medium text-sm">SSH Access</p>
+                        <p className="text-xs text-muted-foreground">Allow SSH connections</p>
+                      </div>
+                      <Badge variant={connection.enable_ssh ? "default" : "secondary"} className="rounded-[4px]">
+                        {connection.enable_ssh ? "On" : "Off"}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center justify-between p-3 bg-background rounded-lg border">
+                      <div>
+                        <p className="font-medium text-sm">Auto Restart</p>
+                        <p className="text-xs text-muted-foreground">Service restart after cert</p>
+                      </div>
+                      <Badge variant={connection.auto_restart_service ? "default" : "secondary"} className="rounded-[4px]">
+                        {connection.auto_restart_service ? "On" : "Off"}
+                      </Badge>
+                    </div>
+                  </div>
+                </TabsContent>
+              </div>
+            </Tabs>
           </div>
+        </td>
+      </tr>
+    );
+  };
+
+  if (connectionState.isLoading && connectionState.retryAttempt === 0) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <BackgroundLogo />
+        <p className="text-muted-foreground">Loading connections...</p>
+      </div>
+    );
+  }
+
+  if (connectionState.isRetrying) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <BackgroundLogo />
+        <div className="text-center">
+          <p className="text-muted-foreground mb-2">Connecting to server...</p>
+          <p className="text-sm text-muted-foreground">Attempt {connectionState.retryAttempt} of 10</p>
         </div>
       </div>
     );
@@ -298,309 +899,278 @@ const Home = ({ onStatusUpdate }) => {
     <div className="min-h-full w-full py-20 relative bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-slate-900 dark:to-indigo-950">
       <BackgroundLogo />
       <div className="max-w-6xl mx-auto px-4">
-        <div className="flex flex-col items-center mb-10">
-          <div className="inline-block animate-fade-in text-center">
-            <img src="/logo.png" alt="netSSL" className="h-36 w-36 mx-auto mb-4 rounded-full object-cover shadow-lg mix-blend-multiply dark:mix-blend-normal" />
-            <h1 className="text-4xl font-bold mb-2 animate-slide-up">Certificate Dashboard</h1>
-            <p className="text-lg text-muted-foreground animate-slide-up-delayed">
-              Monitor and manage SSL certificates for your network applications
-            </p>
+        {/* Header with Stats */}
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h1 className="text-3xl font-bold">Certificate Dashboard</h1>
+            <div className="flex gap-2">
+              <SettingsModal />
+              <AddConnectionModal 
+                onConnectionAdded={handleConnectionAdded} 
+                trigger={
+                  <Button>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Connection
+                  </Button>
+                }
+              />
+            </div>
           </div>
-          <div className="mt-6 flex space-x-4">
-            <AddConnectionModal onConnectionAdded={handleConnectionAdded} />
-            <SettingsModal />
+          
+          {/* Overall Status Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+            <Card className="bg-card/85 backdrop-blur-sm">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Total Servers</CardTitle>
+                <Server className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{overallStatus.total}</div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-card/85 backdrop-blur-sm">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Valid Certificates</CardTitle>
+                <CheckCircle className="h-4 w-4 text-green-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-green-600">{overallStatus.valid}</div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-card/85 backdrop-blur-sm">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Expiring Soon</CardTitle>
+                <Clock className="h-4 w-4 text-yellow-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-yellow-600">{overallStatus.expiring}</div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-card/85 backdrop-blur-sm">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Expired</CardTitle>
+                <AlertCircle className="h-4 w-4 text-red-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-red-600">{overallStatus.expired}</div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-card/85 backdrop-blur-sm">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Auto Renew</CardTitle>
+                <RotateCcw className="h-4 w-4 text-blue-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-blue-600">{overallStatus.autoRenew}</div>
+              </CardContent>
+            </Card>
           </div>
         </div>
 
-        {/* Overall Status Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
-          <Card className="bg-card/85 backdrop-blur-sm">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Servers</CardTitle>
-              <Server className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{overallStatus.total}</div>
-            </CardContent>
-          </Card>
+        {/* Filters and Controls */}
+        <Card className="mb-6 bg-card/85 backdrop-blur-sm">
+          <CardContent className="p-4">
+            <div className="flex flex-wrap gap-4 items-center">
+              {/* Search */}
+              <div className="flex-1 min-w-[200px]">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search connections..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+              </div>
 
-          <Card className="bg-card/85 backdrop-blur-sm">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Valid Certificates</CardTitle>
-              <CheckCircle className="h-4 w-4 text-green-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">{overallStatus.valid}</div>
-            </CardContent>
-          </Card>
+              {/* Filters */}
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="valid">Valid</SelectItem>
+                  <SelectItem value="expiring">Expiring</SelectItem>
+                  <SelectItem value="expired">Expired</SelectItem>
+                </SelectContent>
+              </Select>
 
-          <Card className="bg-card/85 backdrop-blur-sm">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Expiring Soon</CardTitle>
-              <Clock className="h-4 w-4 text-yellow-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-yellow-600">{overallStatus.expiring}</div>
-            </CardContent>
-          </Card>
+              <Select value={typeFilter} onValueChange={setTypeFilter}>
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue placeholder="Type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  <SelectItem value="vos">VOS</SelectItem>
+                  <SelectItem value="ise">ISE</SelectItem>
+                  <SelectItem value="general">General</SelectItem>
+                </SelectContent>
+              </Select>
 
-          <Card className="bg-card/85 backdrop-blur-sm">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Expired</CardTitle>
-              <AlertCircle className="h-4 w-4 text-red-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-red-600">{overallStatus.expired}</div>
-            </CardContent>
-          </Card>
+              <Select value={sortBy} onValueChange={setSortBy}>
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue placeholder="Sort by" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="name">Name</SelectItem>
+                  <SelectItem value="status">Status</SelectItem>
+                  <SelectItem value="type">Type</SelectItem>
+                  <SelectItem value="expiry">Expiry</SelectItem>
+                </SelectContent>
+              </Select>
 
-          <Card className="bg-card/85 backdrop-blur-sm">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Auto Renew</CardTitle>
-              <RotateCcw className="h-4 w-4 text-blue-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-blue-600">{overallStatus.autoRenew}</div>
-            </CardContent>
-          </Card>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+              >
+                {sortOrder === 'asc' ? <SortAsc className="h-4 w-4" /> : <SortDesc className="h-4 w-4" />}
+              </Button>
+
+              {/* View Mode */}
+              <div className="flex gap-1 border rounded-md p-1">
+                <Button
+                  variant={viewMode === 'full' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setViewMode('full')}
+                  title="Full View - Detailed cards with all information"
+                  className="gap-1"
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                  <span className="hidden sm:inline text-xs">Full</span>
+                </Button>
+                <Button
+                  variant={viewMode === 'compact' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setViewMode('compact')}
+                  title="Compact View - Table with expandable details"
+                  className="gap-1"
+                >
+                  <TableIcon className="h-4 w-4" />
+                  <span className="hidden sm:inline text-xs">Compact</span>
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Results */}
+        <div className="mb-4 flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">
+            Showing {filteredConnections.length} of {connectionState.connections.length} connections
+          </p>
         </div>
 
-        {/* Server Details */}
-        <div className="space-y-4">
-          {filterEnabledConnections(connectionState.connections).map((connection) => {
-            const certStatus = getCertificateStatus(connection);
-            const StatusIcon = certStatus.icon;
-
-            return (
-              <Card key={connection.id} className="w-full bg-card/85 backdrop-blur-sm">
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <Server className="h-5 w-5 text-blue-500" />
-                      <div>
-                        <CardTitle className="text-lg">{connection.name}</CardTitle>
-                        <CardDescription className="flex items-center space-x-2">
-                          <a 
-                            href={`https://${getConnectionDisplayHostname(connection)}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 underline"
+        {/* Content */}
+        {viewMode === 'full' ? (
+          <div className="space-y-4">
+            {filteredConnections.map(renderConnectionCard)}
+          </div>
+        ) : (
+          <Card className="bg-card/85 backdrop-blur-sm">
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left p-4">Name</th>
+                      <th className="text-left p-4">Hostname</th>
+                      <th className="text-left p-4">Type</th>
+                      <th className="text-left p-4">Status</th>
+                      <th className="text-left p-4">Expires</th>
+                      <th className="text-left p-4">Provider</th>
+                      <th className="text-left p-4">Auto-Renew</th>
+                      <th className="text-right p-4 w-12"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredConnections.map((connection) => {
+                      const isExpanded = expandedRows.has(connection.id);
+                      const isEnabled = isConnectionEnabled(connection);
+                      
+                      return (
+                        <>
+                          <tr 
+                            key={connection.id} 
+                            className={`border-b hover:bg-muted/50 cursor-pointer ${!isEnabled ? 'opacity-50 grayscale' : ''}`}
+                            onClick={() => toggleRowExpansion(connection.id)}
                           >
-                            {getConnectionDisplayHostname(connection)}
-                          </a>
-                          {isWildcardCertificate(connection) && (
-                            <Badge variant="outline" className="text-xs">
-                              Wildcard
-                            </Badge>
-                          )}
-                        </CardDescription>
-                      </div>
-                    </div>
-                    <Badge className={certStatus.color}>
-                      <StatusIcon className="w-3 h-3 mr-1" />
-                      {certStatus.text}
-                    </Badge>
-                  </div>
-                </CardHeader>
-                
-                <CardContent>
-                  <div className="space-y-4">
-                    {/* Provider Information */}
-                    <div className="flex space-x-6">
-                      <div className="flex items-center space-x-2">
-                        <Shield className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-sm">
-                          SSL: {formatProvider(connection.ssl_provider)}
-                        </span>
-                      </div>
-                      
-                      <div className="flex items-center space-x-2">
-                        <Globe className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-sm">
-                          DNS: {formatProvider(connection.dns_provider)}
-                        </span>
-                      </div>
-                      
-                      {connection.cert_count_this_week > 0 && (
-                        <div className="flex items-center space-x-2">
-                          <Zap className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-sm">
-                            {connection.cert_count_this_week} certs this week
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* VOS Features Status */}
-                    {connection.application_type === 'vos' && (
-                      <div className="flex space-x-6 text-sm">
-                        <div className="flex items-center space-x-2">
-                          <Terminal className="h-4 w-4 text-muted-foreground" />
-                          <span>SSH: {connection.enable_ssh ? 'Enabled' : 'Disabled'}</span>
-                        </div>
-                        
-                        <div className="flex items-center space-x-2">
-                          <Settings className="h-4 w-4 text-muted-foreground" />
-                          <span>Auto Restart: {connection.auto_restart_service ? 'Enabled' : 'Disabled'}</span>
-                        </div>
-                        
-                        <div className="flex items-center space-x-2">
-                          <RotateCcw className="h-4 w-4 text-muted-foreground" />
-                          <span>Auto Renew: {connection.auto_renew ? 'Enabled' : 'Disabled'}</span>
-                          {connection.auto_renew && connection.auto_renew_status && (
-                            <Badge 
-                              className={
-                                connection.auto_renew_status === 'success' ? 'bg-green-100 text-green-800' :
-                                connection.auto_renew_status === 'failed' ? 'bg-red-100 text-red-800' :
-                                connection.auto_renew_status === 'in_progress' ? 'bg-blue-100 text-blue-800' :
-                                'bg-gray-100 text-gray-800'
-                              }
-                            >
-                              {connection.auto_renew_status}
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                  </div>
-
-                  {/* Tools Section */}
-                  <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center space-x-2">
-                        <Wrench className="w-4 h-4 text-gray-600 dark:text-gray-400" />
-                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Tools</span>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {/* Service Restart Button - only show for VOS apps with SSH enabled */}
-                      {connection.application_type === 'vos' && connection.enable_ssh && (
-                        <ServiceRestartButton 
-                          connection={connection}
-                          onConfirmRestart={(conn) => setConfirmRestart({ id: conn.id, name: conn.name })}
-                        />
-                      )}
-                      
-                      {/* Certificate Renewal Button */}
-                      <CertificateRenewalButton 
-                        connection={connection}
-                        onConfirmRenew={() => setConfirmCertRenewal({ id: connection.id, name: connection.name })}
-                      />
-                      
-                      {/* Certificate Download Button */}
-                      <CertificateDownloadButton 
-                        connection={connection}
-                        refreshTrigger={downloadRefreshTrigger}
-                        isRenewing={getConnectionOperations(connection.id, 'certificate_renewal').some(op => ['pending', 'in_progress'].includes(op.status))}
-                      />
-                    </div>
-                  </div>
-                  
-                  {isWildcardCertificate(connection) ? (
-                    <div className="mt-4 p-4 bg-muted rounded-lg">
-                      <div className="flex items-center space-x-2">
-                        <Shield className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-sm text-muted-foreground">
-                          Wildcard certificate - Individual certificate validation not available
-                        </span>
-                      </div>
-                    </div>
-                  ) : (
-                    <CertificateInfo 
-                      connectionId={connection.id} 
-                      hostname={getCertificateValidationDomain(connection) || ''}
-                      connectionName={connection.name}
-                      onRenewalComplete={() => setDownloadRefreshTrigger(prev => prev + 1)}
-                    />
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-
-        {filterEnabledConnections(connectionState.connections).length === 0 && (
-          <div className="text-center py-12">
-            <Server className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">No servers configured</h3>
-            <p className="text-gray-500 mb-4">
-              Get started by adding your first Cisco UC server connection.
-            </p>
-            <AddConnectionModal onConnectionAdded={handleConnectionAdded} />
-          </div>
+                            <td className="p-4 font-medium">{connection.name}</td>
+                            <td className="p-4">{getConnectionDisplayHostname(connection)}</td>
+                            <td className="p-4">
+                              <Badge variant="outline" className="px-2 py-1 rounded-[4px]">{connection.application_type.toUpperCase()}</Badge>
+                            </td>
+                            <td className="p-4">{getStatusBadge(connection)}</td>
+                            <td className="p-4">
+                              {(() => {
+                                const status = getCertificateStatus(connection);
+                                return status.days !== undefined 
+                                  ? status.days > 0 
+                                    ? `${status.days} days`
+                                    : `${Math.abs(status.days)} days ago`
+                                  : 'N/A';
+                              })()}
+                            </td>
+                            <td className="p-4 capitalize">{connection.ssl_provider}</td>
+                            <td className="p-4">
+                              {connection.auto_renew && connection.dns_provider !== 'custom' ? (
+                                <Badge variant="default" className="px-2 py-1 rounded-[4px]">ENABLED</Badge>
+                              ) : (
+                                <Badge variant="secondary" className="px-2 py-1 rounded-[4px]">DISABLED</Badge>
+                              )}
+                            </td>
+                            <td className="p-4 text-right">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleRowExpansion(connection.id);
+                                }}
+                              >
+                                {isExpanded ? (
+                                  <ChevronDown className="h-4 w-4" />
+                                ) : (
+                                  <ChevronRight className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </td>
+                          </tr>
+                          {isExpanded && renderExpandedRow(connection)}
+                        </>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
         )}
 
-        {/* Service Restart Confirmation Dialog */}
-        {confirmRestart && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
-              <div className="flex items-center mb-4">
-                <Server className="w-6 h-6 text-orange-600 mr-3" />
-                <h3 className="text-lg font-semibold">Confirm Service Restart</h3>
-              </div>
-              <p className="text-gray-600 dark:text-gray-300 mb-6">
-                Are you sure you want to restart the Cisco Tomcat service on <strong>{confirmRestart.name}</strong>?
-                <br /><br />
-                This will temporarily interrupt access to the VOS application while the service restarts.
-              </p>
-              <div className="flex justify-end space-x-3">
-                <Button
-                  variant="outline"
-                  onClick={() => setConfirmRestart(null)}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  variant="default"
-                  onClick={() => {
-                    ServiceRestartButton.startRestart(confirmRestart.id, toast);
-                    setConfirmRestart(null);
-                  }}
-                  className="bg-orange-600 hover:bg-orange-700 text-white"
-                >
-                  <Server className="w-4 h-4 mr-2" />
-                  Restart Service
-                </Button>
-              </div>
-            </div>
-          </div>
+        {filteredConnections.length === 0 && (
+          <Card className="bg-card/85 backdrop-blur-sm">
+            <CardContent className="p-8 text-center">
+              <p className="text-muted-foreground">No connections match your current filters.</p>
+            </CardContent>
+          </Card>
         )}
 
-        {/* Certificate Renewal Confirmation Dialog */}
-        {confirmCertRenewal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
-              <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-gray-100">
-                Confirm Certificate Renewal
-              </h3>
-              <p className="text-gray-600 dark:text-gray-300 mb-6">
-                Are you sure you want to renew the certificate for <strong>{confirmCertRenewal.name}</strong>? 
-                This process may take several minutes and will automatically upload the new certificate to the server.
-              </p>
-              <div className="flex justify-end space-x-3">
-                <Button
-                  variant="outline"
-                  onClick={() => setConfirmCertRenewal(null)}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  variant="default"
-                  onClick={() => {
-                    CertificateRenewalButton.startRenewal(confirmCertRenewal.id, toast);
-                    setConfirmCertRenewal(null);
-                  }}
-                  className="bg-blue-600 hover:bg-blue-700 text-white"
-                >
-                  <Shield className="w-4 h-4 mr-2" />
-                  Renew Certificate
-                </Button>
-              </div>
-            </div>
-          </div>
+        {/* Edit Modal */}
+        {editingConnection && (
+          <EditConnectionModalTabbed
+            record={editingConnection}
+            isOpen={!!editingConnection}
+            onClose={() => setEditingConnection(null)}
+            onConnectionUpdated={handleConnectionUpdated}
+          />
         )}
-
       </div>
     </div>
   );

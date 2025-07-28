@@ -79,25 +79,62 @@ const EditConnectionModalTabbed: React.FC<EditConnectionModalTabbedProps> = ({
 
   // Initialize form data when record changes
   useEffect(() => {
+    console.log('EditModal: useEffect triggered', { recordExists: !!record, dataLength: data.length });
     if (record && data.length > 0) {
+      console.log('EditModal: Starting form initialization');
+      console.log('EditModal: Record passed to modal:', record);
+      console.log('EditModal: Record application_type:', record.application_type);
+      console.log('EditModal: Available data columns:', data.map(col => col.name));
+      
+      const processedFields = new Set();
       const initialData = data.reduce((obj: Record<string, string | boolean>, col) => {
+        // Skip duplicate field names - only process the first occurrence
+        if (processedFields.has(col.name)) {
+          console.log(`EditModal: Skipping duplicate field ${col.name}`);
+          return obj;
+        }
+        processedFields.add(col.name);
+        
         let value = record[col.name];
+        console.log(`EditModal: Processing field ${col.name}: record_value=${value}, default=${col.default}`);
         
         // Handle boolean conversion for SWITCH types
         if (col.type === "SWITCH" && value !== undefined) {
           value = Boolean(value === true || value === 1 || value === "1");
         }
         
-        obj[col.name] = value !== undefined ? value : 
-                       (col.default !== undefined ? col.default : 
-                        (col.type === "SWITCH" ? false : ""));
+        // For editing existing records, always use the record value if it exists
+        // IMPORTANT: Check for empty string too, but not for critical fields like application_type
+        if (value !== undefined && value !== null) {
+          // For application_type, always use the record value even if it's an empty string
+          if (col.name === 'application_type' || value !== '') {
+            obj[col.name] = value;
+            console.log(`EditModal: Used record value for ${col.name}: ${value}`);
+          } else if (col.type === "SWITCH") {
+            obj[col.name] = false;
+          } else if (col.default !== undefined) {
+            obj[col.name] = col.default;
+            console.log(`EditModal: Used default for ${col.name}: ${col.default}`);
+          } else {
+            obj[col.name] = "";
+          }
+        } else if (col.type === "SWITCH") {
+          obj[col.name] = false;
+        } else if (col.default !== undefined) {
+          obj[col.name] = col.default;
+          console.log(`EditModal: Used default for ${col.name}: ${col.default}`);
+        } else {
+          obj[col.name] = "";
+        }
         return obj;
       }, {});
+      
+      console.log('EditModal: Final form data:', initialData);
+      console.log('EditModal: Final application_type:', initialData.application_type);
+      
       setFormData(initialData);
       setActiveTab("basic");
       setErrors({});
-      console.log('EditModal: Initialized form data:', initialData);
-      console.log('EditModal: Initial ISE Application Subtype:', initialData.ise_application_subtype);
     }
   }, [record, data]);
 
@@ -130,6 +167,11 @@ const EditConnectionModalTabbed: React.FC<EditConnectionModalTabbedProps> = ({
   };
 
   const handleSelectChange = (name: string, value: string, options: Column['validator'], isOptional = false) => {
+    console.log(`SELECT CHANGE - ${name}: ${value}`);
+    if (name === 'application_type') {
+      console.log('APPLICATION_TYPE SELECT CHANGE:', value);
+    }
+    
     const newErrors: Record<string, string> = {};
 
     // Validate - skip validation if field is optional and empty
@@ -148,7 +190,13 @@ const EditConnectionModalTabbed: React.FC<EditConnectionModalTabbedProps> = ({
       setErrors(prev => ({ ...prev, ...newErrors }));
     }
 
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData(prev => {
+      const newData = { ...prev, [name]: value };
+      if (name === 'application_type') {
+        console.log('Setting application_type in formData:', value, 'New formData:', newData);
+      }
+      return newData;
+    });
   };
 
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>, options: Column['validator'], isOptional = false) => {
@@ -289,6 +337,9 @@ const EditConnectionModalTabbed: React.FC<EditConnectionModalTabbedProps> = ({
 
   const renderField = (col: Column) => {
     const formValue = formData[col.name];
+    if (col.name === 'application_type') {
+      console.log(`RENDER DEBUG - ${col.name}: formValue=${formValue}, formData:`, formData);
+    }
     const isOptional = col.optional === true;
     const label = col.label || formatColumnName(col.name);
     const placeholder = col.placeholder || (isOptional 
@@ -303,23 +354,35 @@ const EditConnectionModalTabbed: React.FC<EditConnectionModalTabbedProps> = ({
         {col.type !== "SWITCH" && <Label>{label}</Label>}
         
         {col.type === "SELECT" ? (
-          <Select 
-            value={String(formValue || col.default || "")} 
-            onValueChange={(value) => handleSelectChange(col.name, value, col.validator, isOptional)}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder={placeholder}>
-                {col.options?.find(opt => opt.value === String(formValue || col.default || ""))?.label || String(formValue || col.default || "")}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent position="item-aligned">
-              {col.options?.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          (() => {
+            const selectValue = String(formValue !== undefined ? formValue : (col.default || ""));
+            if (col.name === 'application_type') {
+              console.log(`SELECT DEBUG - ${col.name}: formValue=${formValue}, selectValue=${selectValue}, options:`, col.options);
+              console.log('Option values:', col.options?.map(opt => opt.value));
+              console.log('Does selectValue match any option?', col.options?.some(opt => opt.value === selectValue));
+              console.log('Matching option:', col.options?.find(opt => opt.value === selectValue));
+            }
+            return (
+              <Select 
+                key={`${col.name}-${selectValue}`}
+                value={selectValue} 
+                onValueChange={(value) => handleSelectChange(col.name, value, col.validator, isOptional)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={placeholder}>
+                    {col.options?.find(opt => opt.value === selectValue)?.label || selectValue}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent position="item-aligned">
+                  {col.options?.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            );
+          })()
         ) : col.type === "SWITCH" ? (
           <div className="space-y-2">
             <div className="flex items-start space-x-3">

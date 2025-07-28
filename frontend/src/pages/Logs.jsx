@@ -236,7 +236,7 @@ const Logs = () => {
                       </p>
                     </div>
                     <div className="flex flex-col items-end space-y-1">
-                      <Badge className={getApplicationTypeColor(account.connection.application_type)}>
+                      <Badge className={`rounded-[4px] ${getApplicationTypeColor(account.connection.application_type)}`}>
                         {account.connection.application_type}
                       </Badge>
                       <div className="flex items-center">

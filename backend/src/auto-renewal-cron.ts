@@ -36,8 +36,8 @@ export class AutoRenewalCron {
       const expiringConnections = [];
 
       for (const connection of connections) {
-        // Only process connections with auto_renew enabled and API-based DNS providers
-        if (!connection.auto_renew || connection.dns_provider === 'custom') {
+        // Only process connections that are enabled, have auto_renew enabled, and use API-based DNS providers
+        if (!connection.is_enabled || !connection.auto_renew || connection.dns_provider === 'custom') {
           continue;
         }
 

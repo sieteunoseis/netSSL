@@ -952,6 +952,14 @@ app.get('/api/data/:id/certificate', asyncHandler(async (req: Request, res: Resp
     return res.status(404).json({ error: 'Connection not found' });
   }
 
+  // Skip certificate checks for disabled connections
+  if (!connection.is_enabled) {
+    return res.status(200).json({ 
+      error: 'Connection disabled',
+      details: 'Certificate information not available for disabled connections'
+    });
+  }
+
   const domain = getDomainFromConnection(connection);
   if (!domain) {
     return res.status(400).json({ 
