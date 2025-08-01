@@ -27,6 +27,22 @@ export default defineConfig(({ mode }) => {
           "@": path.resolve(__dirname, "./src"),
         },
       },
+      build: {
+        // Optimize for faster builds
+        target: 'es2020',
+        minify: 'esbuild',
+        sourcemap: false,
+        rollupOptions: {
+          output: {
+            manualChunks: {
+              // Split vendor chunks for better caching
+              vendor: ['react', 'react-dom'],
+              ui: ['@radix-ui/react-dialog', '@radix-ui/react-select', '@radix-ui/react-tabs'],
+              charts: ['recharts'],
+            }
+          }
+        }
+      },
       server: {
         proxy: {
           '/api': {

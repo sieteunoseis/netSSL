@@ -28,19 +28,30 @@ docker compose down
 ## Configuration
 
 ### Environment Variables
-Create and customize the environment file:
+Create a `.env` file in the same directory as the docker-compose.yml:
 ```bash
 # Create .env file with your configuration
 cat > .env << EOF
+# Basic Configuration
 VITE_BRANDING_URL=https://your-domain.com
 VITE_BRANDING_NAME=Your Company Name
 VITE_TABLE_COLUMNS=name,hostname,username,password,version
 PORT=5000
 NODE_ENV=production
+
+# Let's Encrypt Configuration
 LETSENCRYPT_STAGING=false
-# Add DNS provider credentials as needed
+LETSENCRYPT_EMAIL=your-email@domain.com
+
+# DNS Provider Credentials (add as needed)
+# CLOUDFLARE_TOKEN=your-cloudflare-token
+# AWS_ACCESS_KEY=your-aws-access-key
+# AWS_SECRET_KEY=your-aws-secret-key
+# DO_KEY=your-digitalocean-token
 EOF
 ```
+
+The docker-compose.yml will automatically load all variables from the `.env` file.
 
 ### Single Container Image
 The compose file pulls the unified image from GitHub Container Registry:

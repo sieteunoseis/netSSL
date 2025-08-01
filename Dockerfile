@@ -8,22 +8,20 @@ RUN npm install -g pm2
 WORKDIR /app/backend
 COPY backend/package*.json ./
 COPY backend/tsconfig.json ./
-RUN npm ci
+RUN npm ci --silent
 
 COPY backend/src/ ./src/
-RUN npm run build
-
-# Remove devDependencies for backend
-RUN npm prune --production
+RUN npm run build && npm prune --production
 
 # Build frontend
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
-RUN npm ci
+RUN npm ci --silent
 
 COPY frontend/ .
 ENV NODE_ENV=production
 ENV VITE_API_URL=/api
+# Use multiple CPU cores for faster build
 RUN npm run build
 
 # Production stage

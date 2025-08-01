@@ -9,13 +9,8 @@ services:
     container_name: netssl-dashboard
     ports:
       - "3000:80"  # nginx serves frontend and proxies API
-    environment:
-      - PORT=${PORT:-5000}  # Internal backend port
-      - NODE_ENV=${NODE_ENV:-production}
-      - VITE_BRANDING_NAME=${VITE_BRANDING_NAME:-VOS Certificate Management}
-      - VITE_BRANDING_URL=${VITE_BRANDING_URL:-https://automate.builders}
-      - VITE_TABLE_COLUMNS=${VITE_TABLE_COLUMNS:-name,hostname,username,password,version}
-      - LETSENCRYPT_STAGING=${LETSENCRYPT_STAGING:-false}
+    env_file:
+      - .env
     volumes:
       - app_db:/app/db  # Persist database
       - app_accounts:/app/accounts  # Persist certificates and accounts
