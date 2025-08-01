@@ -1,11 +1,11 @@
-name: Build and Push Docker Images
+name: Build and Push Docker Image
 
 on:
   push:
-    branches: [ main, security-stability-improvements ]
+    branches: [ main, master, security-stability-improvements ]
     tags: [ 'v*' ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, master ]
 
 env:
   REGISTRY: ghcr.io
@@ -17,10 +17,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-
-    strategy:
-      matrix:
-        service: [frontend, backend]
 
     steps:
     - name: Checkout repository
@@ -38,7 +34,7 @@ jobs:
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.service }}
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
         tags: |
           type=ref,event=branch
           type=ref,event=pr
@@ -54,7 +50,7 @@ jobs:
     - name: Build and push Docker image
       uses: docker/build-push-action@v5
       with:
-        context: ./${{ matrix.service }}
+        context: .
         platforms: linux/amd64,linux/arm64
         push: ${{ github.event_name != 'pull_request' }}
         tags: ${{ steps.meta.outputs.tags }}
@@ -73,46 +69,26 @@ jobs:
 
     - name: Test Docker deployment
       run: |
-        cd docker
-        # Use the existing .env file or create one if needed
-        if [ ! -f .env ]; then
-          if [ -f ../.env.example ]; then
-            cp ../.env.example .env
-            # Set the backend port to avoid conflicts with frontend
-            sed -i 's/PORT=3000/PORT=3001/' .env
-            sed -i 's/NODE_ENV=development/NODE_ENV=production/' .env
-          else
-            # Create minimal .env file
-            echo "VITE_BRANDING_URL=https://automate.builders" > .env
-            echo "VITE_BRANDING_NAME=Automate Builders" >> .env
-            echo "VITE_TABLE_COLUMNS=name,hostname,username,password,version" >> .env
-            echo "PORT=3001" >> .env
-            echo "NODE_ENV=production" >> .env
-            echo "UID=1000" >> .env
-            echo "GID=1000" >> .env
-          fi
-        fi
-        cp .env .env.test
-        # Use the latest images
-        export FRONTEND_TAG=latest
-        export BACKEND_TAG=latest
+        # Create minimal .env file for testing
+        cat > .env << EOF
+        VITE_BRANDING_URL=https://automate.builders
+        VITE_BRANDING_NAME=Automate Builders
+        VITE_TABLE_COLUMNS=name,hostname,username,password,version
+        PORT=5000
+        NODE_ENV=production
+        EOF
         
-        # Start services
+        # Start the unified container
         docker compose up -d
         
-        # Wait for services
-        sleep 30
+        # Wait for services to start
+        sleep 45
         
-        # Get the backend port from .env and clean it up (remove comments and whitespace)
-        BACKEND_PORT=$(grep "^PORT=" .env 2>/dev/null | cut -d'=' -f2 | cut -d'#' -f1 | tr -d '\r\n[:space:]' || echo "3001")
-        echo "Backend port: $BACKEND_PORT"
-        echo "Port length: ${#BACKEND_PORT}"
+        # Test frontend (nginx on port 3000)
+        curl -f "http://localhost:3000/" || exit 1
         
-        # Test backend health endpoint directly
-        curl -f "http://localhost:${BACKEND_PORT}/health" || exit 1
-        
-        # Test API through backend
-        curl -f "http://localhost:${BACKEND_PORT}/api/data" || exit 1
+        # Test backend API through nginx proxy
+        curl -f "http://localhost:3000/api/data" || exit 1
         
         # Cleanup
         docker compose down

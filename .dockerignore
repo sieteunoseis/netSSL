@@ -1,0 +1,70 @@
+# Node modules
+node_modules
+*/node_modules
+
+# Build artifacts
+frontend/dist
+backend/dist
+
+# Development files
+.git
+.gitignore
+README.md
+*.md
+
+# Environment files (except template)
+.env
+.env.local
+.env.*.local
+
+# IDE files
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage
+.nyc_output
+
+# Dependency directories
+.npm
+.yarn
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Temporary folders
+tmp/
+temp/
+
+# Database files during build
+backend/db/*.db
+
+# Certificate files
+backend/accounts/
+
+# Docker files
+Dockerfile.*
+docker-compose*.yml
+docker-compose*.yaml
