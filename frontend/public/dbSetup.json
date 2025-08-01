@@ -9,7 +9,7 @@
       { "value": "ise", "label": "Cisco ISE" },
       { "value": "general", "label": "General Application" }
     ],
-    "default": "vos"
+    "default": "general"
   },
   {
     "name": "ise_application_subtype",

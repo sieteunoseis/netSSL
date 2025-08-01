@@ -25,6 +25,11 @@ The application uses `frontend/public/dbSetup.json` to dynamically generate form
 ### Database Schema
 SQLite table structure is dynamically created based on `TABLE_COLUMNS` environment variable in `backend/server.js:31-42`. The backend automatically creates the `connections` table with columns matching the configuration.
 
+Key database fields for connection management:
+- `is_enabled` (BOOLEAN): Controls whether connection participates in certificate monitoring and auto-renewal
+- `auto_renew` (BOOLEAN): Enables automatic certificate renewal (requires `is_enabled=true` and API-based DNS)
+- `dns_provider` (STRING): DNS provider type - auto-renewal only works with API-based providers (not 'custom')
+
 ### Security Features
 - **Input Validation**: Server-side validation using validator.js with type-safe schemas
 - **Data Sanitization**: HTML escaping and input sanitization to prevent XSS attacks
@@ -34,6 +39,14 @@ SQLite table structure is dynamically created based on `TABLE_COLUMNS` environme
 
 ### Theme System
 Uses Radix UI with dark/light mode toggle implemented via context in `frontend/src/components/theme-provider.tsx` and `theme-context.tsx`.
+
+### UI/UX Features
+- **Unified Dashboard**: Single page combining Home and Connections functionality with card and table view modes
+- **Connection Management**: Enable/disable connections with visual feedback (greyed out when disabled)
+- **Performance Metrics**: Real-time certificate performance tracking with DNS, TCP, and TLS timing data
+- **Certificate Status Badges**: Square-styled badges throughout the application showing certificate status, auto-renewal state, and connection types
+- **Auto-Renewal Logic**: Intelligent auto-renewal system that skips disabled connections and manual DNS configurations
+- **Responsive Design**: Mobile-friendly interface with collapsible cards and expandable table rows
 
 ## Development Commands
 
@@ -100,8 +113,10 @@ docker-compose up --build  # Full containerized build
 
 - `frontend/src/pages/` - Main application pages (Home, Connections, Error)
 - `frontend/src/components/` - Reusable React components and UI primitives
-- `frontend/public/dbSetup.json` - Dynamic form configuration
-- `backend/server.js` - Express API server with SQLite integration
+- `frontend/src/lib/connection-utils.js` - Connection utility functions including enable/disable logic
+- `frontend/public/dbSetup.json` - Dynamic form configuration with conditional field visibility
+- `backend/src/server.ts` - Express API server with SQLite integration and connection management
+- `backend/src/auto-renewal-cron.ts` - Scheduled certificate renewal service (respects connection enabled state)
 - `backend/db/` - SQLite database files (auto-created)
 
 ## Environment Configuration

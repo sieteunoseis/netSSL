@@ -446,11 +446,11 @@ const DataTable = ({ data, onDataChange }) => {
                           ) : columnName === "enable_ssh" || columnName === "is_enabled" ? (
                             <div className="flex items-center">
                               {(columnName === "enable_ssh" ? record.enable_ssh : isConnectionEnabled(record)) ? (
-                                <Badge variant="default" className="bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200">
+                                <Badge variant="default" className="bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded-[4px]">
                                   Yes
                                 </Badge>
                               ) : (
-                                <Badge variant="secondary" className="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">
+                                <Badge variant="secondary" className="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 rounded-[4px]">
                                   No
                                 </Badge>
                               )}
@@ -459,11 +459,11 @@ const DataTable = ({ data, onDataChange }) => {
                             // Show status for certificate and key fields instead of content
                             <div className="flex items-center">
                               {cellValue && cellValue.trim() !== "" ? (
-                                <Badge variant="default" className="bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200">
+                                <Badge variant="default" className="bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded-[4px]">
                                   Present
                                 </Badge>
                               ) : (
-                                <Badge variant="secondary" className="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">
+                                <Badge variant="secondary" className="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 rounded-[4px]">
                                   Not Set
                                 </Badge>
                               )}

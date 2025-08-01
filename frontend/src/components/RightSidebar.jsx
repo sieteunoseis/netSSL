@@ -115,11 +115,14 @@ const RightSidebar = ({ isExpanded, onCollapse, onToggle }) => {
         {/* Footer - only show when expanded */}
         {isExpanded && (
           <div className="absolute bottom-0 left-0 right-0 p-4 border-t dark:border-gray-700">
-            <div className="text-center">
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                {config.brandingName || 'netSSL'}
-              </p>
-              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+            <div className="flex flex-col items-center space-y-2">
+              <div className="flex items-center space-x-2">
+                <img src="/logo.png" alt={config.brandingName || 'netSSL'} className="h-5 w-5 rounded-full object-cover shadow-sm" />
+                <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">
+                  {config.brandingName || 'netSSL'}
+                </p>
+              </div>
+              <p className="text-xs text-gray-400 dark:text-gray-500">
                 Certificate Management Dashboard
               </p>
             </div>

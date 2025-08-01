@@ -20,8 +20,15 @@ export class AutoRenewalCron {
     const cronSchedule = await this.getCronSchedule();
     
     cron.schedule(cronSchedule, async () => {
-      Logger.info('Starting auto-renewal check...');
-      await this.checkAndRenewCertificates();
+      const startTime = new Date().toISOString();
+      Logger.info(`[CRON] Auto-renewal check started at ${startTime}`);
+      
+      try {
+        await this.checkAndRenewCertificates();
+        Logger.info(`[CRON] Auto-renewal check completed successfully at ${new Date().toISOString()}`);
+      } catch (error: any) {
+        Logger.error(`[CRON] Auto-renewal check failed at ${new Date().toISOString()}:`, error);
+      }
     });
 
     Logger.info(`Auto-renewal cron job scheduled with pattern: ${cronSchedule}`);
@@ -36,8 +43,8 @@ export class AutoRenewalCron {
       const expiringConnections = [];
 
       for (const connection of connections) {
-        // Only process connections with auto_renew enabled and API-based DNS providers
-        if (!connection.auto_renew || connection.dns_provider === 'custom') {
+        // Only process connections that are enabled, have auto_renew enabled, and use API-based DNS providers
+        if (!connection.is_enabled || !connection.auto_renew || connection.dns_provider === 'custom') {
           continue;
         }
 
@@ -95,8 +102,24 @@ export class AutoRenewalCron {
     try {
       Logger.info(`Starting auto-renewal for ${connection.hostname}.${connection.domain}`);
 
-      // Update status to "in_progress"
+      // Update status to "in_progress" and notify WebSocket clients
       await this.updateAutoRenewalStatus(connection.id, 'in_progress', new Date().toISOString());
+      
+      // Notify WebSocket clients of auto-renewal start
+      try {
+        const { getWebSocketServer } = await import('./websocket-server');
+        const io = getWebSocketServer();
+        if (io) {
+          io.emit('auto-renewal-status', {
+            connectionId: connection.id,
+            status: 'in_progress',
+            message: `Auto-renewal started for ${connection.hostname}.${connection.domain}`,
+            timestamp: new Date().toISOString()
+          });
+        }
+      } catch (error) {
+        Logger.debug('WebSocket server not available for auto-renewal notification');
+      }
 
       // Issue new certificate
       const renewalStatus = await certificateRenewalService.renewCertificate(connection.id!, this.database);
@@ -117,13 +140,27 @@ export class AutoRenewalCron {
         if (status && status.status === 'completed') {
           Logger.info(`Certificate renewal completed for ${connection.hostname}.${connection.domain}`);
           
-          // If auto_restart_service is enabled and SSH is available, restart Tomcat service
-          if (connection.auto_restart_service && connection.enable_ssh) {
-            await this.restartTomcatService(connection);
-          }
+          // Note: Tomcat service restart is already handled by the certificate renewal service
+          // No need to restart again here
           
-          // Update status to "success"
+          // Update status to "success" and notify WebSocket clients
           await this.updateAutoRenewalStatus(connection.id, 'success', new Date().toISOString());
+          
+          // Notify WebSocket clients of auto-renewal success
+          try {
+            const { getWebSocketServer } = await import('./websocket-server');
+            const io = getWebSocketServer();
+            if (io) {
+              io.emit('auto-renewal-status', {
+                connectionId: connection.id,
+                status: 'success',
+                message: `Auto-renewal completed successfully for ${connection.hostname}.${connection.domain}`,
+                timestamp: new Date().toISOString()
+              });
+            }
+          } catch (error) {
+            Logger.debug('WebSocket server not available for auto-renewal notification');
+          }
           return;
         } else if (status && status.status === 'failed') {
           Logger.error(`Certificate renewal failed for ${connection.hostname}.${connection.domain}: ${status.error}`);

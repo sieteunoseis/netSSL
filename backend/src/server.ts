@@ -22,8 +22,27 @@ import { OperationStatusManager } from './services/operation-status-manager';
 import { PlatformFactory } from './platform-providers/platform-factory';
 import { ISEProvider } from './platform-providers/ise-provider';
 import { downloadAllRootCertificates, checkRootCertificates } from './utils/download-root-certs';
+import { generateCSR, validateCSRRequest, CSRRequest } from './csr-generator';
 
 dotenv.config({ path: '../.env' });
+
+// Function to calculate next cron run time
+function calculateNextCronRun(cronExpression: string): string {
+  const [minute, hour, dayOfMonth, month, dayOfWeek] = cronExpression.split(' ');
+  
+  const now = new Date();
+  const nextRun = new Date(now);
+  
+  // Set the time to the specified hour and minute
+  nextRun.setHours(parseInt(hour), parseInt(minute), 0, 0);
+  
+  // If the time has already passed today, move to tomorrow
+  if (nextRun <= now) {
+    nextRun.setDate(nextRun.getDate() + 1);
+  }
+  
+  return nextRun.toISOString();
+}
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
@@ -88,7 +107,7 @@ const asyncHandler = (fn: Function) => (req: Request, res: Response, next: NextF
 };
 
 // Health check endpoint
-app.get('/health', (req: Request, res: Response) => {
+app.get('/api/health', (req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
@@ -952,6 +971,14 @@ app.get('/api/data/:id/certificate', asyncHandler(async (req: Request, res: Resp
     return res.status(404).json({ error: 'Connection not found' });
   }
 
+  // Skip certificate checks for disabled connections
+  if (!connection.is_enabled) {
+    return res.status(200).json({ 
+      error: 'Connection disabled',
+      details: 'Certificate information not available for disabled connections'
+    });
+  }
+
   const domain = getDomainFromConnection(connection);
   if (!domain) {
     return res.status(400).json({ 
@@ -1108,6 +1135,65 @@ app.get('/api/data/:id/metrics/average', asyncHandler(async (req: Request, res: 
 }));
 
 // Get logs for all connections (for logs page)
+// Get auto-renewal monitoring data
+app.get('/api/auto-renewal/status', asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const connections = await database.getAllConnections();
+    
+    // Filter to only connections with auto-renewal enabled
+    const autoRenewConnections = connections.filter(conn => 
+      conn.is_enabled && conn.auto_renew && conn.dns_provider !== 'custom'
+    );
+    
+    // Calculate how many connections are actually due for renewal
+    const renewalThresholdDays = parseInt(process.env.CERT_RENEWAL_DAYS || '7');
+    const { getCertificateInfoWithFallback } = await import('./certificate');
+    
+    let connectionsDueForRenewal = 0;
+    
+    // Check each auto-renew connection to see if it's actually due for renewal
+    for (const connection of autoRenewConnections) {
+      try {
+        const hostname = `${connection.hostname}.${connection.domain}`;
+        const certInfo = await getCertificateInfoWithFallback(hostname, connection, database);
+        
+        if (certInfo && certInfo.daysUntilExpiry !== null && certInfo.daysUntilExpiry <= renewalThresholdDays) {
+          connectionsDueForRenewal++;
+        }
+      } catch (error) {
+        // If we can't get cert info, we can't determine if it's due for renewal
+        Logger.debug(`Could not check certificate info for ${connection.hostname}.${connection.domain}: ${error}`);
+      }
+    }
+    
+    // Calculate next cron run time
+    const cronSchedule = process.env.CERT_CHECK_SCHEDULE || '0 0 * * *';
+    const nextRunTime = calculateNextCronRun(cronSchedule);
+    
+    const monitoring = {
+      total_auto_renew_connections: autoRenewConnections.length,
+      connections_due_for_renewal: connectionsDueForRenewal,
+      cron_schedule: cronSchedule,
+      next_run_time: nextRunTime,
+      renewal_threshold_days: renewalThresholdDays,
+      last_check_time: new Date().toISOString(), // This would be better stored in DB
+      connections: autoRenewConnections.map(conn => ({
+        id: conn.id,
+        name: conn.name,
+        hostname: conn.hostname,
+        domain: conn.domain,
+        auto_renew_status: conn.auto_renew_status || 'unknown',
+        auto_renew_last_attempt: conn.auto_renew_last_attempt || 'never'
+      }))
+    };
+    
+    return res.json(monitoring);
+  } catch (error: any) {
+    Logger.error('Error getting auto-renewal status:', error);
+    return res.status(500).json({ error: 'Failed to get auto-renewal status' });
+  }
+}));
+
 app.get('/api/logs/all', asyncHandler(async (req: Request, res: Response) => {
   try {
     const connections = await database.getAllConnections();
@@ -1399,6 +1485,45 @@ async function performServiceRestart(operationId: string, connection: any, fqdn:
     Logger.error(`Error during service restart operation ${operationId} for ${fqdn}: ${error.message}`);
   }
 }
+
+// CSR Generation endpoint
+app.post('/api/generate-csr', asyncHandler(async (req: Request, res: Response) => {
+  try {
+    // Validate the request
+    const validationError = validateCSRRequest(req.body);
+    if (validationError) {
+      return res.status(400).json({ error: validationError });
+    }
+
+    const csrRequest: CSRRequest = {
+      commonName: req.body.commonName,
+      country: req.body.country,
+      state: req.body.state,
+      locality: req.body.locality,
+      organization: req.body.organization,
+      organizationalUnit: req.body.organizationalUnit,
+      keySize: req.body.keySize || 2048
+    };
+
+    Logger.info(`Generating CSR for CN=${csrRequest.commonName}`);
+
+    const result = generateCSR(csrRequest);
+
+    Logger.info(`CSR generated successfully for CN=${csrRequest.commonName}`);
+
+    return res.json({
+      success: true,
+      data: result
+    });
+
+  } catch (error: any) {
+    Logger.error(`CSR generation failed: ${error.message}`);
+    return res.status(500).json({
+      error: 'Failed to generate CSR',
+      details: error.message
+    });
+  }
+}));
 
 // Apply error handling middleware
 app.use(errorHandler);

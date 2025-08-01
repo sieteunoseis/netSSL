@@ -4,12 +4,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Clock, TrendingUp, Activity, Zap } from 'lucide-react';
+import { Clock, TrendingUp, Activity, Zap, Wifi, Shield } from 'lucide-react';
 import { apiCall } from "@/lib/api";
 
 interface PerformanceMetricsChartProps {
   connectionId: number;
   connectionName: string;
+  showIcons?: boolean;
+  showGrade?: boolean;
 }
 
 interface MetricData {
@@ -57,7 +59,7 @@ interface AverageDataPoint {
   color: string;
 }
 
-const PerformanceMetricsChart: React.FC<PerformanceMetricsChartProps> = ({ connectionId, connectionName }) => {
+const PerformanceMetricsChart: React.FC<PerformanceMetricsChartProps> = ({ connectionId, connectionName, showIcons = false, showGrade = false }) => {
   const [metrics, setMetrics] = useState<MetricData[]>([]);
   const [averageMetrics, setAverageMetrics] = useState<AverageMetrics | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -183,6 +185,15 @@ const PerformanceMetricsChart: React.FC<PerformanceMetricsChartProps> = ({ conne
     { name: 'Cert Processing', time: averageMetrics.avg_certificate_processing_time || 0, color: '#ff7300' }
   ] : [];
 
+  // Calculate performance grade based on total time
+  const getPerformanceGrade = (totalTime: number) => {
+    if (totalTime <= 500) return { grade: 'A+', color: 'text-green-600' };
+    if (totalTime <= 1000) return { grade: 'A', color: 'text-green-500' };
+    if (totalTime <= 2000) return { grade: 'B', color: 'text-yellow-500' };
+    if (totalTime <= 3000) return { grade: 'C', color: 'text-orange-500' };
+    return { grade: 'D', color: 'text-red-500' };
+  };
+
   if (loading) {
     return (
       <Card>
@@ -283,28 +294,52 @@ const PerformanceMetricsChart: React.FC<PerformanceMetricsChartProps> = ({ conne
       <CardContent>
         {/* Current Performance Summary */}
         {averageMetrics && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
             <div className="text-center p-3 bg-blue-50 dark:bg-blue-950 rounded-lg">
+              <div className="flex items-center justify-center mb-2">
+                <Wifi className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              </div>
               <div className="text-sm font-medium text-blue-600 dark:text-blue-400">DNS Resolve</div>
               <div className="text-lg font-bold text-blue-800 dark:text-blue-200">
                 {formatDuration(averageMetrics.avg_dns_resolve_time || 0)}
               </div>
             </div>
             <div className="text-center p-3 bg-green-50 dark:bg-green-950 rounded-lg">
-              <div className="text-sm font-medium text-green-600 dark:text-green-400">TLS Handshake</div>
+              <div className="flex items-center justify-center mb-2">
+                <Activity className="w-4 h-4 text-green-600 dark:text-green-400" />
+              </div>
+              <div className="text-sm font-medium text-green-600 dark:text-green-400">TCP Connect</div>
               <div className="text-lg font-bold text-green-800 dark:text-green-200">
-                {formatDuration(averageMetrics.avg_tls_handshake_time || 0)}
+                {formatDuration(averageMetrics.avg_tcp_connect_time || 0)}
               </div>
             </div>
             <div className="text-center p-3 bg-yellow-50 dark:bg-yellow-950 rounded-lg">
-              <div className="text-sm font-medium text-yellow-600 dark:text-yellow-400">Cert Processing</div>
+              <div className="flex items-center justify-center mb-2">
+                <Shield className="w-4 h-4 text-yellow-600 dark:text-yellow-400" />
+              </div>
+              <div className="text-sm font-medium text-yellow-600 dark:text-yellow-400">TLS Handshake</div>
               <div className="text-lg font-bold text-yellow-800 dark:text-yellow-200">
-                {formatDuration(averageMetrics.avg_certificate_processing_time || 0)}
+                {formatDuration(averageMetrics.avg_tls_handshake_time || 0)}
               </div>
             </div>
             <div className="text-center p-3 bg-purple-50 dark:bg-purple-950 rounded-lg">
-              <div className="text-sm font-medium text-purple-600 dark:text-purple-400">Total Time</div>
+              <div className="flex items-center justify-center mb-2">
+                <Activity className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+              </div>
+              <div className="text-sm font-medium text-purple-600 dark:text-purple-400">Cert Processing</div>
               <div className="text-lg font-bold text-purple-800 dark:text-purple-200">
+                {formatDuration(averageMetrics.avg_certificate_processing_time || 0)}
+              </div>
+            </div>
+            <div className="text-center p-3 bg-gray-50 dark:bg-gray-950 rounded-lg">
+              <div className="flex items-center justify-center mb-2">
+                <Zap className={`w-5 h-5 ${getPerformanceGrade(averageMetrics.avg_total_time || 0).color}`} />
+              </div>
+              <div className="text-sm font-medium text-gray-600 dark:text-gray-400">Performance</div>
+              <div className={`text-2xl font-bold ${getPerformanceGrade(averageMetrics.avg_total_time || 0).color}`}>
+                {getPerformanceGrade(averageMetrics.avg_total_time || 0).grade}
+              </div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">
                 {formatDuration(averageMetrics.avg_total_time || 0)}
               </div>
             </div>

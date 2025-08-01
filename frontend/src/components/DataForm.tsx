@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import validator from "validator";
 import { apiCall } from '../lib/api';
+import CSRGeneratorWizard from './CSRGeneratorWizard';
 
 interface Column {
   name: string;
@@ -55,6 +56,7 @@ const DataForm: React.FC<DataFormProps> = ({
   const { toast } = useToast();
   const [data, setData] = useState<Column[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isCSRWizardOpen, setIsCSRWizardOpen] = useState(false);
 
   const object = data.reduce((obj: Record<string, string | boolean>, value) => {
     obj[value.name] = value.default || (value.type === "SWITCH" ? false : "");
@@ -246,6 +248,39 @@ const DataForm: React.FC<DataFormProps> = ({
       .join(' ');
   };
 
+  const handleCSRGenerated = (generatedData: { csr: string; privateKey: string; subject: string; commonName: string }) => {
+    const applicationTypeValue = formData.application_type;
+    
+    // Update the appropriate fields based on application type
+    let updates: Record<string, string> = {};
+    
+    if (applicationTypeValue === 'general') {
+      updates = {
+        custom_csr: generatedData.csr,
+        general_private_key: generatedData.privateKey
+      };
+    } else if (applicationTypeValue === 'ise') {
+      updates = {
+        ise_certificate: generatedData.csr,
+        ise_private_key: generatedData.privateKey
+      };
+    }
+    
+    const newFormData = {
+      ...formData,
+      ...updates
+    };
+    
+    setFormData(newFormData);
+    onFormDataChange?.(newFormData);
+    
+    toast({
+      title: "CSR Generated",
+      description: "Certificate Signing Request and private key have been generated and populated.",
+      duration: 3000,
+    });
+  };
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
       {data.map((col, index) => {
@@ -300,7 +335,23 @@ const DataForm: React.FC<DataFormProps> = ({
 
         return (
           <div key={col.name} className="space-y-2">
-            {col.type !== "SWITCH" && <Label>{label}</Label>}
+            {col.type !== "SWITCH" && (
+              <div className="flex items-center justify-between">
+                <Label>{label}</Label>
+                {/* Generate CSR button for General and ISE applications - show next to label */}
+                {col.type === "TEXTAREA" && (col.name === 'custom_csr' || col.name === 'ise_certificate') && 
+                 (formData.application_type === 'general' || formData.application_type === 'ise') && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsCSRWizardOpen(true)}
+                  >
+                    Generate CSR
+                  </Button>
+                )}
+              </div>
+            )}
             
             {col.type === "SELECT" ? (
               <Select 
@@ -401,6 +452,14 @@ const DataForm: React.FC<DataFormProps> = ({
         }
       })}
       {!isPartOfTabbedForm && <Button type="submit">Add Connection</Button>}
+      
+      <CSRGeneratorWizard
+        isOpen={isCSRWizardOpen}
+        onClose={() => setIsCSRWizardOpen(false)}
+        onGenerated={handleCSRGenerated}
+        hostname={String(formData.hostname || "")}
+        domain={String(formData.domain || "")}
+      />
     </form>
   );
 };
