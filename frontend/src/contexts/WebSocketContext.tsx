@@ -16,15 +16,24 @@ interface Operation {
   createdBy: 'user' | 'cron' | 'auto';
 }
 
+interface AutoRenewalNotification {
+  connectionId: number;
+  status: 'in_progress' | 'success' | 'failed';
+  message: string;
+  timestamp: string;
+}
+
 interface WebSocketContextType {
   socket: Socket | null;
   connected: boolean;
   operations: Map<string, Operation>;
+  autoRenewalNotifications: AutoRenewalNotification[];
   subscribeToConnection: (connectionId: number) => void;
   unsubscribeFromConnection: (connectionId: number) => void;
   getConnectionOperations: (connectionId: number, type?: string) => Operation[];
   getActiveOperation: (connectionId: number, type: string) => Operation | null;
   hasActiveOperation: (connectionId: number, type: string) => boolean;
+  clearAutoRenewalNotifications: () => void;
 }
 
 const WebSocketContext = createContext<WebSocketContextType | null>(null);
@@ -33,6 +42,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [socket, setSocket] = useState<Socket | null>(null);
   const [connected, setConnected] = useState(false);
   const [operations, setOperations] = useState<Map<string, Operation>>(new Map());
+  const [autoRenewalNotifications, setAutoRenewalNotifications] = useState<AutoRenewalNotification[]>([]);
   const subscribedConnections = useRef<Set<number>>(new Set());
 
   useEffect(() => {
@@ -102,6 +112,38 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         debugLog('Updated operations map size:', newMap.size);
         return newMap;
       });
+    });
+
+    newSocket.on('auto-renewal-status', ({ connectionId, status, message, timestamp }: {
+      connectionId: number;
+      status: string;
+      message: string;
+      timestamp: string;
+    }) => {
+      debugLog('Auto-renewal status update:', { connectionId, status, message, timestamp });
+      
+      // Add to notifications list
+      const notification: AutoRenewalNotification = {
+        connectionId,
+        status: status as 'in_progress' | 'success' | 'failed',
+        message,
+        timestamp
+      };
+      
+      setAutoRenewalNotifications(prev => {
+        // Keep only the last 10 notifications
+        const updated = [notification, ...prev].slice(0, 10);
+        return updated;
+      });
+      
+      // Show notification to user
+      if (status === 'in_progress') {
+        console.log(`🔄 Auto-renewal started: ${message}`);
+      } else if (status === 'success') {
+        console.log(`✅ Auto-renewal completed: ${message}`);
+      } else if (status === 'failed') {
+        console.log(`❌ Auto-renewal failed: ${message}`);
+      }
     });
 
     newSocket.on('error', ({ message }: { message: string }) => {
@@ -183,16 +225,22 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return getActiveOperation(connectionId, type) !== null;
   }, [getActiveOperation]);
 
+  const clearAutoRenewalNotifications = useCallback(() => {
+    setAutoRenewalNotifications([]);
+  }, []);
+
   return (
     <WebSocketContext.Provider value={{
       socket,
       connected,
       operations,
+      autoRenewalNotifications,
       subscribeToConnection,
       unsubscribeFromConnection,
       getConnectionOperations,
       getActiveOperation,
-      hasActiveOperation
+      hasActiveOperation,
+      clearAutoRenewalNotifications
     }}>
       {children}
     </WebSocketContext.Provider>

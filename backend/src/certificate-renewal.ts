@@ -1618,13 +1618,21 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         return;
       }
 
-      // Extract only the leaf certificate (first certificate in the chain)
+      // Parse the certificate chain into individual certificates
       const certParts = certificate.split('-----END CERTIFICATE-----');
-      const leafCert = certParts[0].trim() + '\n-----END CERTIFICATE-----';
+      const certificates = certParts
+        .filter(part => part.includes('-----BEGIN CERTIFICATE-----'))
+        .map(part => (part.trim() + '\n-----END CERTIFICATE-----'));
 
+      if (certificates.length === 0) {
+        reject(new Error('No certificates found in certificate chain'));
+        return;
+      }
+
+      // VOS expects the full certificate chain: [leaf, intermediate, root]
       const postData = JSON.stringify({
         service: 'tomcat',
-        certificates: [leafCert]
+        certificates: certificates
       });
 
       const options = {
@@ -1642,8 +1650,8 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
 
       Logger.info(`VOS certificate chain upload request body: ${postData}`);
       await accountManager.saveRenewalLog(connectionId, fullFQDN, `VOS certificate chain upload request to ${fullFQDN}:${options.port}${options.path}`);
-      await accountManager.saveRenewalLog(connectionId, fullFQDN, `Uploading leaf certificate to tomcat service`);
-      await accountManager.saveRenewalLog(connectionId, fullFQDN, `Request body: ${postData}`);
+      await accountManager.saveRenewalLog(connectionId, fullFQDN, `Uploading full certificate chain (${certificates.length} certificates) to tomcat service`);
+      await accountManager.saveRenewalLog(connectionId, fullFQDN, `Certificate chain includes: leaf${certificates.length > 1 ? ', intermediate' : ''}${certificates.length > 2 ? ', root' : ''}`);
 
       const req = https.request(options, (res) => {
         let data = '';

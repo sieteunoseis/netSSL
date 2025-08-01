@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useCertificateRenewal } from "@/contexts/WebSocketContext";
-import { Shield, RotateCcw, CheckCircle } from "lucide-react";
+import { Shield, RotateCcw, CheckCircle, X } from "lucide-react";
 import { apiCall } from "@/lib/api";
 import { debugLog } from "@/lib/debug";
 
@@ -19,6 +19,7 @@ const CertificateRenewalButton = ({ connection, onConfirmRenew }) => {
   } = useCertificateRenewal(connection.id);
 
   const [recentlyCompleted, setRecentlyCompleted] = useState(false);
+  const [showCancel, setShowCancel] = useState(false);
 
   // Debug logging
   React.useEffect(() => {
@@ -42,6 +43,65 @@ const CertificateRenewalButton = ({ connection, onConfirmRenew }) => {
       return () => clearTimeout(timer);
     }
   }, [status, activeOperation]);
+
+  // Show cancel option for stuck renewals (after 30 seconds of no progress changes, or if failed/error status)
+  React.useEffect(() => {
+    if (!isRenewing || !activeOperation) {
+      setShowCancel(false);
+      return;
+    }
+
+    // Show cancel immediately for failed operations
+    if (status === 'failed' || error) {
+      setShowCancel(true);
+      return;
+    }
+
+    // Show cancel after 30 seconds for stuck operations
+    const timer = setTimeout(() => {
+      if (isRenewing) {
+        setShowCancel(true);
+      }
+    }, 30000);
+
+    return () => clearTimeout(timer);
+  }, [isRenewing, activeOperation, status, error]);
+
+  const handleCancel = async () => {
+    if (!activeOperation) return;
+
+    // Confirm before cancelling
+    if (!confirm('Are you sure you want to cancel this certificate renewal? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      debugLog(`Cancelling certificate renewal operation ${activeOperation.id}`);
+      
+      const response = await apiCall(`/operations/${activeOperation.id}`, {
+        method: 'DELETE'
+      });
+      
+      if (response.ok) {
+        toast({
+          title: "Certificate Renewal Cancelled",
+          description: "The certificate renewal operation has been cancelled.",
+          duration: 3000,
+        });
+        setShowCancel(false);
+      } else {
+        throw new Error('Failed to cancel operation');
+      }
+    } catch (error) {
+      console.error('Error cancelling certificate renewal:', error);
+      toast({
+        title: "Cancel Failed",
+        description: "Failed to cancel the certificate renewal. Please try again.",
+        variant: "destructive",
+        duration: 5000,
+      });
+    }
+  };
 
   const handleClick = async () => {
     if (isRenewing) {
@@ -136,7 +196,33 @@ const CertificateRenewalButton = ({ connection, onConfirmRenew }) => {
     );
   };
 
-  const isDisabled = isRenewing;
+  const isDisabled = isRenewing && !showCancel;
+
+  // If renewal is in progress and we should show cancel, render two buttons
+  if (isRenewing && showCancel) {
+    return (
+      <div className="flex items-center gap-1 w-full">
+        <Button
+          onClick={handleClick}
+          disabled={true}
+          size="sm"
+          className="text-blue-600 hover:text-blue-700 border-blue-300 hover:border-blue-400 bg-blue-50 flex-1 min-w-0"
+          variant="outline"
+        >
+          {getButtonContent()}
+        </Button>
+        <Button
+          onClick={handleCancel}
+          size="sm"
+          className="text-red-600 hover:text-red-700 border-red-300 hover:border-red-400 bg-red-50 flex-shrink-0"
+          variant="outline"
+          title="Cancel renewal"
+        >
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <Button

@@ -83,7 +83,7 @@ export class LetsEncryptAccountChecker {
             await acmeClient.createAccount(email, domain, connection.id);
             
             Logger.info(`Successfully created Let's Encrypt account for ${domain}`);
-            await accountManager.saveRenewalLog(connection.id, domain, `Account created during startup verification (${isStaging ? 'STAGING' : 'PRODUCTION'})`);
+            await accountManager.saveRenewalLog(connection.id, domain, `Account created during startup verification (${isStaging ? 'STAGING' : 'PRODUCTION'}) - ${new Date().toISOString()}`);
           } else {
             Logger.info(`Let's Encrypt account already exists for ${domain}`);
           }

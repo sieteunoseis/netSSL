@@ -18,6 +18,9 @@ import EditConnectionModalTabbed from "@/components/EditConnectionModalTabbed";
 import { apiCall } from "@/lib/api";
 import { filterEnabledConnections, getConnectionDisplayHostname, isWildcardCertificate, getCertificateValidationDomain, isConnectionEnabled } from "@/lib/connection-utils";
 import { useWebSocket } from "@/contexts/WebSocketContext";
+import { AutoRenewalNotifications } from "@/components/AutoRenewalNotifications";
+import { NextAutoRenewalInfo } from "@/components/NextAutoRenewalInfo";
+import { AutoRenewalCountdownBadge } from "@/components/AutoRenewalCountdownBadge";
 import { useCertificateSettings } from "@/hooks/useCertificateSettings";
 import PerformanceMetricsChart from "@/components/PerformanceMetricsChart";
 import templateConfig from "../../template.config.json";
@@ -898,6 +901,7 @@ const Home = ({ onStatusUpdate }) => {
   return (
     <div className="min-h-full w-full py-20 relative bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-slate-900 dark:to-indigo-950">
       <BackgroundLogo />
+      <AutoRenewalNotifications />
       <div className="max-w-6xl mx-auto px-4">
         {/* Header with Stats */}
         <div className="mb-6">
@@ -959,13 +963,17 @@ const Home = ({ onStatusUpdate }) => {
               </CardContent>
             </Card>
 
-            <Card className="bg-card/85 backdrop-blur-sm">
+            <Card className="bg-card/85 backdrop-blur-sm relative overflow-visible">
+              <div className="absolute -top-2 -right-2 z-10">
+                <AutoRenewalCountdownBadge />
+              </div>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Auto Renew</CardTitle>
                 <RotateCcw className="h-4 w-4 text-blue-500" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-blue-600">{overallStatus.autoRenew}</div>
+                <div className="text-2xl font-bold text-blue-600 mb-2">{overallStatus.autoRenew}</div>
+                <NextAutoRenewalInfo />
               </CardContent>
             </Card>
           </div>

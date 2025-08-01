@@ -135,7 +135,7 @@ const Logs = () => {
       const timestamp = timestampMatch[1];
       const message = timestampMatch[2];
       const date = new Date(timestamp);
-      const formattedTime = date.toLocaleTimeString();
+      const formattedTime = date.toISOString();
       
       return {
         timestamp: formattedTime,
@@ -317,11 +317,8 @@ const Logs = () => {
                       return (
                         <div key={index} className="w-full">
                           <div className="flex w-full">
-                            <span className="text-gray-500 w-24 flex-shrink-0 whitespace-nowrap pr-2">
-                              {formatted.timestamp}
-                            </span>
-                            <span className="text-gray-600 flex-shrink-0 px-3">
-                              -
+                            <span className="text-gray-500 w-56 flex-shrink-0 whitespace-nowrap pr-2">
+                              [{formatted.timestamp}]
                             </span>
                             <div className={`flex-1 word-break break-all ${
                               formatted.isError ? 'text-red-400' :

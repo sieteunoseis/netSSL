@@ -3,6 +3,9 @@ import { Server as HttpServer } from 'http';
 import { DatabaseManager } from './database';
 import { Logger } from './logger';
 
+// Global WebSocket server instance
+let webSocketServer: Server | null = null;
+
 export interface SocketData {
   userId?: string;
   connectionRooms: Set<number>;
@@ -132,7 +135,15 @@ export function initializeWebSocket(
 
   Logger.info('WebSocket server initialized');
   
+  // Store the global instance
+  webSocketServer = io;
+  
   return io;
+}
+
+// Function to get the existing WebSocket server instance
+export function getWebSocketServer(): Server | null {
+  return webSocketServer;
 }
 
 // Type augmentation for the socket.io server with custom methods

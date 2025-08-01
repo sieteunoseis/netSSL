@@ -11,10 +11,12 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { ModeToggle } from "./components/mode-toggle";
 import { Toaster } from "@/components/ui/toaster";
 import { WebSocketProvider } from "./contexts/WebSocketContext";
+import { useBackendStatus } from "./components/BackendStatusProvider.jsx";
 import { Menu } from 'lucide-react';
 import templateConfig from "../template.config.json";
 
 function App() {
+  const { isBackendReady } = useBackendStatus();
   // Start with sidebar closed on screens 1280px or smaller
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -48,6 +50,10 @@ function App() {
       }
     }
   };
+
+  if (!isBackendReady) {
+    return null; // Or a loading spinner, but BackendStatusProvider already shows a message
+  }
 
   return (
     <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme">
