@@ -1,5 +1,5 @@
 # Multi-stage build for unified frontend and backend container
-FROM node:20-alpine AS build
+FROM node:20.18-alpine3.20 AS build
 
 # Install PM2 globally for process management
 RUN npm install -g pm2
@@ -27,11 +27,11 @@ ENV VITE_API_URL=/api
 RUN npm run build
 
 # Production stage
-FROM node:20-alpine
+FROM node:20.18-alpine3.20
 
-# Install nginx and PM2
-RUN apk add --no-cache nginx
-RUN npm install -g pm2
+# Update packages and install nginx and PM2
+RUN apk update && apk upgrade && apk add --no-cache nginx curl && \
+    npm install -g pm2@5.4.3
 
 # Add non-root user
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup

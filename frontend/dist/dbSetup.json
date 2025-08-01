@@ -2,39 +2,114 @@
   {
     "name": "application_type",
     "type": "SELECT",
-    "validator": { "name": "isIn", "options": ["vos", "general"] },
+    "validator": { "name": "isIn", "options": ["vos", "ise", "general"] },
     "label": "Application Type",
     "options": [
-      { "value": "vos", "label": "Cisco VOS Application (CUCM/CER/CUC)" },
-      { "value": "general", "label": "General Application (ESXi, etc.)" }
+      { "value": "vos", "label": "Cisco VOS Application" },
+      { "value": "ise", "label": "Cisco ISE" },
+      { "value": "general", "label": "General Application" }
     ],
-    "default": "vos"
+    "default": "general"
+  },
+  {
+    "name": "ise_application_subtype",
+    "type": "SELECT",
+    "validator": { "name": "isIn", "options": ["guest", "portal", "admin"] },
+    "label": "ISE Application Subtype",
+    "options": [
+      { "value": "guest", "label": "Guest" },
+      { "value": "portal", "label": "Portal" },
+      { "value": "admin", "label": "Admin" }
+    ],
+    "default": "guest",
+    "conditional": {
+      "field": "application_type",
+      "value": "ise"
+    }
+  },
+  {
+    "name": "application_type_info",
+    "type": "INFO",
+    "conditional": {
+      "field": "application_type",
+      "value": "vos"
+    },
+    "description": "Includes: CUCM, CUC, IM&P, and other VOS-based systems. Uses API to automatically generate CSR and upload certificate after obtaining from SSL provider. Note: Without SSH enabled, users will need to manually restart Tomcat service after certificate installation."
+  },
+  {
+    "name": "application_type_info_ise",
+    "type": "INFO",
+    "conditional": {
+      "field": "application_type",
+      "value": "ise"
+    },
+    "description": "Includes: Cisco Identity Services Engine for Guest and Sponsor portals. Requires manual CSR generation and certificate installation through ISE admin interface."
+  },
+  {
+    "name": "application_type_info_general",
+    "type": "INFO",
+    "conditional": {
+      "field": "application_type",
+      "value": "general"
+    },
+    "description": "Includes: ESXi, other non-Cisco applications, or any system requiring certificate management. Requires manual CSR generation and certificate installation."
   },
   {
     "name": "name",
     "type": "TEXT",
     "validator": { "name": "isAscii", "options": "" },
     "label": "Connection Name",
-    "placeholder": "e.g., CUCM Primary"
+    "placeholder": "e.g., CUCM Primary, ISE Primary, ESXi Host"
   },
   {
     "name": "hostname",
     "type": "TEXT",
-    "validator": { "name": "isAscii", "options": "" },
+    "validator": { "name": "matches", "options": "^[a-zA-Z0-9]([a-zA-Z0-9\\-]{0,61}[a-zA-Z0-9])?$" },
     "label": "Server Hostname",
-    "placeholder": "e.g., cucm01-pub"
+    "placeholder": "e.g., cucm01-pub, cucm02-sub",
+    "description": "Hostname only - do not include domain name (e.g., 'server01' not 'server01.domain.com')",
+    "conditional": {
+      "field": "application_type",
+      "value": "vos"
+    }
+  },
+  {
+    "name": "hostname",
+    "type": "TEXT",
+    "validator": { "name": "matches", "options": "^(\\*|[a-zA-Z0-9]([a-zA-Z0-9\\-]{0,61}[a-zA-Z0-9])?)?$" },
+    "label": "Portal Hostname",
+    "placeholder": "e.g., sponsor, guest1, * (wildcard), or leave blank",
+    "description": "Portal hostname - can be a name, wildcard (*), or blank for domain-only certificates",
+    "conditional": {
+      "field": "application_type",
+      "value": "ise"
+    }
+  },
+  {
+    "name": "hostname",
+    "type": "TEXT",
+    "validator": { "name": "matches", "options": "^(\\*|[a-zA-Z0-9]([a-zA-Z0-9\\-]{0,61}[a-zA-Z0-9])?)?$" },
+    "label": "Server Hostname",
+    "placeholder": "e.g., esxi, ecp, * (wildcard), or leave blank",
+    "description": "Server hostname - can be a name, wildcard (*), or blank for domain-only certificates",
+    "conditional": {
+      "field": "application_type",
+      "value": "general"
+    }
   },
   {
     "name": "username",
     "type": "TEXT",
     "validator": { "name": "isAscii", "options": "" },
     "label": "Username",
-    "placeholder": "e.g., administrator, ccmadmin, root, admin",
+    "placeholder": "VOS: administrator, ccmadmin | ISE: admin, iseadmin",
     "default": "administrator",
-    "conditional": {
-      "field": "application_type",
-      "value": "vos"
-    }
+    "conditionalMultiple": [
+      {
+        "field": "application_type",
+        "values": ["vos", "ise"]
+      }
+    ]
   },
   {
     "name": "password",
@@ -42,10 +117,12 @@
     "validator": { "name": "isAscii", "options": "" },
     "label": "Password",
     "placeholder": "Server password",
-    "conditional": {
-      "field": "application_type",
-      "value": "vos"
-    }
+    "conditionalMultiple": [
+      {
+        "field": "application_type",
+        "values": ["vos", "ise"]
+      }
+    ]
   },
   {
     "name": "domain",
@@ -55,16 +132,81 @@
     "placeholder": "e.g., automate.builders"
   },
   {
+    "name": "ise_nodes",
+    "type": "TEXT",
+    "validator": { "name": "isAscii", "options": "" },
+    "label": "ISE Nodes (for certificate installation)",
+    "placeholder": "e.g., ise01.automate.builder, ise02.automate.builder (comma-separated)",
+    "required": false,
+    "optional": false,
+    "conditional": {
+      "field": "application_type",
+      "value": "ise"
+    }
+  },
+  {
+    "name": "ise_certificate",
+    "type": "TEXTAREA",
+    "validator": { "name": "isAscii", "options": "" },
+    "label": "CSR (PEM Format)",
+    "placeholder": "-----BEGIN CERTIFICATE REQUEST-----\nPaste your Certificate Signing Request here\n-----END CERTIFICATE REQUEST-----",
+    "required": false,
+    "optional": false,
+    "conditional": {
+      "field": "application_type",
+      "value": "ise"
+    }
+  },
+  {
+    "name": "ise_private_key",
+    "type": "TEXTAREA",
+    "validator": { "name": "isAscii", "options": "" },
+    "label": "Private Key (PEM Format)",
+    "placeholder": "-----BEGIN PRIVATE KEY-----\nPaste your private key here\n-----END PRIVATE KEY-----",
+    "required": false,
+    "optional": false,
+    "conditional": {
+      "field": "application_type",
+      "value": "ise"
+    }
+  },
+  {
     "name": "custom_csr",
     "type": "TEXTAREA",
     "validator": { "name": "isAscii", "options": "" },
-    "label": "Custom CSR (Required for General Applications)",
-    "placeholder": "-----BEGIN CERTIFICATE REQUEST-----\nPaste your Certificate Signing Request here\n-----END CERTIFICATE REQUEST-----\n\nOptional: Include your private key below the CSR\n-----BEGIN PRIVATE KEY----- or -----BEGIN RSA PRIVATE KEY-----\nYour private key content\n-----END PRIVATE KEY----- or -----END RSA PRIVATE KEY-----",
+    "label": "CSR (Required for General Applications)",
+    "placeholder": "-----BEGIN CERTIFICATE REQUEST-----\nPaste your Certificate Signing Request here\n-----END CERTIFICATE REQUEST-----",
     "required": false,
-    "optional": true,
+    "optional": false,
     "conditional": {
       "field": "application_type",
       "value": "general"
+    }
+  },
+  {
+    "name": "general_private_key",
+    "type": "TEXTAREA",
+    "validator": { "name": "isAscii", "options": "" },
+    "label": "Private Key (PEM Format)",
+    "placeholder": "-----BEGIN PRIVATE KEY-----\nPaste your private key here\n-----END PRIVATE KEY-----",
+    "required": false,
+    "optional": false,
+    "conditional": {
+      "field": "application_type",
+      "value": "general"
+    }
+  },
+  {
+    "name": "ise_cert_import_config",
+    "type": "TEXTAREA",
+    "validator": { "name": "isJSON", "options": "" },
+    "label": "Certificate Import Configuration (JSON)",
+    "placeholder": "{\n  \"admin\": false,\n  \"allowExtendedValidity\": true,\n  \"allowOutOfDateCert\": true,\n  \"allowPortalTagTransferForSameSubject\": true,\n  \"allowReplacementOfCertificates\": true,\n  \"allowReplacementOfPortalGroupTag\": true,\n  \"allowRoleTransferForSameSubject\": true,\n  \"allowSHA1Certificates\": true,\n  \"allowWildCardCertificates\": false,\n  \"eap\": false,\n  \"ims\": false,\n  \"name\": \"Guest System Certificate\",\n  \"password\": \"\",\n  \"portal\": true,\n  \"portalGroupTag\": \"My Default Portal Certificate Group\",\n  \"pxgrid\": false,\n  \"radius\": false,\n  \"saml\": false,\n  \"validateCertificateExtensions\": false\n}",
+    "default": "{\n  \"admin\": false,\n  \"allowExtendedValidity\": true,\n  \"allowOutOfDateCert\": true,\n  \"allowPortalTagTransferForSameSubject\": true,\n  \"allowReplacementOfCertificates\": true,\n  \"allowReplacementOfPortalGroupTag\": true,\n  \"allowRoleTransferForSameSubject\": true,\n  \"allowSHA1Certificates\": true,\n  \"allowWildCardCertificates\": false,\n  \"eap\": false,\n  \"ims\": false,\n  \"name\": \"Guest System Certificate\",\n  \"password\": \"\",\n  \"portal\": true,\n  \"portalGroupTag\": \"My Default Portal Certificate Group\",\n  \"pxgrid\": false,\n  \"radius\": false,\n  \"saml\": false,\n  \"validateCertificateExtensions\": false\n}",
+    "description": "Configuration for ISE certificate import API. This JSON will be merged with certificate data when importing certificates.",
+    "conditional": {
+      "field": "application_type",
+      "value": "ise"
     }
   },
   {
@@ -109,17 +251,19 @@
     "label": "Allow SSH",
     "description": "For testing and service management",
     "default": false,
-    "conditional": {
-      "field": "application_type",
-      "value": "vos"
-    }
+    "conditionalMultiple": [
+      {
+        "field": "application_type",
+        "values": ["vos"]
+      }
+    ]
   },
   {
     "name": "auto_restart_service",
     "type": "SWITCH",
     "validator": { "name": "isAscii", "options": "" },
-    "label": "Auto Restart Tomcat Service",
-    "description": "Automatically restart 'Cisco Tomcat' service after certificate installation",
+    "label": "Auto Restart Services",
+    "description": "Automatically restart 'Cisco Tomcat' service after certificate installation (VOS applications only)",
     "default": false,
     "conditional": {
       "field": "enable_ssh",
@@ -131,11 +275,19 @@
     "type": "SWITCH",
     "validator": { "name": "isAscii", "options": "" },
     "label": "Auto Renew Certificate",
-    "description": "Automatically renew certificate 7 days before expiration at midnight",
+    "description": "Automatically renew certificate before expiration (requires API-based DNS provider)",
     "default": false,
-    "conditional": {
-      "field": "application_type",
-      "value": "vos"
+    "conditionalNot": {
+      "field": "dns_provider",
+      "value": "custom"
     }
+  },
+  {
+    "name": "is_enabled",
+    "type": "SWITCH",
+    "validator": { "name": "isAscii", "options": "" },
+    "label": "Enable Connection",
+    "description": "When disabled, connection will be hidden from dashboard but can still be managed",
+    "default": true
   }
 ]

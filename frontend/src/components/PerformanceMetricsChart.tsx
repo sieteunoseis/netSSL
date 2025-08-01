@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Clock, TrendingUp, Activity, Zap, Wifi, Shield } from 'lucide-react';
@@ -59,7 +58,7 @@ interface AverageDataPoint {
   color: string;
 }
 
-const PerformanceMetricsChart: React.FC<PerformanceMetricsChartProps> = ({ connectionId, connectionName, showIcons = false, showGrade = false }) => {
+const PerformanceMetricsChart: React.FC<PerformanceMetricsChartProps> = ({ connectionId, connectionName }) => {
   const [metrics, setMetrics] = useState<MetricData[]>([]);
   const [averageMetrics, setAverageMetrics] = useState<AverageMetrics | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -93,17 +92,6 @@ const PerformanceMetricsChart: React.FC<PerformanceMetricsChartProps> = ({ conne
     fetchMetrics();
   }, [connectionId, timeRange]);
 
-  const formatTimestamp = (timestamp: string) => {
-    const date = new Date(timestamp);
-    // Force local timezone conversion
-    return new Intl.DateTimeFormat('en-US', {
-      month: 'short', 
-      day: 'numeric',
-      hour: '2-digit', 
-      minute: '2-digit',
-      hour12: true
-    }).format(date);
-  };
 
   const formatTimestampWithSeconds = (timestamp: string) => {
     // Handle both UTC and local timestamps
@@ -268,7 +256,7 @@ const PerformanceMetricsChart: React.FC<PerformanceMetricsChartProps> = ({ conne
             </CardDescription>
           </div>
           <div className="flex items-center space-x-2">
-            <Select value={viewType} onValueChange={setViewType}>
+            <Select value={viewType} onValueChange={(value) => setViewType(value as 'timeline' | 'average')}>
               <SelectTrigger className="w-32">
                 <SelectValue />
               </SelectTrigger>

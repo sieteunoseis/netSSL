@@ -301,7 +301,7 @@ const DataForm: React.FC<DataFormProps> = ({
           
           // Handle boolean comparisons properly
           if (typeof conditionValue === 'boolean') {
-            shouldShow = Boolean(fieldValue === true || fieldValue === 1 || fieldValue === "1") === conditionValue;
+            shouldShow = Boolean(fieldValue === true || Number(fieldValue) === 1 || fieldValue === "1") === conditionValue;
           } else {
             shouldShow = fieldValue === conditionValue;
           }
@@ -315,7 +315,7 @@ const DataForm: React.FC<DataFormProps> = ({
           
           // Handle boolean comparisons properly
           if (typeof conditionValue === 'boolean') {
-            shouldShow = Boolean(fieldValue === true || fieldValue === 1 || fieldValue === "1") !== conditionValue;
+            shouldShow = Boolean(fieldValue === true || Number(fieldValue) === 1 || fieldValue === "1") !== conditionValue;
           } else {
             shouldShow = fieldValue !== conditionValue;
           }

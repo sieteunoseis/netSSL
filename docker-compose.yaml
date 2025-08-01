@@ -1,5 +1,5 @@
 services:
-  app:
+  netssl:
     build:
       context: . # Use root directory for unified Dockerfile
     ports:

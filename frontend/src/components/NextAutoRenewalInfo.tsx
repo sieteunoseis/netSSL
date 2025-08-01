@@ -1,8 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Clock, Calendar, AlertCircle, ChevronDown, ChevronRight } from "lucide-react";
+import { Clock, ChevronDown, ChevronRight } from "lucide-react";
 import { apiCall } from "@/lib/api";
 
 interface AutoRenewalStatus {
@@ -33,30 +31,6 @@ const formatDateTime = (isoString: string): string => {
   });
 };
 
-const formatTimeUntil = (isoString: string): string => {
-  const now = new Date();
-  const target = new Date(isoString);
-  const diffMs = target.getTime() - now.getTime();
-  
-  if (diffMs < 0) return 'Past due';
-  
-  const diffMinutes = Math.ceil(diffMs / (1000 * 60));
-  
-  if (diffMinutes < 60) {
-    return `in ${diffMinutes}m`;
-  }
-  
-  const diffHours = Math.floor(diffMinutes / 60);
-  const remainingMinutes = diffMinutes % 60;
-  
-  if (diffHours < 24) {
-    return remainingMinutes > 0 ? `in ${diffHours}h ${remainingMinutes}m` : `in ${diffHours}h`;
-  } else {
-    const diffDays = Math.floor(diffHours / 24);
-    const remainingHours = diffHours % 24;
-    return remainingHours > 0 ? `in ${diffDays}d ${remainingHours}h` : `in ${diffDays}d`;
-  }
-};
 
 export const NextAutoRenewalInfo: React.FC = () => {
   const [status, setStatus] = useState<AutoRenewalStatus | null>(null);

@@ -1,16 +1,16 @@
-# Docker Testing Environment
+# Docker Deployment
 
-This folder contains Docker Compose configuration for testing the application with pre-built images from GitHub Container Registry.
+This folder contains Docker Compose configuration for deploying netSSL using pre-built images from GitHub Container Registry.
 
 ## Quick Start
 
 ### Download Docker Compose File
 ```bash
 # Download docker-compose.yml directly from GitHub
-wget https://raw.githubusercontent.com/sieteunoseis/react-express-tailwind-app/main/docker/docker-compose.yml
+wget https://raw.githubusercontent.com/sieteunoseis/netSSL/master/docker/docker-compose.yml
 
 # Or download entire docker folder
-wget -r --no-parent --reject="index.html*" https://raw.githubusercontent.com/sieteunoseis/react-express-tailwind-app/main/docker/
+wget -r --no-parent --reject="index.html*" https://raw.githubusercontent.com/sieteunoseis/netSSL/master/docker/
 ```
 
 ### Run Application
@@ -28,21 +28,27 @@ docker compose down
 ## Configuration
 
 ### Environment Variables
-Copy and customize the environment file:
+Create and customize the environment file:
 ```bash
-cp .env.example .env
-# Edit .env with your preferred settings
+# Create .env file with your configuration
+cat > .env << EOF
+VITE_BRANDING_URL=https://your-domain.com
+VITE_BRANDING_NAME=Your Company Name
+VITE_TABLE_COLUMNS=name,hostname,username,password,version
+PORT=5000
+NODE_ENV=production
+LETSENCRYPT_STAGING=false
+# Add DNS provider credentials as needed
+EOF
 ```
 
-### Available Images
-The compose file pulls images from GitHub Container Registry:
-- `ghcr.io/sieteunoseis/react-express-tailwind-app/frontend:latest`
-- `ghcr.io/sieteunoseis/react-express-tailwind-app/backend:latest`
+### Single Container Image
+The compose file pulls the unified image from GitHub Container Registry:
+- `ghcr.io/sieteunoseis/netssl:latest`
 
 ### Port Configuration
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:3000/api (or custom PORT)
-- **Health Check**: http://localhost:3000/health
+- **Application**: http://localhost:3000 (nginx serves frontend + API proxy)
+- **Internal Backend**: Port 5000 (not exposed externally)
 
 ## Testing Different Versions
 
@@ -50,10 +56,8 @@ To test specific versions, update the docker-compose.yml image tags:
 
 ```yaml
 services:
-  frontend:
-    image: ghcr.io/sieteunoseis/react-express-tailwind-app/frontend:v1.1.0
-  backend:
-    image: ghcr.io/sieteunoseis/react-express-tailwind-app/backend:v1.1.0
+  app:
+    image: ghcr.io/sieteunoseis/netssl:v1.1.0
 ```
 
 ## Data Persistence
@@ -72,8 +76,8 @@ Pre-built images support both AMD64 and ARM64 architectures. If you encounter is
 
 ```bash
 # Clone the repository
-git clone https://github.com/sieteunoseis/react-express-tailwind-app.git
-cd react-express-tailwind-app
+git clone https://github.com/sieteunoseis/netSSL.git
+cd netSSL
 
 # Create .env file (optional, has sensible defaults)
 cp .env.example .env
@@ -85,7 +89,7 @@ docker compose -f docker-compose.yaml up -d --build
 Or download just the build compose file:
 ```bash
 # Download the local build version
-wget https://raw.githubusercontent.com/sieteunoseis/react-express-tailwind-app/main/docker-compose.yaml
+wget https://raw.githubusercontent.com/sieteunoseis/netSSL/master/docker-compose.yaml
 
 # Build and run
 docker compose -f docker-compose.yaml up -d --build
@@ -97,8 +101,7 @@ If images aren't available in GitHub Container Registry yet:
 # Build images locally first
 cd ..
 docker compose build
-docker tag react-express-tailwind-app_frontend ghcr.io/sieteunoseis/react-express-tailwind-app/frontend:latest
-docker tag react-express-tailwind-app_backend ghcr.io/sieteunoseis/react-express-tailwind-app/backend:latest
+docker tag netssl ghcr.io/sieteunoseis/netssl:latest
 ```
 
 ### Health Check Failures

@@ -26,6 +26,15 @@ interface ProviderSettings {
   [key: string]: string;
 }
 
+interface ProviderConfig {
+  id: string;
+  name: string;
+  keys: string[];
+  description: string;
+  keyInfo: Record<string, string>;
+  keyDefaults?: Record<string, string>;
+}
+
 const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
   const { toast } = useToast();
   const [isOpen, setIsOpen] = useState(false);
@@ -37,7 +46,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
   const [showRightScroll, setShowRightScroll] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  const providers = [
+  const providers: ProviderConfig[] = [
     { 
       id: 'letsencrypt', 
       name: 'Let\'s Encrypt', 
@@ -316,7 +325,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
                             {provider.keys.map(key => (
                               <div key={key} className="bg-muted/50 p-2 rounded">
                                 <code className="text-xs font-mono text-foreground">{key}</code>
-                                <p className="text-xs mt-1">{provider.keyInfo[key]}</p>
+                                <p className="text-xs mt-1">{provider.keyInfo[key] || ''}</p>
                               </div>
                             ))}
                           </div>
@@ -403,14 +412,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
                         <div key={keyName} className="space-y-2">
                           <Label htmlFor={keyName}>{keyName}</Label>
                           {provider.keyInfo?.[keyName] && (
-                            <p className="text-xs text-muted-foreground">{provider.keyInfo[keyName]}</p>
+                            <p className="text-xs text-muted-foreground">{provider.keyInfo[keyName] || ''}</p>
                           )}
                           <div className="flex space-x-2">
                             <div className="relative flex-1">
                               <Input
                                 id={keyName}
                                 type={visibleKeys[keyName] ? "text" : "password"}
-                                placeholder={provider.keyDefaults?.[keyName] || `Enter ${keyName}`}
+                                placeholder={(provider.keyDefaults && provider.keyDefaults[keyName]) || `Enter ${keyName}`}
                                 value={providerSettings[provider.id]?.[keyName] || ''}
                                 onChange={(e) => {
                                   const value = e.target.value;

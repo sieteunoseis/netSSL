@@ -1,54 +1,34 @@
-# Docker Compose for Testing with Pre-built Images
-# This pulls images from GitHub Container Registry for testing purposes
+# Docker Compose for VOS SSH Dashboard - Single Container Deployment
+# This pulls the unified image from GitHub Container Registry
 
-name: react-express-tailwind-app
+name: netssl
 
 services:
-  frontend:
-    image: ghcr.io/sieteunoseis/react-express-tailwind-app/frontend:${FRONTEND_TAG:-latest}
-    container_name: react-frontend
+  app:
+    image: ghcr.io/sieteunoseis/netssl:${TAG:-latest}
+    container_name: netssl-dashboard
     ports:
-      - "3000:80"
-    networks:
-      - app-network
+      - "3000:80"  # nginx serves frontend and proxies API
     environment:
-      - PORT=${PORT:-3001}
-      - BACKEND_HOST=${BACKEND_HOST:-backend}
-      - VITE_API_URL=
-      - VITE_BRANDING_NAME=${VITE_BRANDING_NAME:-Automate Builders}
+      - PORT=${PORT:-5000}  # Internal backend port
+      - NODE_ENV=${NODE_ENV:-production}
+      - VITE_BRANDING_NAME=${VITE_BRANDING_NAME:-VOS Certificate Management}
       - VITE_BRANDING_URL=${VITE_BRANDING_URL:-https://automate.builders}
       - VITE_TABLE_COLUMNS=${VITE_TABLE_COLUMNS:-name,hostname,username,password,version}
-    depends_on:
-      - backend
-    restart: unless-stopped
-
-  backend:
-    image: ghcr.io/sieteunoseis/react-express-tailwind-app/backend:${BACKEND_TAG:-latest}
-    container_name: react-backend
-    ports:
-      - "${PORT:-3001}:${PORT:-3001}"  # Expose backend port for testing
-    expose:
-      - "${PORT:-3001}"
-    networks:
-      - app-network
-    environment:
-      - PORT=${PORT:-3001}
-      - NODE_ENV=${NODE_ENV:-production}
-      - VITE_TABLE_COLUMNS=${VITE_TABLE_COLUMNS:-name,hostname,username,password,version}
+      - LETSENCRYPT_STAGING=${LETSENCRYPT_STAGING:-false}
     volumes:
-      - backend_data:/app/db  # Persist database
+      - app_db:/app/db  # Persist database
+      - app_accounts:/app/accounts  # Persist certificates and accounts
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:${PORT:-3001}/health"]
+      test: ["CMD", "curl", "-f", "http://localhost/api/data"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 40s
+      retries: 5
+      start_period: 60s
 
 volumes:
-  backend_data:
+  app_db:
     driver: local
-
-networks:
-  app-network:
-    driver: bridge
+  app_accounts:
+    driver: local

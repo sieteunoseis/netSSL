@@ -1,4 +1,4 @@
-# Cisco SSL Dashboard
+# netSSL
 
 A web-based dashboard for managing SSL certificates across Cisco Voice over Secure (VOS) infrastructure, including Cisco Unified Communications Manager (CUCM), Unity Connection (CUC), and other VOS-based applications.
 
@@ -21,7 +21,7 @@ A web-based dashboard for managing SSL certificates across Cisco Voice over Secu
 - **Backend**: Express.js, TypeScript, SQLite
 - **Security**: Input validation, bcrypt password hashing
 - **Testing**: Jest (backend), Vitest (frontend)
-- **Deployment**: Docker with nginx and Node.js containers
+- **Deployment**: Single Docker container with nginx and Node.js
 
 ## Prerequisites
 
@@ -33,8 +33,8 @@ A web-based dashboard for managing SSL certificates across Cisco Voice over Secu
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/sieteunoseis/cisco-ssl-dashboard.git
-cd cisco-ssl-dashboard
+git clone https://github.com/sieteunoseis/netSSL.git
+cd netSSL
 ```
 
 2. Install dependencies:
@@ -107,8 +107,48 @@ cd backend && npm run build
 
 ## Docker Deployment
 
+### Single Container Deployment
+
+The application is packaged as a single Docker container containing both frontend (nginx) and backend (Node.js) services:
+
 ```bash
+# Using Docker Compose (recommended)
 docker-compose up --build
+
+# Or run directly with Docker
+docker build -t netssl .
+docker run -p 3000:80 \
+  -v ./backend/db:/app/db \
+  -v ./backend/accounts:/app/accounts \
+  --env-file .env \
+  netssl
+```
+
+The application will be available at http://localhost:3000
+
+### Architecture
+
+- **nginx** serves the React frontend and proxies API requests
+- **Node.js backend** handles API requests on internal port 5000
+- **PM2** manages both processes with automatic restart
+- **Persistent volumes** for database and certificate storage
+
+### Environment Variables
+
+Create a `.env` file with your configuration:
+```bash
+# Required environment variables
+VITE_BRANDING_URL=https://your-domain.com
+VITE_BRANDING_NAME=Your Company
+VITE_TABLE_COLUMNS=name,hostname,username,password,version
+PORT=5000
+NODE_ENV=production
+
+# Let's Encrypt settings
+LETSENCRYPT_STAGING=false
+
+# DNS provider credentials (as needed)
+CLOUDFLARE_TOKEN=your-token
 ```
 
 ## Security Considerations
