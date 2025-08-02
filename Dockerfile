@@ -1,11 +1,14 @@
 # Multi-stage build for unified frontend and backend container
 FROM node:20.18-alpine3.20 AS build
 
+# Set working directory for the entire build
+WORKDIR /build
+
 # Install PM2 globally for process management
 RUN npm install -g pm2
 
 # Build backend first
-WORKDIR /app/backend
+WORKDIR /build/backend
 COPY backend/package*.json ./
 COPY backend/tsconfig.json ./
 RUN npm ci --silent
@@ -14,7 +17,7 @@ COPY backend/src/ ./src/
 RUN npm run build && npm prune --production
 
 # Build frontend
-WORKDIR /app/frontend
+WORKDIR /build/frontend
 COPY frontend/package*.json ./
 RUN npm ci --silent
 
@@ -41,12 +44,13 @@ RUN mkdir -p /app/backend /app/frontend/dist /app/db /app/accounts && \
     chmod 755 /app/db /app/accounts
 
 # Copy built backend
-COPY --from=build --chown=appuser:appgroup /app/backend/dist /app/backend/dist
-COPY --from=build --chown=appuser:appgroup /app/backend/node_modules /app/backend/node_modules
-COPY --from=build --chown=appuser:appgroup /app/backend/package.json /app/backend/
+COPY --from=build --chown=appuser:appgroup /build/backend/dist /app/backend/dist
+COPY --from=build --chown=appuser:appgroup /build/backend/node_modules /app/backend/node_modules
+COPY --from=build --chown=appuser:appgroup /build/backend/package.json /app/backend/
 
 # Copy built frontend
-COPY --from=build --chown=appuser:appgroup /app/frontend/dist /app/frontend/dist
+COPY --from=build --chown=appuser:appgroup /build/frontend/dist /app/frontend/dist
+
 
 # Create nginx configuration
 RUN mkdir -p /etc/nginx/http.d
@@ -144,6 +148,17 @@ EOF
 COPY <<'EOF' /app/start.sh
 #!/bin/sh
 set -e
+
+# Generate runtime config.js file in the correct location
+cat > /app/frontend/dist/config.js << CONFIGEOF
+window.APP_CONFIG = {
+  BRANDING_URL: "${VITE_BRANDING_URL:-https://automate.builders}",
+  BRANDING_NAME: "${VITE_BRANDING_NAME:-netSSL Certificate Management}",
+  TABLE_COLUMNS: "${VITE_TABLE_COLUMNS:-name,hostname,username,password,version}",
+};
+CONFIGEOF
+
+echo "Generated config.js at /app/frontend/dist/config.js"
 
 # Start PM2 with ecosystem file
 exec pm2-runtime start /app/ecosystem.config.js
