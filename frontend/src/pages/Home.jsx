@@ -678,18 +678,6 @@ const Home = ({ onStatusUpdate }) => {
                         </Badge>
                       </div>
                     </div>
-                    <Button 
-                      onClick={() => {
-                        console.log('Edit (Full) - Connection being edited:', connection);
-                        console.log('Edit (Full) - App Type:', connection.application_type);
-                        setEditingConnection(connection);
-                      }}
-                      size="sm" 
-                      variant="outline"
-                    >
-                      <Edit className="h-4 w-4 mr-2" />
-                      Edit Connection
-                    </Button>
                   </TabsContent>
                 </div>
               </Tabs>

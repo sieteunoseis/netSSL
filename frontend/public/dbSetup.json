@@ -2,12 +2,12 @@
   {
     "name": "application_type",
     "type": "SELECT",
-    "validator": { "name": "isIn", "options": ["vos", "ise", "general"] },
+    "validator": { "name": "isIn", "options": ["general", "vos", "ise"] },
     "label": "Application Type",
     "options": [
+      { "value": "general", "label": "General Application" },
       { "value": "vos", "label": "Cisco VOS Application" },
-      { "value": "ise", "label": "Cisco ISE" },
-      { "value": "general", "label": "General Application" }
+      { "value": "ise", "label": "Cisco ISE" }
     ],
     "default": "general"
   },

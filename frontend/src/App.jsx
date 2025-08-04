@@ -3,7 +3,6 @@ import { useState, useEffect } from "react";
 import NavBar from "./components/NavBar";
 import RightSidebar from "./components/RightSidebar";
 import Home from "./pages/Home";
-import Connections from "./pages/Connections";
 import Logs from "./pages/Logs";
 import ErrorPage from "./pages/Error";
 import Help from "./pages/Help";
@@ -84,7 +83,6 @@ function App() {
             <main className={`flex-1 relative overflow-auto transition-all duration-300 z-10 ${isSidebarExpanded ? 'md:ml-80 ml-0' : 'md:ml-20 ml-0'}`}>
               <Routes>
                 <Route path="/" element={<Home onStatusUpdate={setOverallStatus} />} />
-                <Route path="/connections" element={<Connections />} />
                 <Route path="/logs" element={<Logs />} />
                 <Route path="/help" element={<Help />} />
                 <Route path="/error" element={<ErrorPage />} />

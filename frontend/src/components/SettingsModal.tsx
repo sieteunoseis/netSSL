@@ -7,9 +7,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Settings, Key, Check, X, Eye, EyeOff, ChevronLeft, ChevronRight } from "lucide-react";
+import { Settings, Key, Check, X, Eye, EyeOff, ChevronLeft, ChevronRight, Trash2, ToggleLeft, ToggleRight, Edit } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiCall } from "@/lib/api";
+import EditConnectionModalTabbed from "@/components/EditConnectionModalTabbed";
 
 interface SettingsModalProps {
   trigger?: React.ReactNode;
@@ -35,6 +36,15 @@ interface ProviderConfig {
   keyDefaults?: Record<string, string>;
 }
 
+interface Connection {
+  id: number;
+  name: string;
+  hostname: string;
+  is_enabled: boolean | string | number;
+  auto_renew: boolean;
+  application_type?: string;
+}
+
 const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
   const { toast } = useToast();
   const [isOpen, setIsOpen] = useState(false);
@@ -45,6 +55,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
   const [showLeftScroll, setShowLeftScroll] = useState(false);
   const [showRightScroll, setShowRightScroll] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [connections, setConnections] = useState<Connection[]>([]);
+  const [loadingConnections, setLoadingConnections] = useState(false);
+  const [editingConnection, setEditingConnection] = useState<Connection | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   const providers: ProviderConfig[] = [
     { 
@@ -159,6 +173,24 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
     }
   };
 
+  const fetchConnections = async () => {
+    try {
+      setLoadingConnections(true);
+      const response = await apiCall('/data');
+      const data = await response.json();
+      setConnections(data);
+    } catch (error) {
+      console.error('Error fetching connections:', error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch connections",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingConnections(false);
+    }
+  };
+
   const handleSaveSetting = async (providerId: string, keyName: string, value: string) => {
     try {
       const provider = providers.find(p => p.id === providerId);
@@ -245,6 +277,86 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
     }));
   };
 
+  const handleDeleteConnection = async (connectionId: number) => {
+    if (!confirm('Are you sure you want to delete this connection? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      const response = await apiCall(`/data/${connectionId}`, { method: 'DELETE' });
+      
+      if (response.ok) {
+        toast({
+          title: "Success",
+          description: "Connection deleted successfully",
+        });
+        // Refresh the connections list
+        fetchConnections();
+      }
+    } catch (error) {
+      console.error('Error deleting connection:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete connection",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleToggleConnection = async (connection: Connection) => {
+    const isEnabled = connection.is_enabled !== false && 
+                     connection.is_enabled !== "0" && 
+                     connection.is_enabled !== 0;
+    
+    try {
+      // First, fetch the full connection data
+      const getResponse = await apiCall(`/data?id=${connection.id}`);
+      const fullConnection = await getResponse.json();
+      
+      // Update with the toggled is_enabled value
+      const updatedConnection = {
+        ...fullConnection,
+        is_enabled: !isEnabled
+      };
+      
+      const response = await apiCall(`/data/${connection.id}`, {
+        method: 'PUT',
+        body: JSON.stringify(updatedConnection)
+      });
+      
+      if (response.ok) {
+        toast({
+          title: "Success",
+          description: `Connection ${!isEnabled ? 'enabled' : 'disabled'} successfully`,
+        });
+        // Refresh the connections list
+        fetchConnections();
+      }
+    } catch (error) {
+      console.error('Error toggling connection:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update connection",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleEditConnection = (connection: Connection) => {
+    setEditingConnection(connection);
+    setIsEditModalOpen(true);
+  };
+
+  const handleEditModalClose = () => {
+    setEditingConnection(null);
+    setIsEditModalOpen(false);
+  };
+
+  const handleConnectionUpdated = () => {
+    fetchConnections();
+    handleEditModalClose();
+  };
+
   const checkScroll = () => {
     if (scrollContainerRef.current) {
       const { scrollLeft, scrollWidth, clientWidth } = scrollContainerRef.current;
@@ -266,6 +378,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
   useEffect(() => {
     if (isOpen) {
       fetchSettings();
+      fetchConnections();
       // Check scroll on open
       setTimeout(checkScroll, 100);
     }
@@ -279,23 +392,25 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
   );
 
   return (
-    <Dialog open={isOpen} onOpenChange={setIsOpen}>
-      <DialogTrigger asChild>
-        {trigger || defaultTrigger}
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-[700px] max-h-[90vh] flex flex-col">
-        <DialogHeader>
-          <DialogTitle>API Keys & Settings</DialogTitle>
-          <DialogDescription>
-            Configure API keys for SSL and DNS providers
-          </DialogDescription>
-        </DialogHeader>
-        
-        <Tabs defaultValue="overview" className="w-full flex flex-col flex-1">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="configure">Configure</TabsTrigger>
-          </TabsList>
+    <>
+      <Dialog open={isOpen} onOpenChange={setIsOpen}>
+        <DialogTrigger asChild>
+          {trigger || defaultTrigger}
+        </DialogTrigger>
+        <DialogContent className="sm:max-w-[700px] max-h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>API Keys & Settings</DialogTitle>
+            <DialogDescription>
+              Configure API keys for SSL and DNS providers
+            </DialogDescription>
+          </DialogHeader>
+          
+          <Tabs defaultValue="overview" className="w-full flex flex-col flex-1 min-h-0">
+            <TabsList className="grid w-full grid-cols-3 flex-shrink-0">
+              <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="configure">Configure</TabsTrigger>
+              <TabsTrigger value="connections">Connections</TabsTrigger>
+            </TabsList>
           
           <TabsContent value="overview" className="space-y-2 flex-1 overflow-y-auto">
             <Accordion type="single" collapsible className="w-full">
@@ -470,9 +585,97 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
               </div>
             </Tabs>
           </TabsContent>
+          
+          <TabsContent value="connections" className="space-y-4 flex-1 overflow-hidden flex flex-col">
+            <Card className="flex-1 flex flex-col overflow-hidden">
+              <CardHeader className="flex-shrink-0">
+                <CardTitle>Connection Management</CardTitle>
+              </CardHeader>
+              <CardContent className="flex-1 overflow-y-auto">
+                {loadingConnections ? (
+                  <p className="text-muted-foreground">Loading connections...</p>
+                ) : connections.length === 0 ? (
+                  <p className="text-muted-foreground">No connections found</p>
+                ) : (
+                  <div className="space-y-2 pr-2">
+                    {connections.map((connection) => {
+                      const isEnabled = connection.is_enabled !== false && 
+                                       connection.is_enabled !== "0" && 
+                                       connection.is_enabled !== 0;
+                      
+                      return (
+                        <div 
+                          key={connection.id} 
+                          className="flex items-center justify-between p-3 rounded-lg border bg-card"
+                        >
+                          <div className="flex-1">
+                            <div className="font-medium">{connection.name}</div>
+                            <div className="text-sm text-muted-foreground">
+                              {connection.hostname}
+                              {connection.application_type && (
+                                <span className="ml-2">({connection.application_type})</span>
+                              )}
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center gap-2">
+                            <Badge variant={isEnabled ? "default" : "secondary"}>
+                              {isEnabled ? 'Enabled' : 'Disabled'}
+                            </Badge>
+                            
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleEditConnection(connection)}
+                              title="Edit connection"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleToggleConnection(connection)}
+                              title={isEnabled ? 'Disable connection' : 'Enable connection'}
+                            >
+                              {isEnabled ? (
+                                <ToggleRight className="h-4 w-4" />
+                              ) : (
+                                <ToggleLeft className="h-4 w-4" />
+                              )}
+                            </Button>
+                            
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleDeleteConnection(connection.id)}
+                              className="text-destructive hover:text-destructive"
+                              title="Delete connection"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
       </DialogContent>
     </Dialog>
+    
+    {editingConnection && (
+      <EditConnectionModalTabbed
+        record={editingConnection}
+        isOpen={isEditModalOpen}
+        onClose={handleEditModalClose}
+        onConnectionUpdated={handleConnectionUpdated}
+      />
+    )}
+    </>
   );
 };
 

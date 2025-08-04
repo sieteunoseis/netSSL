@@ -1,7 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 import { useConfig } from '@/config/ConfigContext';
 import templateConfig from "../../template.config.json";
-import { ChevronLeft, ChevronRight, Home, Database, FileText, HelpCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Home, FileText, HelpCircle } from 'lucide-react';
 import { cn } from "@/lib/utils";
 
 const RightSidebar = ({ isExpanded, onCollapse, onToggle }) => {
@@ -14,12 +14,6 @@ const RightSidebar = ({ isExpanded, onCollapse, onToggle }) => {
       path: '/',
       icon: Home,
       alwaysShow: true
-    },
-    {
-      name: 'Connections',
-      path: '/connections',
-      icon: Database,
-      alwaysShow: false
     },
     {
       name: 'Logs',
