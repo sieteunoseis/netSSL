@@ -7,6 +7,12 @@ services:
     env_file:
       - .env
     volumes:
-      - ./backend/accounts:/app/accounts  # Persistent storage for certificates and accounts
-      - ./backend/db:/app/db              # Persistent storage for database
+      - backend_accounts:/app/backend/accounts  # Persistent storage for certificates and accounts
+      - backend_db:/app/backend/db              # Persistent storage for database
     restart: unless-stopped
+
+volumes:
+  backend_accounts:
+    driver: local
+  backend_db:
+    driver: local

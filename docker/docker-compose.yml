@@ -12,8 +12,8 @@ services:
     env_file:
       - .env
     volumes:
-      - app_db:/app/db  # Persist database
-      - app_accounts:/app/accounts  # Persist certificates and accounts
+      - app_db:/app/backend/db  # Persist database
+      - app_accounts:/app/backend/accounts  # Persist certificates and accounts
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/api/data"]

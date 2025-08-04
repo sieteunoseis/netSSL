@@ -73,8 +73,33 @@ services:
 
 ## Data Persistence
 
-Database data is persisted in a Docker volume `backend_data`. To reset:
+Data is persisted in Docker named volumes:
+- `app_db`: Database files (SQLite)
+- `app_accounts`: SSL certificates and Let's Encrypt accounts
 
+**Important**: The backend creates files at `/app/backend/db` and `/app/backend/accounts` inside the container.
+
+### Volume Management
+
+Docker automatically manages permissions for named volumes. No manual permission setup is required.
+
+```bash
+# List volumes
+docker volume ls
+
+# Inspect a volume
+docker volume inspect netssl_app_db
+
+# Backup volumes
+docker run --rm -v netssl_app_db:/data -v $(pwd):/backup alpine tar czf /backup/db-backup.tar.gz -C /data .
+docker run --rm -v netssl_app_accounts:/data -v $(pwd):/backup alpine tar czf /backup/accounts-backup.tar.gz -C /data .
+
+# Restore volumes
+docker run --rm -v netssl_app_db:/data -v $(pwd):/backup alpine tar xzf /backup/db-backup.tar.gz -C /data
+docker run --rm -v netssl_app_accounts:/data -v $(pwd):/backup alpine tar xzf /backup/accounts-backup.tar.gz -C /data
+```
+
+To reset all data:
 ```bash
 docker compose down -v  # Remove volumes
 docker compose up -d    # Start fresh
@@ -117,21 +142,23 @@ docker tag netssl ghcr.io/sieteunoseis/netssl:latest
 
 ### Health Check Failures
 ```bash
-# Check backend health
-curl http://localhost:3000/health
+# Check application health
+curl http://localhost:3000/api/data
 
-# Check backend logs
-docker compose logs backend
+# Check logs
+docker compose logs app
 ```
 
 ### Container Communication Issues
 ```bash
-# Test internal network connectivity
-docker compose exec react-frontend ping react-backend
-docker compose exec react-frontend curl http://backend:3000/health
+# Check if backend is running
+docker compose exec app ps aux | grep node
 
-# If using different container names, override the backend host
-BACKEND_HOST=react-backend docker compose up -d
+# Check database location
+docker compose exec app ls -la /app/backend/db/
+
+# Check accounts/certificates location
+docker compose exec app ls -la /app/backend/accounts/
 ```
 
 ## Development vs Testing
@@ -160,7 +187,6 @@ docker stats
 # All services
 docker-compose logs -f
 
-# Specific service
-docker-compose logs -f backend
-docker-compose logs -f frontend
+# Application logs
+docker-compose logs -f app
 ```

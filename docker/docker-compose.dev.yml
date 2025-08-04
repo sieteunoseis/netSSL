@@ -39,7 +39,8 @@ services:
       - NODE_ENV=${NODE_ENV:-production}
       - VITE_TABLE_COLUMNS=${VITE_TABLE_COLUMNS:-name,hostname,username,password,version}
     volumes:
-      - backend_data:/app/db
+      - backend_data:/app/backend/db
+      - backend_accounts:/app/backend/accounts
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:${PORT:-3000}/health"]
       interval: 30s
@@ -49,6 +50,8 @@ services:
 
 volumes:
   backend_data:
+    driver: local
+  backend_accounts:
     driver: local
 
 networks:
