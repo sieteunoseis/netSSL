@@ -20,7 +20,8 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Helper function to make API calls with retry logic
 export const apiCall = async (endpoint: string, options: RequestInit & { retries?: number; retryDelay?: number } = {}) => {
-  const url = API_BASE_URL ? `${API_BASE_URL}${endpoint}` : endpoint;
+  // Always use relative paths in production to ensure nginx proxy works correctly
+  const url = `${API_BASE_URL}${endpoint}`;
   const { retries = 10, retryDelay = 2000, ...fetchOptions } = options;
   
   let lastError: Error | null = null;

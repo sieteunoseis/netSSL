@@ -50,9 +50,9 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const isDevelopment = import.meta.env.DEV;
     const backendUrl = isDevelopment 
       ? 'http://localhost:3000'
-      : window.location.origin;
+      : ''; // Use relative path in production for nginx proxy
 
-    debugWebSocket('Connecting to WebSocket server at:', backendUrl);
+    debugWebSocket('Connecting to WebSocket server at:', backendUrl || 'relative path');
 
     // Create socket connection
     const newSocket = io(backendUrl, {
