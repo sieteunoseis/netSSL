@@ -126,6 +126,7 @@ Backend requires environment variables matching `dbSetup.json` field names. Set 
 - `docker-compose.yaml` for containerized deployment
 
 ### Frontend Debug Configuration
+- `VITE_DEBUG`: Set to `true` to enable general debug messages in browser console (default: `false`)
 - `VITE_DEBUG_WEBSOCKET`: Set to `true` to enable detailed WebSocket debug logging in browser console (default: `false`)
 
 ### Let's Encrypt Configuration

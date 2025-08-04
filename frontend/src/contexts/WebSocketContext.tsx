@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { debugLog, debugError } from '@/lib/debug';
+import { debugWebSocket, debugError } from '@/lib/debug';
 
 interface Operation {
   id: string;
@@ -52,7 +52,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       ? 'http://localhost:3000'
       : window.location.origin;
 
-    debugLog('Connecting to WebSocket server at:', backendUrl);
+    debugWebSocket('Connecting to WebSocket server at:', backendUrl);
 
     // Create socket connection
     const newSocket = io(backendUrl, {
@@ -66,7 +66,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     });
 
     newSocket.on('connect', () => {
-      debugLog('WebSocket connected');
+      debugWebSocket('WebSocket connected');
       setConnected(true);
       
       // Rejoin rooms for subscribed connections
@@ -77,7 +77,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     });
 
     newSocket.on('disconnect', (reason) => {
-      debugLog('WebSocket disconnected:', reason);
+      debugWebSocket('WebSocket disconnected:', reason);
       setConnected(false);
     });
 
@@ -87,7 +87,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     });
 
     newSocket.on('operation:update', ({ operation }: { operation: Operation }) => {
-      debugLog('Received operation update:', operation);
+      debugWebSocket('Received operation update:', operation);
       setOperations(prev => {
         const newMap = new Map(prev);
         newMap.set(operation.id, operation);
@@ -99,8 +99,8 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       connectionId: number; 
       operations: Operation[] 
     }) => {
-      debugLog(`Received operations for connection ${connectionId}:`, ops);
-      debugLog('Active operations:', ops.filter(op => ['pending', 'in_progress'].includes(op.status)));
+      debugWebSocket(`Received operations for connection ${connectionId}:`, ops);
+      debugWebSocket('Active operations:', ops.filter(op => ['pending', 'in_progress'].includes(op.status)));
       setOperations(prev => {
         const newMap = new Map(prev);
         // Clear old operations for this connection first
@@ -109,7 +109,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           .forEach(op => newMap.delete(op.id));
         // Add new operations
         ops.forEach(op => newMap.set(op.id, op));
-        debugLog('Updated operations map size:', newMap.size);
+        debugWebSocket('Updated operations map size:', newMap.size);
         return newMap;
       });
     });
@@ -120,7 +120,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       message: string;
       timestamp: string;
     }) => {
-      debugLog('Auto-renewal status update:', { connectionId, status, message, timestamp });
+      debugWebSocket('Auto-renewal status update:', { connectionId, status, message, timestamp });
       
       // Add to notifications list
       const notification: AutoRenewalNotification = {
@@ -171,20 +171,20 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const subscribeToConnection = useCallback((connectionId: number) => {
     if (!socket || !connected) {
-      debugLog('Socket not connected, cannot subscribe to connection', connectionId);
+      debugWebSocket('Socket not connected, cannot subscribe to connection', connectionId);
       return;
     }
 
     // Check if already subscribed to prevent duplicate subscriptions
     if (subscribedConnections.current.has(connectionId)) {
-      debugLog(`Already subscribed to connection ${connectionId}, skipping`);
+      debugWebSocket(`Already subscribed to connection ${connectionId}, skipping`);
       return;
     }
 
     subscribedConnections.current.add(connectionId);
     socket.emit('subscribe:connection', connectionId);
-    debugLog(`Subscribed to connection ${connectionId}`);
-    debugLog('Currently subscribed connections:', Array.from(subscribedConnections.current));
+    debugWebSocket(`Subscribed to connection ${connectionId}`);
+    debugWebSocket('Currently subscribed connections:', Array.from(subscribedConnections.current));
   }, [socket, connected]);
 
   const unsubscribeFromConnection = useCallback((connectionId: number) => {
@@ -197,7 +197,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     subscribedConnections.current.delete(connectionId);
     socket.emit('unsubscribe:connection', connectionId);
-    debugLog(`Unsubscribed from connection ${connectionId}`);
+    debugWebSocket(`Unsubscribed from connection ${connectionId}`);
   }, [socket]);
 
   const getConnectionOperations = useCallback((connectionId: number, type?: string): Operation[] => {
@@ -214,7 +214,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const getActiveOperation = useCallback((connectionId: number, type: string): Operation | null => {
     const ops = getConnectionOperations(connectionId, type);
     const activeOp = ops.find(op => ['pending', 'in_progress'].includes(op.status)) || null;
-    debugLog(`getActiveOperation for connection ${connectionId}, type ${type}:`, {
+    debugWebSocket(`getActiveOperation for connection ${connectionId}, type ${type}:`, {
       allOps: ops.length,
       activeOp: activeOp ? { id: activeOp.id, status: activeOp.status, progress: activeOp.progress } : null
     });
@@ -261,10 +261,10 @@ export const useServiceRestart = (connectionId: number) => {
 
   useEffect(() => {
     if (connectionId && connected) {
-      debugLog(`useServiceRestart: Subscribing to connection ${connectionId}`);
+      debugWebSocket(`useServiceRestart: Subscribing to connection ${connectionId}`);
       subscribeToConnection(connectionId);
       return () => {
-        debugLog(`useServiceRestart: Unsubscribing from connection ${connectionId}`);
+        debugWebSocket(`useServiceRestart: Unsubscribing from connection ${connectionId}`);
         unsubscribeFromConnection(connectionId);
       };
     }
@@ -273,7 +273,7 @@ export const useServiceRestart = (connectionId: number) => {
   const activeOperation = getActiveOperation(connectionId, 'service_restart');
   const isRestarting = hasActiveOperation(connectionId, 'service_restart');
 
-  debugLog(`useServiceRestart hook for connection ${connectionId}:`, {
+  debugWebSocket(`useServiceRestart hook for connection ${connectionId}:`, {
     activeOperation: activeOperation ? { id: activeOperation.id, status: activeOperation.status, progress: activeOperation.progress } : null,
     isRestarting,
     totalOperations: Array.from(operations.values()).length,
@@ -296,10 +296,10 @@ export const useCertificateRenewal = (connectionId: number) => {
 
   useEffect(() => {
     if (connectionId && connected) {
-      debugLog(`useCertificateRenewal: Subscribing to connection ${connectionId}`);
+      debugWebSocket(`useCertificateRenewal: Subscribing to connection ${connectionId}`);
       subscribeToConnection(connectionId);
       return () => {
-        debugLog(`useCertificateRenewal: Unsubscribing from connection ${connectionId}`);
+        debugWebSocket(`useCertificateRenewal: Unsubscribing from connection ${connectionId}`);
         unsubscribeFromConnection(connectionId);
       };
     }
@@ -308,7 +308,7 @@ export const useCertificateRenewal = (connectionId: number) => {
   const activeOperation = getActiveOperation(connectionId, 'certificate_renewal');
   const isRenewing = hasActiveOperation(connectionId, 'certificate_renewal');
 
-  debugLog(`useCertificateRenewal hook for connection ${connectionId}:`, {
+  debugWebSocket(`useCertificateRenewal hook for connection ${connectionId}:`, {
     activeOperation: activeOperation ? { id: activeOperation.id, status: activeOperation.status, progress: activeOperation.progress } : null,
     isRenewing,
     totalOperations: Array.from(operations.values()).length,
