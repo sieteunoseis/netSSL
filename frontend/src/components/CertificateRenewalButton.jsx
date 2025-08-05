@@ -36,11 +36,19 @@ const CertificateRenewalButton = ({ connection, onConfirmRenew }) => {
   // Track recently completed operations
   React.useEffect(() => {
     if (status === 'completed' && activeOperation) {
-      setRecentlyCompleted(true);
-      const timer = setTimeout(() => {
+      // First show 100% for 2 seconds, then show "Renewal Completed" for 8 seconds
+      const showCompletedTimer = setTimeout(() => {
+        setRecentlyCompleted(true);
+      }, 2000); // Show 100% for 2 seconds first
+      
+      const hideCompletedTimer = setTimeout(() => {
         setRecentlyCompleted(false);
-      }, 10000); // Show completion state for 10 seconds
-      return () => clearTimeout(timer);
+      }, 10000); // Total of 10 seconds (2 seconds for 100% + 8 seconds for "Renewal Completed")
+      
+      return () => {
+        clearTimeout(showCompletedTimer);
+        clearTimeout(hideCompletedTimer);
+      };
     }
   }, [status, activeOperation]);
 
@@ -179,6 +187,16 @@ const CertificateRenewalButton = ({ connection, onConfirmRenew }) => {
       );
     }
 
+    // Show completion with 100% when status is completed but before recentlyCompleted is set
+    if (status === 'completed' && progress === 100 && !recentlyCompleted) {
+      return (
+        <>
+          <RotateCw className="mr-2 h-4 w-4 animate-spin" />
+          {message || 'Renewing...'} (100%)
+        </>
+      );
+    }
+
     if (recentlyCompleted) {
       return (
         <>
@@ -196,7 +214,7 @@ const CertificateRenewalButton = ({ connection, onConfirmRenew }) => {
     );
   };
 
-  const isDisabled = isRenewing && !showCancel;
+  const isDisabled = (isRenewing && !showCancel) || (status === 'completed' && progress === 100 && !recentlyCompleted);
 
   // If renewal is in progress and we should show cancel, render two buttons
   if (isRenewing && showCancel) {
@@ -232,7 +250,7 @@ const CertificateRenewalButton = ({ connection, onConfirmRenew }) => {
       className={`${
         recentlyCompleted 
           ? 'text-green-600 hover:text-green-700 border-green-300 hover:border-green-400 bg-green-50' 
-          : isRenewing 
+          : isRenewing || (status === 'completed' && progress === 100 && !recentlyCompleted)
             ? 'text-blue-600 hover:text-blue-700 border-blue-300 hover:border-blue-400 bg-blue-50'
             : 'text-blue-600 hover:text-blue-700 border-blue-300 hover:border-blue-400'
       }`}
