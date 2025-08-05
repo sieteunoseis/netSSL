@@ -1,0 +1,46 @@
+# Docker Compose for netSSL - Quick Deployment
+# This pulls the pre-built image from GitHub Container Registry
+
+name: netssl
+
+services:
+  app:
+    image: ghcr.io/sieteunoseis/netssl:latest
+    container_name: netssl-dashboard
+    ports:
+      - "3000:80"  # nginx serves frontend and proxies API
+    environment:
+      # Frontend Branding Configuration
+      - VITE_BRANDING_URL=https://automate.builders
+      - VITE_BRANDING_NAME=Automate Builders
+      - VITE_BACKGROUND_LOGO_TEXT=AB
+      # Frontend Debug Configuration
+      - VITE_DEBUG=false
+      - VITE_DEBUG_WEBSOCKET=false
+      # Backend Configuration
+      - PORT=3000
+      - NODE_ENV=production
+      # Certificate Auto-Renewal Configuration
+      - CERT_RENEWAL_DAYS=7
+      - CERT_WARNING_DAYS=30
+      - CERT_CHECK_SCHEDULE=0 16 * * *
+      # Let's Encrypt Configuration
+      - LETSENCRYPT_STAGING=true
+      # Certificate accounts directory
+      - ACCOUNTS_DIR=./accounts
+    volumes:
+      - app_db:/app/backend/db  # Persist database
+      - app_accounts:/app/backend/accounts  # Persist certificates and accounts
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/api/data"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+volumes:
+  app_db:
+    driver: local
+  app_accounts:
+    driver: local

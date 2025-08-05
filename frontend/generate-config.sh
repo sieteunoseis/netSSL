@@ -5,7 +5,7 @@ cat <<EOF > /usr/share/nginx/html/config.js
 window.APP_CONFIG = {
   BRANDING_URL: "${VITE_BRANDING_URL:-https://automate.builders}",
   BRANDING_NAME: "${VITE_BRANDING_NAME:-Automate Builders}",
-  TABLE_COLUMNS: "${VITE_TABLE_COLUMNS:-name,hostname,username,password,version}",
+  TABLE_COLUMNS: "name,hostname,username,password,domain,ssl_provider,dns_provider,dns_challenge_mode,portal_url,ise_nodes,ise_certificate,ise_private_key,ise_cert_import_config,ise_application_subtype,general_private_key,alt_names,enable_ssh,auto_restart_service,auto_renew,auto_renew_status,auto_renew_last_attempt",
 };
 EOF
 

@@ -46,11 +46,33 @@ function calculateNextCronRun(cronExpression: string): string {
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
-console.log('TABLE_COLUMNS from env:', process.env.TABLE_COLUMNS);
-const TABLE_COLUMNS = (process.env.TABLE_COLUMNS || 'application_type,ise_application_subtype,name,hostname,username,password,domain,ise_nodes,ise_certificate,ise_private_key,custom_csr,general_private_key,ise_cert_import_config,ssl_provider,dns_provider,alt_names,enable_ssh,auto_restart_service,auto_renew')
-  .split(',')
-  .map(col => col.trim());
-console.log('Processed TABLE_COLUMNS:', TABLE_COLUMNS);
+
+// Hardcoded table columns - these define the database schema and should not be modified
+const TABLE_COLUMNS = [
+  'name',
+  'hostname', 
+  'username',
+  'password',
+  'domain',
+  'ssl_provider',
+  'dns_provider',
+  'dns_challenge_mode',
+  'portal_url',
+  'ise_nodes',
+  'ise_certificate',
+  'ise_private_key',
+  'ise_cert_import_config',
+  'ise_application_subtype',
+  'general_private_key',
+  'alt_names',
+  'enable_ssh',
+  'auto_restart_service',
+  'auto_renew',
+  'auto_renew_status',
+  'auto_renew_last_attempt'
+];
+
+console.log('Using hardcoded TABLE_COLUMNS:', TABLE_COLUMNS);
 
 // Initialize database
 const database = new DatabaseManager('./db/database.db', TABLE_COLUMNS);

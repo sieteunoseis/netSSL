@@ -12,6 +12,13 @@ backend/dist
 README.md
 *.md
 
+# Image files
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+
 # Environment files (except template)
 .env
 .env.local

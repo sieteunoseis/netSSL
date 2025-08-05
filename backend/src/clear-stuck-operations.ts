@@ -7,10 +7,30 @@ import path from 'path';
 async function clearStuckOperations() {
   const dbPath = path.join(__dirname, '..', 'db', 'database.db');
   
-  // Use the same table columns as the server
-  const TABLE_COLUMNS = (process.env.TABLE_COLUMNS || process.env.VITE_TABLE_COLUMNS || 'hostname,username,password,port,version')
-    .split(',')
-    .map(col => col.trim());
+  // Use the same hardcoded table columns as the server
+  const TABLE_COLUMNS = [
+    'name',
+    'hostname', 
+    'username',
+    'password',
+    'domain',
+    'ssl_provider',
+    'dns_provider',
+    'dns_challenge_mode',
+    'portal_url',
+    'ise_nodes',
+    'ise_certificate',
+    'ise_private_key',
+    'ise_cert_import_config',
+    'ise_application_subtype',
+    'general_private_key',
+    'alt_names',
+    'enable_ssh',
+    'auto_restart_service',
+    'auto_renew',
+    'auto_renew_status',
+    'auto_renew_last_attempt'
+  ];
   
   const database = new DatabaseManager(dbPath, TABLE_COLUMNS);
   

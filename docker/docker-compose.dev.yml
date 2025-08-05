@@ -19,7 +19,6 @@ services:
       - VITE_API_URL=/api
       - VITE_BRANDING_NAME=${VITE_BRANDING_NAME:-Automate Builders}
       - VITE_BRANDING_URL=${VITE_BRANDING_URL:-https://automate.builders}
-      - VITE_TABLE_COLUMNS=${VITE_TABLE_COLUMNS:-name,hostname,username,password,version}
     depends_on:
       - backend
 
@@ -37,7 +36,6 @@ services:
     environment:
       - PORT=${PORT:-3001}
       - NODE_ENV=${NODE_ENV:-production}
-      - VITE_TABLE_COLUMNS=${VITE_TABLE_COLUMNS:-name,hostname,username,password,version}
     volumes:
       - backend_data:/app/backend/db
       - backend_accounts:/app/backend/accounts
