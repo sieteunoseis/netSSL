@@ -1393,13 +1393,24 @@ app.post('/api/data/:id/restart-service', asyncHandler(async (req: Request, res:
 
 // Async function to perform service restart with real-time updates
 async function performServiceRestart(operationId: string, connection: any, fqdn: string) {
+  const domain = getDomainFromConnection(connection);
+  
   try {
+    // Log restart initiation
+    if (domain) {
+      await accountManager.saveRenewalLog(connection.id, domain, `Service restart initiated for ${fqdn}`);
+    }
+
     // Update to in_progress
     await operationManager.updateOperation(operationId, {
       status: 'in_progress',
       progress: 10,
       message: 'Testing SSH connection...'
     });
+
+    if (domain) {
+      await accountManager.saveRenewalLog(connection.id, domain, `Testing SSH connection to ${fqdn}...`);
+    }
 
     // Test SSH connection first
     const sshTest = await SSHClient.testConnection({
@@ -1409,12 +1420,19 @@ async function performServiceRestart(operationId: string, connection: any, fqdn:
     });
 
     if (!sshTest.success) {
+      if (domain) {
+        await accountManager.saveRenewalLog(connection.id, domain, `SSH connection failed: ${sshTest.error}`);
+      }
       await operationManager.updateOperation(operationId, {
         status: 'failed',
         progress: 100,
         error: `SSH connection failed: ${sshTest.error}`
       });
       return;
+    }
+
+    if (domain) {
+      await accountManager.saveRenewalLog(connection.id, domain, `SSH connection successful - admin user detected`);
     }
 
     await operationManager.updateOperation(operationId, {
@@ -1429,6 +1447,10 @@ async function performServiceRestart(operationId: string, connection: any, fqdn:
       message: 'Executing Cisco Tomcat service restart command...'
     });
 
+    if (domain) {
+      await accountManager.saveRenewalLog(connection.id, domain, `Executing command: utils service restart Cisco Tomcat`);
+    }
+
     // Use the streaming version to get real-time updates
     const restartResult = await SSHClient.executeCommandWithStream({
       hostname: fqdn,
@@ -1437,13 +1459,22 @@ async function performServiceRestart(operationId: string, connection: any, fqdn:
       command: 'utils service restart Cisco Tomcat',
       timeout: 300000, // 5 minutes
       onData: async (chunk: string, totalOutput: string) => {
-        // Check for [STARTING] pattern and update progress to 75%
-        if (chunk.includes('[STARTING]') || totalOutput.includes('Cisco Tomcat[STARTING]')) {
-          Logger.info(`Detected Cisco Tomcat [STARTING] for ${fqdn}`);
-          await operationManager.updateOperation(operationId, {
-            progress: 75,
-            message: 'Cisco Tomcat service is starting...'
-          });
+        // Log various status patterns we detect
+        if (domain) {
+          if (chunk.includes('[STOPPING]') || totalOutput.includes('Cisco Tomcat[STOPPING]')) {
+            await accountManager.saveRenewalLog(connection.id, domain, `Detected Cisco Tomcat [STOPPING] - service is shutting down`);
+          }
+          if (chunk.includes('[STARTING]') || totalOutput.includes('Cisco Tomcat[STARTING]')) {
+            await accountManager.saveRenewalLog(connection.id, domain, `Detected Cisco Tomcat [STARTING] - service is starting up`);
+            Logger.info(`Detected Cisco Tomcat [STARTING] for ${fqdn}`);
+            await operationManager.updateOperation(operationId, {
+              progress: 75,
+              message: 'Cisco Tomcat service is starting...'
+            });
+          }
+          if (chunk.includes('[RUNNING]') || totalOutput.includes('Cisco Tomcat[RUNNING]')) {
+            await accountManager.saveRenewalLog(connection.id, domain, `Detected Cisco Tomcat [RUNNING] - service is now running`);
+          }
         }
       }
     });
@@ -1455,6 +1486,9 @@ async function performServiceRestart(operationId: string, connection: any, fqdn:
     });
 
     if (restartResult.success) {
+      if (domain) {
+        await accountManager.saveRenewalLog(connection.id, domain, `Service restart completed successfully`);
+      }
       await operationManager.updateOperation(operationId, {
         status: 'completed',
         progress: 100,
@@ -1465,6 +1499,9 @@ async function performServiceRestart(operationId: string, connection: any, fqdn:
       });
       Logger.info(`Successfully restarted Cisco Tomcat service for ${fqdn}`);
     } else {
+      if (domain) {
+        await accountManager.saveRenewalLog(connection.id, domain, `Service restart failed: ${restartResult.error}`);
+      }
       await operationManager.updateOperation(operationId, {
         status: 'failed',
         progress: 100,
@@ -1477,6 +1514,9 @@ async function performServiceRestart(operationId: string, connection: any, fqdn:
     }
 
   } catch (error: any) {
+    if (domain) {
+      await accountManager.saveRenewalLog(connection.id, domain, `Internal error during service restart: ${error.message}`);
+    }
     await operationManager.updateOperation(operationId, {
       status: 'failed',
       progress: 100,

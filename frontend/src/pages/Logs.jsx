@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +20,8 @@ const Logs = () => {
   const [lastUpdated, setLastUpdated] = useState(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [refreshInterval, setRefreshInterval] = useState(null);
+  const scrollAreaRef = useRef(null);
+  const logsEndRef = useRef(null);
 
   const fetchLogs = async () => {
     setLoading(true);
@@ -71,6 +73,16 @@ const Logs = () => {
       }
     }
   }, [autoRefresh]);
+
+  // Scroll to bottom when account is selected or logs change
+  useEffect(() => {
+    if (selectedAccount && selectedAccount.hasLogs && logsEndRef.current) {
+      // Small delay to ensure DOM has updated
+      setTimeout(() => {
+        logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    }
+  }, [selectedAccount, filteredLogs.length]);
 
   const toggleAutoRefresh = () => {
     setAutoRefresh(!autoRefresh);
@@ -309,29 +321,32 @@ const Logs = () => {
             </div>
 
             <div className="flex-1 bg-black text-green-400 font-mono text-sm overflow-hidden">
-              <ScrollArea className="h-full w-full">
+              <ScrollArea ref={scrollAreaRef} className="h-full w-full">
                 <div className="p-4 pr-6 space-y-1 w-full">
                   {filteredLogs.length > 0 ? (
-                    filteredLogs.map((log, index) => {
-                      const formatted = formatLogLine(log);
-                      return (
-                        <div key={index} className="w-full">
-                          <div className="flex w-full">
-                            <span className="text-gray-500 w-56 flex-shrink-0 whitespace-nowrap pr-2">
-                              [{formatted.timestamp}]
-                            </span>
-                            <div className={`flex-1 word-break break-all ${
-                              formatted.isError ? 'text-red-400' :
-                              formatted.isWarning ? 'text-yellow-400' :
-                              formatted.isSuccess ? 'text-green-400' :
-                              'text-gray-300'
-                            }`}>
-                              {formatted.message}
+                    <>
+                      {filteredLogs.map((log, index) => {
+                        const formatted = formatLogLine(log);
+                        return (
+                          <div key={index} className="w-full">
+                            <div className="flex w-full">
+                              <span className="text-gray-500 w-56 flex-shrink-0 whitespace-nowrap pr-2">
+                                [{formatted.timestamp}]
+                              </span>
+                              <div className={`flex-1 word-break break-all ${
+                                formatted.isError ? 'text-red-400' :
+                                formatted.isWarning ? 'text-yellow-400' :
+                                formatted.isSuccess ? 'text-green-400' :
+                                'text-gray-300'
+                              }`}>
+                                {formatted.message}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      );
-                    })
+                        );
+                      })}
+                      <div ref={logsEndRef} className="h-1" />
+                    </>
                   ) : logSearchTerm ? (
                     <div className="text-gray-500 text-center py-8">
                       No logs match your search term

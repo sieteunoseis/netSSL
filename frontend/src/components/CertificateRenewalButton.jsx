@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useCertificateRenewal } from "@/contexts/WebSocketContext";
-import { Shield, RotateCcw, CheckCircle, X } from "lucide-react";
+import { Shield, RotateCw, CheckCircle, X } from "lucide-react";
 import { apiCall } from "@/lib/api";
 import { debugLog } from "@/lib/debug";
 
@@ -173,7 +173,7 @@ const CertificateRenewalButton = ({ connection, onConfirmRenew }) => {
       
       return (
         <>
-          <RotateCcw className="mr-2 h-4 w-4 animate-spin" />
+          <RotateCw className="mr-2 h-4 w-4 animate-spin" />
           {displayMessage}{progressText}
         </>
       );
