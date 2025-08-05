@@ -14,6 +14,7 @@ import EditConnectionModalTabbed from "@/components/EditConnectionModalTabbed";
 
 interface SettingsModalProps {
   trigger?: React.ReactNode;
+  onConnectionsUpdated?: () => void;
 }
 
 interface Setting {
@@ -45,7 +46,7 @@ interface Connection {
   application_type?: string;
 }
 
-const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
+const SettingsModal: React.FC<SettingsModalProps> = ({ trigger, onConnectionsUpdated }) => {
   const { toast } = useToast();
   const [isOpen, setIsOpen] = useState(false);
   const [, setSettings] = useState<Setting[]>([]);
@@ -292,6 +293,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
         });
         // Refresh the connections list
         fetchConnections();
+        // Notify parent component
+        onConnectionsUpdated?.();
       }
     } catch (error) {
       console.error('Error deleting connection:', error);
@@ -331,6 +334,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
         });
         // Refresh the connections list
         fetchConnections();
+        // Notify parent component
+        onConnectionsUpdated?.();
       }
     } catch (error) {
       console.error('Error toggling connection:', error);
@@ -355,6 +360,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
   const handleConnectionUpdated = () => {
     fetchConnections();
     handleEditModalClose();
+    // Notify parent component
+    onConnectionsUpdated?.();
   };
 
   const checkScroll = () => {

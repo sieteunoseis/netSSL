@@ -896,7 +896,7 @@ const Home = ({ onStatusUpdate }) => {
           <div className="flex items-center justify-between mb-4">
             <h1 className="text-3xl font-bold">Certificate Dashboard</h1>
             <div className="flex gap-2">
-              <SettingsModal />
+              <SettingsModal onConnectionsUpdated={fetchConnections} />
               <AddConnectionModal 
                 onConnectionAdded={handleConnectionAdded} 
                 trigger={
