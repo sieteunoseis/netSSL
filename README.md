@@ -2,6 +2,8 @@
 
 A comprehensive web-based dashboard for SSL certificate management across enterprise infrastructures. Built to work with both general applications and enterprise systems with API support, including Cisco Voice over Secure (VOS) platforms (CUCM, CUC, CER) and Cisco Identity Services Engine (ISE) through their OpenAPI interfaces. Features automated certificate installation, renewal, and service restart capabilities.
 
+![Dashboard Overview](screenshots/dashboard-overview.png)
+
 ## Features
 
 - **Multi-Platform Support**: Manage SSL certificates across multiple platforms from a single interface

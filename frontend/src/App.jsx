@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, useLocation } from "react-router-dom";
 import { useState, useEffect } from "react";
 import NavBar from "./components/NavBar";
 import RightSidebar from "./components/RightSidebar";
@@ -13,6 +13,45 @@ import { WebSocketProvider } from "./contexts/WebSocketContext";
 import { useBackendStatus } from "./components/BackendStatusProvider.jsx";
 import { Menu } from 'lucide-react';
 import templateConfig from "../template.config.json";
+
+function AppContent({ overallStatus, setOverallStatus, isSidebarExpanded, setIsSidebarExpanded, toggleSidebar, collapseSidebar }) {
+  const location = useLocation();
+  const isLogsPage = location.pathname === '/logs';
+  
+  return (
+    <>
+      <Toaster />
+      <NavBar 
+        overallStatus={overallStatus}
+      />
+      <RightSidebar 
+        isExpanded={isSidebarExpanded} 
+        onCollapse={collapseSidebar}
+        onToggle={toggleSidebar}
+      />
+      
+      {/* Floating menu button for mobile - only when sidebar is closed */}
+      {!isSidebarExpanded && (
+        <button
+          onClick={toggleSidebar}
+          className="fixed bottom-6 left-6 z-50 md:hidden p-3 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg transition-colors"
+          aria-label="Open navigation menu"
+        >
+          <Menu size={24} />
+        </button>
+      )}
+      
+      <main className={`flex-1 relative ${isLogsPage ? 'overflow-hidden' : 'overflow-y-auto'} transition-all duration-300 z-10 ${isSidebarExpanded ? 'md:ml-80 ml-0' : 'md:ml-20 ml-0'}`}>
+        <Routes>
+          <Route path="/" element={<Home onStatusUpdate={setOverallStatus} />} />
+          <Route path="/logs" element={<Logs />} />
+          <Route path="/help" element={<Help />} />
+          <Route path="/error" element={<ErrorPage />} />
+        </Routes>
+      </main>
+    </>
+  );
+}
 
 function App() {
   const { isBackendReady } = useBackendStatus();
@@ -59,36 +98,14 @@ function App() {
       <WebSocketProvider>
         <div className="flex flex-col h-screen relative">
           <Router>
-            <Toaster />
-            <NavBar 
+            <AppContent 
               overallStatus={overallStatus}
+              setOverallStatus={setOverallStatus}
+              isSidebarExpanded={isSidebarExpanded}
+              setIsSidebarExpanded={setIsSidebarExpanded}
+              toggleSidebar={toggleSidebar}
+              collapseSidebar={collapseSidebar}
             />
-            <RightSidebar 
-              isExpanded={isSidebarExpanded} 
-              onCollapse={collapseSidebar}
-              onToggle={toggleSidebar}
-            />
-            
-            {/* Floating menu button for mobile - only when sidebar is closed */}
-            {!isSidebarExpanded && (
-              <button
-                onClick={toggleSidebar}
-                className="fixed bottom-6 left-6 z-50 md:hidden p-3 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg transition-colors"
-                aria-label="Open navigation menu"
-              >
-                <Menu size={24} />
-              </button>
-            )}
-            
-            <main className={`flex-1 relative overflow-auto transition-all duration-300 z-10 ${isSidebarExpanded ? 'md:ml-80 ml-0' : 'md:ml-20 ml-0'}`}>
-              <Routes>
-                <Route path="/" element={<Home onStatusUpdate={setOverallStatus} />} />
-                <Route path="/logs" element={<Logs />} />
-                <Route path="/help" element={<Help />} />
-                <Route path="/error" element={<ErrorPage />} />
-              </Routes>
-            </main>
-            <ModeToggle />
           </Router>
         </div>
       </WebSocketProvider>

@@ -76,13 +76,17 @@ const Logs = () => {
 
   // Scroll to bottom when account is selected or logs change
   useEffect(() => {
-    if (selectedAccount && selectedAccount.hasLogs && logsEndRef.current) {
+    if (selectedAccount && selectedAccount.hasLogs && scrollAreaRef.current && logsEndRef.current) {
       // Small delay to ensure DOM has updated
       setTimeout(() => {
-        logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        // Scroll within the ScrollArea viewport instead of the entire page
+        const viewport = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]');
+        if (viewport) {
+          viewport.scrollTop = viewport.scrollHeight;
+        }
       }, 100);
     }
-  }, [selectedAccount, filteredLogs.length]);
+  }, [selectedAccount, logSearchTerm]);
 
   const toggleAutoRefresh = () => {
     setAutoRefresh(!autoRefresh);
@@ -168,12 +172,12 @@ const Logs = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-slate-900 dark:to-indigo-950 relative">
+    <div className="h-screen bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-slate-900 dark:to-indigo-950 relative overflow-hidden">
       <BackgroundLogo />
-      <div className="pt-8 pb-12 px-4 md:px-8 lg:px-16">        
-        <div className="h-[calc(100vh-8rem)] flex bg-gray-50 dark:bg-gray-900 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700/60">
+      <div className="pt-8 pb-12 px-4 md:px-8 lg:px-12">        
+        <div className="h-[calc(100vh-8rem)] flex bg-gray-50 dark:bg-gray-900 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700/60 min-w-0">
           {/* Left Sidebar - Accounts */}
-          <div className="w-80 flex-shrink-0 bg-white dark:bg-gray-800/80 border-r border-gray-200 dark:border-gray-700/60 flex flex-col">
+          <div className="w-80 min-w-64 max-w-80 flex-shrink bg-white dark:bg-gray-800/80 border-r border-gray-200 dark:border-gray-700/60 flex flex-col">
         <div className="p-4 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold flex items-center">
@@ -321,19 +325,19 @@ const Logs = () => {
             </div>
 
             <div className="flex-1 bg-black text-green-400 font-mono text-sm overflow-hidden">
-              <ScrollArea ref={scrollAreaRef} className="h-full w-full">
+              <ScrollArea ref={scrollAreaRef} className="h-full w-full overflow-x-hidden">
                 <div className="p-4 pr-6 space-y-1 w-full">
                   {filteredLogs.length > 0 ? (
                     <>
                       {filteredLogs.map((log, index) => {
                         const formatted = formatLogLine(log);
                         return (
-                          <div key={index} className="w-full">
-                            <div className="flex w-full">
+                          <div key={index} className="w-full overflow-hidden">
+                            <div className="flex w-full min-w-0">
                               <span className="text-gray-500 w-56 flex-shrink-0 whitespace-nowrap pr-2">
                                 [{formatted.timestamp}]
                               </span>
-                              <div className={`flex-1 word-break break-all ${
+                              <div className={`flex-1 min-w-0 break-all ${
                                 formatted.isError ? 'text-red-400' :
                                 formatted.isWarning ? 'text-yellow-400' :
                                 formatted.isSuccess ? 'text-green-400' :
