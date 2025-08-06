@@ -27,7 +27,7 @@ export default function Admin() {
   const [activeRenewals, setActiveRenewals] = useState<ActiveRenewal[]>([]);
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState<string | null>(null);
-  const { socket, isConnected } = useWebSocket();
+  const { socket, connected } = useWebSocket();
   const { toast } = useToast();
 
   const fetchActiveRenewals = async () => {
@@ -52,7 +52,7 @@ export default function Admin() {
     fetchActiveRenewals();
 
     // Subscribe to admin updates via WebSocket
-    if (socket && isConnected) {
+    if (socket && connected) {
       socket.emit('subscribe:admin');
 
       socket.on('admin:renewal:started', (renewal: ActiveRenewal) => {
@@ -91,7 +91,7 @@ export default function Admin() {
         socket.off('admin:renewal:cancelled');
       };
     }
-  }, [socket, isConnected]);
+  }, [socket, connected]);
 
   const cancelRenewal = async (renewalId: string) => {
     if (!confirm('Are you sure you want to cancel this renewal?')) {
@@ -100,7 +100,7 @@ export default function Admin() {
 
     setCancelling(renewalId);
     try {
-      const response = await apiCall(`/admin/cancel-renewal/${renewalId}`, {
+      await apiCall(`/admin/cancel-renewal/${renewalId}`, {
         method: 'POST'
       });
 
@@ -188,7 +188,7 @@ export default function Admin() {
         </div>
       </div>
 
-      {!isConnected && (
+      {!connected && (
         <Alert className="mb-4">
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription>
