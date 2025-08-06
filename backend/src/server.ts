@@ -176,9 +176,13 @@ app.get('/api/data/:id/cert-status', asyncHandler(async (req: Request, res: Resp
 
 // Create new connection
 app.post('/api/data', asyncHandler(async (req: Request, res: Response) => {
+  // Log the incoming request for debugging
+  Logger.info('POST /api/data request body:', JSON.stringify(req.body, null, 2));
+  
   // Validate input data
   const validation = validateConnectionData(req.body);
   if (!validation.isValid) {
+    Logger.error('Validation failed for /api/data:', validation.errors);
     return res.status(400).json({ 
       error: 'Validation failed', 
       details: validation.errors 
@@ -207,6 +211,7 @@ app.post('/api/data', asyncHandler(async (req: Request, res: Response) => {
     const missingKeys = required.filter(key => !existingKeys.includes(key));
     
     if (missingKeys.length > 0) {
+      Logger.error(`SSL provider ${ssl_provider} missing keys:`, missingKeys);
       return res.status(400).json({
         error: 'SSL provider configuration incomplete',
         details: `Missing required keys for ${ssl_provider}: ${missingKeys.join(', ')}`
@@ -221,6 +226,7 @@ app.post('/api/data', asyncHandler(async (req: Request, res: Response) => {
     const missingKeys = required.filter(key => !existingKeys.includes(key));
     
     if (missingKeys.length > 0) {
+      Logger.error(`DNS provider ${dns_provider} missing keys:`, missingKeys);
       return res.status(400).json({
         error: 'DNS provider configuration incomplete',
         details: `Missing required keys for ${dns_provider}: ${missingKeys.join(', ')}`
