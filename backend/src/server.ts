@@ -17,7 +17,7 @@ import { autoRenewalCron } from './auto-renewal-cron';
 import { LetsEncryptAccountChecker } from './letsencrypt-account-check';
 import { getDomainFromConnection } from './utils/domain-utils';
 import { migrateAccountFiles } from './migrate-accounts';
-import { initializeWebSocket } from './websocket-server';
+import { initializeWebSocket, getWebSocketServer } from './websocket-server';
 import { OperationStatusManager } from './services/operation-status-manager';
 import { PlatformFactory } from './platform-providers/platform-factory';
 import { ISEProvider } from './platform-providers/ise-provider';
@@ -1584,6 +1584,80 @@ app.post('/api/generate-csr', asyncHandler(async (req: Request, res: Response) =
       error: 'Failed to generate CSR',
       details: error.message
     });
+  }
+}));
+
+// Admin endpoints for monitoring active renewals
+app.get('/api/admin/active-renewals', asyncHandler(async (req: Request, res: Response) => {
+  try {
+    // Get all active operations of type certificate_renewal
+    const activeOps = await database.getActiveOperationsByType(0, 'certificate_renewal', false);
+    
+    // Enrich with connection details
+    const enrichedOps = await Promise.all(activeOps.map(async (op) => {
+      const connection = await database.getConnectionById(op.connection_id);
+      return {
+        id: op.id,
+        connectionId: op.connection_id,
+        connectionName: connection?.name || 'Unknown',
+        hostname: connection?.hostname || 'Unknown',
+        type: op.operation_type,
+        status: op.status,
+        progress: op.progress || 0,
+        message: op.message || '',
+        startedAt: op.started_at,
+        createdBy: op.created_by,
+        metadata: op.metadata
+      };
+    }));
+    
+    res.json(enrichedOps);
+  } catch (error: any) {
+    Logger.error('Failed to fetch active renewals:', error);
+    res.status(500).json({ error: 'Failed to fetch active renewals' });
+  }
+}));
+
+app.post('/api/admin/cancel-renewal/:renewalId', asyncHandler(async (req: Request, res: Response) => {
+  const { renewalId } = req.params;
+  
+  try {
+    // Get the operation to find connection ID
+    const operations = await database.getActiveOperationsByType(0, '', false);
+    const operation = operations.find(op => op.id === renewalId);
+    
+    if (!operation) {
+      return res.status(404).json({ error: 'Renewal not found' });
+    }
+    
+    // Mark the operation as cancelled
+    await operationManager.updateOperation(renewalId, {
+      status: 'failed',
+      error: 'Cancelled by admin',
+      message: 'Renewal cancelled by administrator'
+    });
+    
+    // Cancel the actual renewal process if possible
+    const renewalService = certificateRenewalService as any;
+    if (renewalService.cancelRenewal) {
+      await renewalService.cancelRenewal(renewalId);
+    }
+    
+    // Emit WebSocket event
+    const io = getWebSocketServer();
+    if (io) {
+      io.emit('admin:renewal:cancelled', renewalId);
+      (io as any).emitToConnection(operation.connection_id, 'renewal:cancelled', {
+        renewalId,
+        message: 'Renewal cancelled by administrator'
+      });
+    }
+    
+    Logger.info(`Admin cancelled renewal ${renewalId} for connection ${operation.connection_id}`);
+    res.json({ success: true, message: 'Renewal cancelled' });
+  } catch (error: any) {
+    Logger.error(`Failed to cancel renewal ${renewalId}:`, error);
+    res.status(500).json({ error: 'Failed to cancel renewal' });
   }
 }));
 

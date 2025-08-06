@@ -45,6 +45,17 @@ export function initializeWebSocket(
   io.on('connection', (socket) => {
     Logger.info(`Client connected: ${socket.id}`);
 
+    // Subscribe to admin updates
+    socket.on('subscribe:admin', () => {
+      socket.join('admin');
+      Logger.debug(`Client ${socket.id} subscribed to admin updates`);
+    });
+
+    socket.on('unsubscribe:admin', () => {
+      socket.leave('admin');
+      Logger.debug(`Client ${socket.id} unsubscribed from admin updates`);
+    });
+
     // Join rooms for connections the user wants to monitor
     socket.on('subscribe:connection', async (connectionId: number) => {
       try {

@@ -146,6 +146,26 @@ export class OperationStatusManager extends EventEmitter {
       this.emitUpdate(operation);
       this.emit('operation:started', operation);
       
+      // For certificate renewal operations, emit to admin room
+      if (operation.type === 'certificate_renewal' && this.io) {
+        // Get connection details for admin notification
+        this.database.getConnectionById(connectionId).then(connection => {
+          this.io?.to('admin').emit('admin:renewal:started', {
+            id: operation.id,
+            connectionId: operation.connectionId,
+            connectionName: connection?.name || 'Unknown',
+            hostname: connection?.hostname || 'Unknown',
+            type: operation.type,
+            status: operation.status,
+            progress: operation.progress,
+            message: operation.message,
+            startedAt: operation.startedAt.toISOString(),
+            createdBy: operation.createdBy,
+            metadata: operation.metadata
+          });
+        }).catch(err => Logger.error('Failed to emit admin renewal start:', err));
+      }
+      
       Logger.info(`Started operation ${operation.id}: ${type} for connection ${connectionId}`);
     } catch (error) {
       Logger.error('Failed to save operation to database:', error);
@@ -261,6 +281,24 @@ export class OperationStatusManager extends EventEmitter {
         completedAt: operation.completedAt?.toISOString()
       }
     });
+
+    // For certificate renewal operations, also emit to admin room
+    if (operation.type === 'certificate_renewal') {
+      const eventName = operation.status === 'completed' ? 'admin:renewal:completed' :
+                       operation.status === 'failed' ? 'admin:renewal:cancelled' :
+                       'admin:renewal:updated';
+      
+      if (eventName === 'admin:renewal:completed' || eventName === 'admin:renewal:cancelled') {
+        this.io.to('admin').emit(eventName, operation.id);
+      } else {
+        this.io.to('admin').emit(eventName, {
+          id: operation.id,
+          status: operation.status,
+          progress: operation.progress,
+          message: operation.message
+        });
+      }
+    }
 
     Logger.debug(`Emitted operation update for ${operation.id} to connection ${operation.connectionId}`);
   }

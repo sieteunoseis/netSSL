@@ -6,6 +6,7 @@ import Home from "./pages/Home";
 import Logs from "./pages/Logs";
 import ErrorPage from "./pages/Error";
 import Help from "./pages/Help";
+import Admin from "./pages/Admin";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ModeToggle } from "./components/mode-toggle";
 import { Toaster } from "@/components/ui/toaster";
@@ -46,6 +47,7 @@ function AppContent({ overallStatus, setOverallStatus, isSidebarExpanded, setIsS
           <Route path="/" element={<Home onStatusUpdate={setOverallStatus} />} />
           <Route path="/logs" element={<Logs />} />
           <Route path="/help" element={<Help />} />
+          <Route path="/admin" element={<Admin />} />
           <Route path="/error" element={<ErrorPage />} />
         </Routes>
       </main>

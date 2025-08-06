@@ -180,23 +180,32 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     // Set cancellation token
     this.cancellationTokens.set(renewalId, true);
     
-    // Update status if it exists
+    // Update status in memory
     const status = this.renewalStatuses.get(renewalId);
     if (status) {
       status.status = 'failed';
-      status.error = 'Operation cancelled by user';
-      status.message = 'Operation cancelled by user';
+      status.error = 'Cancelled by administrator';
+      status.message = 'Renewal cancelled by administrator';
       status.endTime = new Date();
-      status.logs.push(`Operation cancelled by user at ${new Date().toISOString()}`);
+      
+      // Update in database
+      if (this.database) {
+        await this.database.saveRenewalStatus(
+          renewalId,
+          status.connectionId,
+          'failed',
+          new Date().toISOString(),
+          'Renewal cancelled by administrator',
+          'Cancelled by administrator',
+          status.logs
+        );
+      }
       
       // Remove from active renewals
       this.activeRenewals.delete(status.connectionId);
     }
     
-    // Clean up cancellation token after 1 minute
-    setTimeout(() => {
-      this.cancellationTokens.delete(renewalId);
-    }, 60000);
+    Logger.info(`Renewal ${renewalId} has been cancelled`);
   }
 
   isCancelled(renewalId: string): boolean {
@@ -1618,15 +1627,43 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         return;
       }
 
-      // Parse the certificate chain into individual certificates
+      // Build complete certificate chain including root
+      let certificates: string[] = [];
+      
+      // Get the accounts directory path
+      const accountsDir = process.env.ACCOUNTS_DIR || './accounts';
+      const certDir = path.join(accountsDir, fullFQDN);
+      
+      // First, parse the provided certificate chain (usually fullchain.pem content)
       const certParts = certificate.split('-----END CERTIFICATE-----');
-      const certificates = certParts
+      const parsedCerts = certParts
         .filter(part => part.includes('-----BEGIN CERTIFICATE-----'))
         .map(part => (part.trim() + '\n-----END CERTIFICATE-----'));
 
-      if (certificates.length === 0) {
+      if (parsedCerts.length === 0) {
         reject(new Error('No certificates found in certificate chain'));
         return;
+      }
+      
+      // Add the parsed certificates (leaf and intermediate)
+      certificates = [...parsedCerts];
+      
+      // Try to load and add the root certificate if not already present
+      // VOS requires the complete chain: leaf + intermediate + root
+      try {
+        const rootPath = path.join(certDir, 'root.crt');
+        const rootCert = await fs.promises.readFile(rootPath, 'utf8');
+        if (rootCert.trim()) {
+          // Check if root is not already in the chain (avoid duplicates)
+          const hasRoot = certificates.some(cert => cert.includes('ISRG Root'));
+          if (!hasRoot) {
+            certificates.push(rootCert.trim());
+            await accountManager.saveRenewalLog(connectionId, fullFQDN, `Added root certificate to chain for VOS upload`);
+          }
+        }
+      } catch (error) {
+        // If root.crt doesn't exist, log a warning but continue
+        await accountManager.saveRenewalLog(connectionId, fullFQDN, `WARNING: Could not load root certificate: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
 
       // VOS expects the full certificate chain: [leaf, intermediate, root]
