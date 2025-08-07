@@ -29,7 +29,7 @@ import {
   Zap, Globe, Terminal, RotateCcw, Settings, Wrench, Plus, Search,
   SortAsc, SortDesc, LayoutGrid, Table as TableIcon, ChevronDown, 
   ChevronRight, Info, Activity, Wifi, AlertTriangle, Download, Upload,
-  ExternalLink, Edit
+  ExternalLink, Edit, Loader2
 } from "lucide-react";
 import {
   Collapsible,
@@ -64,6 +64,7 @@ const Home = ({ onStatusUpdate }) => {
   const [certificateStatuses, setCertificateStatuses] = useState({});
   const [downloadRefreshTrigger, setDownloadRefreshTrigger] = useState(0);
   const [editingConnection, setEditingConnection] = useState(null);
+  const [testingSSH, setTestingSSH] = useState(new Set());
 
   const fetchConnections = async (retryCount = 0) => {
     try {
@@ -161,6 +162,9 @@ const Home = ({ onStatusUpdate }) => {
   };
 
   const handleSSHTest = async (connection) => {
+    // Add connection ID to testing set
+    setTestingSSH(prev => new Set([...prev, connection.id]));
+    
     try {
       toast({
         title: "Testing SSH Connection",
@@ -189,6 +193,13 @@ const Home = ({ onStatusUpdate }) => {
         description: `Failed to connect to ${connection.name} via SSH. Check credentials and connectivity.`,
         variant: "destructive",
         duration: 5000,
+      });
+    } finally {
+      // Remove connection ID from testing set
+      setTestingSSH(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(connection.id);
+        return newSet;
       });
     }
   };
@@ -629,10 +640,20 @@ const Home = ({ onStatusUpdate }) => {
                           }}
                           size="sm"
                           variant="outline"
+                          disabled={testingSSH.has(connection.id)}
                           className="justify-center border-blue-200 hover:border-blue-300 hover:bg-blue-50 dark:border-blue-800 dark:hover:border-blue-700 dark:hover:bg-blue-950"
                         >
-                          <Terminal className="h-4 w-4 mr-2 text-blue-600 dark:text-blue-400" />
-                          Test SSH
+                          {testingSSH.has(connection.id) ? (
+                            <>
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              Testing...
+                            </>
+                          ) : (
+                            <>
+                              <Terminal className="h-4 w-4 mr-2 text-blue-600 dark:text-blue-400" />
+                              Test SSH
+                            </>
+                          )}
                         </Button>
                       )}
 
@@ -793,10 +814,20 @@ const Home = ({ onStatusUpdate }) => {
                         }}
                         size="sm"
                         variant="outline"
+                        disabled={testingSSH.has(connection.id)}
                         className="justify-center border-blue-200 hover:border-blue-300 hover:bg-blue-50 dark:border-blue-800 dark:hover:border-blue-700 dark:hover:bg-blue-950"
                       >
-                        <Terminal className="h-4 w-4 mr-2 text-blue-600 dark:text-blue-400" />
-                        Test SSH
+                        {testingSSH.has(connection.id) ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Testing...
+                          </>
+                        ) : (
+                          <>
+                            <Terminal className="h-4 w-4 mr-2 text-blue-600 dark:text-blue-400" />
+                            Test SSH
+                          </>
+                        )}
                       </Button>
                     )}
 

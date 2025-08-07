@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useConfig } from '../config/ConfigContext';
 import { apiCall } from '../lib/api';
-import { ChevronDown, ChevronUp, Trash2, Eye, EyeOff, Edit, Terminal, Server, Wrench, Power } from 'lucide-react';
+import { ChevronDown, ChevronUp, Trash2, Eye, EyeOff, Edit, Terminal, Server, Wrench, Power, Loader2 } from 'lucide-react';
 import EditConnectionModal from './EditConnectionModalTabbed';
 import { useToast } from "@/hooks/use-toast";
 import { isConnectionEnabled, getConnectionDisplayHostname } from '../lib/connection-utils';
@@ -495,8 +495,17 @@ const DataTable = ({ data, onDataChange }) => {
                         disabled={testingSSH.has(record.id)}
                         className="text-blue-600 hover:text-blue-700 border-blue-300 hover:border-blue-400"
                       >
-                        <Terminal className="mr-2 h-4 w-4" />
-                        {testingSSH.has(record.id) ? 'Testing SSH...' : 'Test SSH'}
+                        {testingSSH.has(record.id) ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Testing...
+                          </>
+                        ) : (
+                          <>
+                            <Terminal className="mr-2 h-4 w-4" />
+                            Test SSH
+                          </>
+                        )}
                       </Button>
                     )}
                   </div>
