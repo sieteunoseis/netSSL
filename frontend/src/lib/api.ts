@@ -37,7 +37,26 @@ export const apiCall = async (endpoint: string, options: RequestInit & { retries
       });
 
       if (!response.ok) {
-        throw new Error(`API call failed: ${response.status} ${response.statusText}`);
+        let errorMessage = `API call failed: ${response.status} ${response.statusText}`;
+        let errorDetails = '';
+        
+        try {
+          const errorData = await response.json();
+          if (errorData.error) {
+            errorMessage = errorData.error;
+          }
+          if (errorData.details) {
+            errorDetails = errorData.details;
+          }
+        } catch (jsonError) {
+          // If response is not JSON, stick with the original error message
+        }
+        
+        const error = new Error(errorMessage) as Error & { details?: string };
+        if (errorDetails) {
+          error.details = errorDetails;
+        }
+        throw error;
       }
 
       return response;

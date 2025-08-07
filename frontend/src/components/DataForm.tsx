@@ -225,9 +225,13 @@ const DataForm: React.FC<DataFormProps> = ({
     } catch (error) {
       console.error("Error inserting data:", error);
       
+      // Extract the specific error message and details from the API response
+      const errorMessage = error instanceof Error ? error.message : "Failed to add connection";
+      const errorDetails = (error as any)?.details || "";
+      
       toast({
         title: "Error",
-        description: "Failed to add connection. Please try again.",
+        description: errorDetails || errorMessage,
         variant: "destructive",
         duration: 5000,
       });
