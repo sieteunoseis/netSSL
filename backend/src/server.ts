@@ -1341,6 +1341,50 @@ app.post('/api/ssh/test', asyncHandler(async (req: Request, res: Response) => {
   }
 }));
 
+// SSH test endpoint for specific connection
+app.post('/api/data/:id/test-ssh', asyncHandler(async (req: Request, res: Response) => {
+  const id = parseInt(req.params.id);
+  
+  // Get connection details
+  const connection = await database.getConnectionById(id);
+  
+  if (!connection) {
+    return res.status(404).json({ 
+      error: 'Connection not found' 
+    });
+  }
+  
+  if (!connection.username || !connection.password) {
+    return res.status(400).json({ 
+      error: 'Missing SSH credentials', 
+      details: 'Username and password are required for SSH testing' 
+    });
+  }
+  
+  // Construct the FQDN
+  const fqdn = connection.domain ? 
+    `${connection.hostname}.${connection.domain}` : 
+    connection.hostname;
+  
+  Logger.info(`Testing SSH connection to ${fqdn} for connection ${id}`);
+  
+  try {
+    const result = await SSHClient.testConnection({
+      hostname: fqdn,
+      username: connection.username,
+      password: connection.password
+    });
+    
+    return res.json(result);
+  } catch (error: any) {
+    Logger.error(`SSH test failed for connection ${id}: ${error.message}`);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error during SSH test'
+    });
+  }
+}));
+
 // Manual service restart endpoint for VOS applications with WebSocket support
 app.post('/api/data/:id/restart-service', asyncHandler(async (req: Request, res: Response) => {
   const id = parseInt(req.params.id);
