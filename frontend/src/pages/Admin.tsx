@@ -148,16 +148,29 @@ export default function Admin() {
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString();
+    if (!dateString) return 'Unknown';
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return 'Invalid Date';
+      return date.toLocaleString();
+    } catch {
+      return 'Invalid Date';
+    }
   };
 
   const calculateDuration = (startedAt: string) => {
-    const start = new Date(startedAt).getTime();
-    const now = Date.now();
-    const diff = now - start;
-    const minutes = Math.floor(diff / 60000);
-    const seconds = Math.floor((diff % 60000) / 1000);
-    return `${minutes}m ${seconds}s`;
+    if (!startedAt) return '0m 0s';
+    try {
+      const start = new Date(startedAt).getTime();
+      if (isNaN(start)) return '0m 0s';
+      const now = Date.now();
+      const diff = now - start;
+      const minutes = Math.floor(diff / 60000);
+      const seconds = Math.floor((diff % 60000) / 1000);
+      return `${minutes}m ${seconds}s`;
+    } catch {
+      return '0m 0s';
+    }
   };
 
   if (loading) {
@@ -216,15 +229,21 @@ export default function Admin() {
                   <div className="flex items-start justify-between">
                     <div className="space-y-1">
                       <div className="flex items-center space-x-2">
-                        <h3 className="font-semibold">{renewal.connectionName || `Connection ${renewal.connectionId}`}</h3>
+                        <h3 className="font-semibold">
+                          {renewal.connectionName !== 'Unknown' 
+                            ? renewal.connectionName 
+                            : `Connection ${renewal.connectionId}`}
+                        </h3>
                         <Badge className={getStatusColor(renewal.status)} variant="secondary">
                           {renewal.status.replace(/_/g, ' ')}
                         </Badge>
                         <Badge variant="outline">
-                          {renewal.createdBy}
+                          {renewal.createdBy || 'system'}
                         </Badge>
                       </div>
-                      <p className="text-sm text-muted-foreground">{renewal.hostname}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {renewal.hostname !== 'Unknown' ? renewal.hostname : 'No hostname available'}
+                      </p>
                       <p className="text-sm text-muted-foreground">ID: {renewal.id}</p>
                     </div>
                     <Button

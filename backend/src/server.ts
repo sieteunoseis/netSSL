@@ -1611,8 +1611,8 @@ app.get('/api/admin/active-renewals', asyncHandler(async (req: Request, res: Res
         status: op.status,
         progress: op.progress || 0,
         message: op.message || '',
-        startedAt: op.started_at,
-        createdBy: op.created_by,
+        startedAt: new Date(op.started_at).toISOString(),
+        createdBy: op.created_by || 'system',
         metadata: op.metadata
       };
     }));

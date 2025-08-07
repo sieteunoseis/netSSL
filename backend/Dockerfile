@@ -1,6 +1,9 @@
 # Use specific version and lighter base image
 FROM node:20-alpine
 
+# Install required system packages
+RUN apk add --no-cache openssl
+
 # Add non-root user
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
