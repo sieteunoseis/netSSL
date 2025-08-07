@@ -894,8 +894,25 @@ export class DatabaseManager {
 
   async getActiveOperationsByType(connectionId: number, operationType: string, activeOnly: boolean = true): Promise<any[]> {
     return new Promise((resolve, reject) => {
-      let query = 'SELECT * FROM active_operations WHERE connection_id = ? AND operation_type = ?';
-      const params: any[] = [connectionId, operationType];
+      let query = 'SELECT * FROM active_operations WHERE';
+      const params: any[] = [];
+      
+      // If connectionId is 0, get operations for all connections
+      if (connectionId === 0) {
+        if (operationType) {
+          query += ' operation_type = ?';
+          params.push(operationType);
+        } else {
+          query += ' 1=1'; // Get all operations
+        }
+      } else {
+        query += ' connection_id = ?';
+        params.push(connectionId);
+        if (operationType) {
+          query += ' AND operation_type = ?';
+          params.push(operationType);
+        }
+      }
       
       if (activeOnly) {
         query += ' AND status IN (?, ?)';

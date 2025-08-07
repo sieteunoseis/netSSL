@@ -349,7 +349,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
           // Save private key to accounts folder in the appropriate environment subdirectory
           const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
           const envDir = isStaging ? 'staging' : 'prod';
-          const domainDir = path.join(accountManager['accountsDir'], fullFQDN, envDir);
+          const domainDir = path.join(accountManager['accountsDir'], `connection-${connectionId}`, envDir);
           
           // Ensure the directory exists
           await fs.promises.mkdir(domainDir, { recursive: true });
@@ -402,11 +402,11 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         await accountManager.saveRenewalLog(connectionId, fullFQDN, `Certificate generated and ready for manual installation on ${connection.name}`);
         const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
         const envDir = isStaging ? 'staging' : 'prod';
-        await accountManager.saveRenewalLog(connectionId, fullFQDN, `Certificate files available in: ./accounts/${fullFQDN}/${envDir}/`);
+        await accountManager.saveRenewalLog(connectionId, fullFQDN, `Certificate files available in: ./accounts/connection-${connectionId}/${envDir}/`);
         
         // Create CRT and KEY files for easier ESXi import
         try {
-          const domainEnvDir = path.join(accountManager['accountsDir'], fullFQDN, envDir);
+          const domainEnvDir = path.join(accountManager['accountsDir'], `connection-${connectionId}`, envDir);
           const certPath = path.join(domainEnvDir, 'certificate.pem');
           const privateKeyPath = path.join(domainEnvDir, 'private_key.pem');
           
@@ -1630,9 +1630,11 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       // Build complete certificate chain including root
       let certificates: string[] = [];
       
-      // Get the accounts directory path
+      // Get the accounts directory path using connection-based structure
       const accountsDir = process.env.ACCOUNTS_DIR || './accounts';
-      const certDir = path.join(accountsDir, fullFQDN);
+      const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
+      const envDir = isStaging ? 'staging' : 'prod';
+      const certDir = path.join(accountsDir, `connection-${connectionId}`, envDir);
       
       // First, parse the provided certificate chain (usually fullchain.pem content)
       const certParts = certificate.split('-----END CERTIFICATE-----');
@@ -2120,7 +2122,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         // Save private key to accounts folder
         const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
         const envDir = isStaging ? 'staging' : 'prod';
-        const domainDir = path.join(accountManager['accountsDir'], fullFQDN, envDir);
+        const domainDir = path.join(accountManager['accountsDir'], `connection-${connectionId}`, envDir);
         
         await fs.promises.mkdir(domainDir, { recursive: true });
         const privateKeyPath = path.join(domainDir, 'private_key.pem');
@@ -2161,7 +2163,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         // Try to load private key from accounts folder
         const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
         const envDir = isStaging ? 'staging' : 'prod';
-        const privateKeyPath = path.join(accountManager['accountsDir'], fullFQDN, envDir, 'private_key.pem');
+        const privateKeyPath = path.join(accountManager['accountsDir'], `connection-${connectionId}`, envDir, 'private_key.pem');
         
         try {
           privateKey = await fs.promises.readFile(privateKeyPath, 'utf8');
@@ -2174,7 +2176,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       // Try to load already separated certificate files first, fallback to parsing chain
       const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
       const envDir = isStaging ? 'staging' : 'prod';
-      const certDir = path.join(accountManager['accountsDir'], fullFQDN, envDir);
+      const certDir = path.join(accountManager['accountsDir'], `connection-${connectionId}`, envDir);
       
       let caCertificates: string[] = [];
       let filesFound = false;
