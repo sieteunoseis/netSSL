@@ -1,7 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 import { useConfig } from '@/config/ConfigContext';
 import templateConfig from "../../template.config.json";
-import packageJson from "../../../package.json";
+import versionInfo from "../version.json";
 import { ChevronLeft, ChevronRight, Home, FileText, HelpCircle } from 'lucide-react';
 import { cn } from "@/lib/utils";
 import { ModeToggle } from "./mode-toggle";
@@ -166,7 +166,7 @@ const RightSidebar = ({ isExpanded, onCollapse, onToggle }) => {
                 Certificate Management Dashboard
               </p>
               <p className="text-xs text-gray-400 dark:text-gray-500">
-                v{packageJson.version}
+                v{versionInfo.version}
               </p>
             </div>
           ) : (
