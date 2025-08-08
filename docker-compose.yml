@@ -23,7 +23,7 @@ services:
       # Certificate Auto-Renewal Configuration
       - CERT_RENEWAL_DAYS=7
       - CERT_WARNING_DAYS=30
-      - CERT_CHECK_SCHEDULE=0 16 * * *
+      - CERT_CHECK_SCHEDULE=0 0 * * *
       # Let's Encrypt Configuration
       - LETSENCRYPT_STAGING=true
       # Certificate accounts directory
