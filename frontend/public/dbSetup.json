@@ -90,7 +90,7 @@
     "type": "TEXT",
     "validator": { "name": "matches", "options": "^(\\*|[a-zA-Z0-9]([a-zA-Z0-9\\-]{0,61}[a-zA-Z0-9])?)?$" },
     "label": "Server Hostname",
-    "placeholder": "e.g., esxi, ecp, * (wildcard), or leave blank",
+    "placeholder": "e.g., hostname, * (wildcard), or leave blank",
     "description": "Server hostname - can be a name, wildcard (*), or blank for domain-only certificates",
     "conditional": {
       "field": "application_type",
@@ -102,7 +102,7 @@
     "type": "TEXT",
     "validator": { "name": "isAscii", "options": "" },
     "label": "Username",
-    "placeholder": "VOS: administrator, ccmadmin | ISE: admin, iseadmin",
+    "placeholder": "Server username",
     "default": "administrator",
     "conditionalMultiple": [
       {
@@ -129,7 +129,7 @@
     "type": "TEXT",
     "validator": { "name": "isFQDN", "options": { "allow_numeric_tld": true } },
     "label": "Domain Name",
-    "placeholder": "e.g., automate.builders"
+    "placeholder": "e.g., example.com"
   },
   {
     "name": "ise_nodes",

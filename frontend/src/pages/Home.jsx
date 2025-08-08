@@ -268,6 +268,15 @@ const Home = ({ onStatusUpdate }) => {
     return providers[provider] || provider;
   };
 
+  const formatApplicationType = (type) => {
+    const types = {
+      "ise": "ISE",
+      "vos": "VOS",
+      "general": "GENERAL"
+    };
+    return types[type] || type.toUpperCase();
+  };
+
   // Calculate overall status
   const overallStatus = useMemo(() => {
     const enabledConnections = filterEnabledConnections(connectionState.connections);
@@ -403,7 +412,7 @@ const Home = ({ onStatusUpdate }) => {
                         <div className="w-px h-4 bg-gray-300 dark:bg-gray-600"></div>
                         <div className="flex items-center gap-2">
                           <Badge variant="outline" className="text-xs px-2 py-1 rounded-[4px]">
-                            {connection.application_type.toUpperCase()}
+                            {formatApplicationType(connection.application_type)}
                           </Badge>
                           {connection.auto_renew && connection.dns_provider !== 'custom' && (
                             <Badge variant="secondary" className="text-xs px-2 py-1 rounded-[4px]">
@@ -471,7 +480,7 @@ const Home = ({ onStatusUpdate }) => {
                       </div>
                       <div>
                         <p className="text-sm font-medium text-muted-foreground">Application Type</p>
-                        <p className="text-sm capitalize">{connection.application_type}</p>
+                        <p className="text-sm">{formatApplicationType(connection.application_type)}</p>
                       </div>
                       <div>
                         <p className="text-sm font-medium text-muted-foreground">SSL Provider</p>
@@ -500,10 +509,12 @@ const Home = ({ onStatusUpdate }) => {
                         <p className="text-sm font-medium text-muted-foreground">Auto-renewal</p>
                         <p className="text-sm">{connection.auto_renew && connection.dns_provider !== 'custom' ? 'Enabled' : 'Disabled'}</p>
                       </div>
-                      <div>
-                        <p className="text-sm font-medium text-muted-foreground">SSH Access</p>
-                        <p className="text-sm">{connection.enable_ssh ? 'Enabled' : 'Disabled'}</p>
-                      </div>
+                      {connection.application_type === 'vos' && (
+                        <div>
+                          <p className="text-sm font-medium text-muted-foreground">SSH Access</p>
+                          <p className="text-sm">{connection.enable_ssh ? 'Enabled' : 'Disabled'}</p>
+                        </div>
+                      )}
                       <div>
                         <p className="text-sm font-medium text-muted-foreground">Last Issued</p>
                         <p className="text-sm">{connection.last_cert_issued ? new Date(connection.last_cert_issued).toLocaleDateString() : 'Never'}</p>
@@ -612,6 +623,7 @@ const Home = ({ onStatusUpdate }) => {
                         onSuccess={() => {
                           fetchCertificateStatus(connection);
                           fetchConnections();
+                          setDownloadRefreshTrigger(prev => prev + 1);
                         }}
                         refresh={() => fetchCertificateStatus(connection)}
                         isDisabled={activeOperation}
@@ -630,7 +642,7 @@ const Home = ({ onStatusUpdate }) => {
                         />
                       )}
 
-                      {connection.enable_ssh && (
+                      {connection.application_type === 'vos' && connection.enable_ssh && (
                         <Button
                           onClick={() => {
                             console.log('SSH Test - Connection:', connection);
@@ -680,24 +692,28 @@ const Home = ({ onStatusUpdate }) => {
                           {connection.auto_renew && connection.dns_provider !== 'custom' ? "On" : "Off"}
                         </Badge>
                       </div>
-                      <div className="flex items-center justify-between p-3 bg-background rounded-lg border">
-                        <div>
-                          <p className="font-medium text-sm">SSH Access</p>
-                          <p className="text-xs text-muted-foreground">Allow SSH connections</p>
-                        </div>
-                        <Badge variant={connection.enable_ssh ? "default" : "secondary"} className="rounded-[4px]">
-                          {connection.enable_ssh ? "On" : "Off"}
-                        </Badge>
-                      </div>
-                      <div className="flex items-center justify-between p-3 bg-background rounded-lg border">
-                        <div>
-                          <p className="font-medium text-sm">Auto Restart</p>
-                          <p className="text-xs text-muted-foreground">Restart service after cert</p>
-                        </div>
-                        <Badge variant={connection.auto_restart_service ? "default" : "secondary"} className="rounded-[4px]">
-                          {connection.auto_restart_service ? "On" : "Off"}
-                        </Badge>
-                      </div>
+                      {connection.application_type === 'vos' && (
+                        <>
+                          <div className="flex items-center justify-between p-3 bg-background rounded-lg border">
+                            <div>
+                              <p className="font-medium text-sm">SSH Access</p>
+                              <p className="text-xs text-muted-foreground">Allow SSH connections</p>
+                            </div>
+                            <Badge variant={connection.enable_ssh ? "default" : "secondary"} className="rounded-[4px]">
+                              {connection.enable_ssh ? "On" : "Off"}
+                            </Badge>
+                          </div>
+                          <div className="flex items-center justify-between p-3 bg-background rounded-lg border">
+                            <div>
+                              <p className="font-medium text-sm">Auto Restart</p>
+                              <p className="text-xs text-muted-foreground">Restart service after cert</p>
+                            </div>
+                            <Badge variant={connection.auto_restart_service ? "default" : "secondary"} className="rounded-[4px]">
+                              {connection.auto_restart_service ? "On" : "Off"}
+                            </Badge>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </TabsContent>
                 </div>
@@ -786,6 +802,7 @@ const Home = ({ onStatusUpdate }) => {
                       onSuccess={() => {
                         fetchCertificateStatus(connection);
                         fetchConnections();
+                        setDownloadRefreshTrigger(prev => prev + 1);
                       }}
                       refresh={() => fetchCertificateStatus(connection)}
                       isDisabled={activeOperation}
@@ -804,7 +821,7 @@ const Home = ({ onStatusUpdate }) => {
                       />
                     )}
 
-                    {connection.enable_ssh && (
+                    {connection.application_type === 'vos' && connection.enable_ssh && (
                       <Button
                         onClick={() => {
                           console.log('SSH Test (Compact) - Connection:', connection);
@@ -868,24 +885,28 @@ const Home = ({ onStatusUpdate }) => {
                         {connection.auto_renew && connection.dns_provider !== 'custom' ? "On" : "Off"}
                       </Badge>
                     </div>
-                    <div className="flex items-center justify-between p-3 bg-background rounded-lg border">
-                      <div>
-                        <p className="font-medium text-sm">SSH Access</p>
-                        <p className="text-xs text-muted-foreground">Allow SSH connections</p>
-                      </div>
-                      <Badge variant={connection.enable_ssh ? "default" : "secondary"} className="rounded-[4px]">
-                        {connection.enable_ssh ? "On" : "Off"}
-                      </Badge>
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-background rounded-lg border">
-                      <div>
-                        <p className="font-medium text-sm">Auto Restart</p>
-                        <p className="text-xs text-muted-foreground">Service restart after cert</p>
-                      </div>
-                      <Badge variant={connection.auto_restart_service ? "default" : "secondary"} className="rounded-[4px]">
-                        {connection.auto_restart_service ? "On" : "Off"}
-                      </Badge>
-                    </div>
+                    {connection.application_type === 'vos' && (
+                      <>
+                        <div className="flex items-center justify-between p-3 bg-background rounded-lg border">
+                          <div>
+                            <p className="font-medium text-sm">SSH Access</p>
+                            <p className="text-xs text-muted-foreground">Allow SSH connections</p>
+                          </div>
+                          <Badge variant={connection.enable_ssh ? "default" : "secondary"} className="rounded-[4px]">
+                            {connection.enable_ssh ? "On" : "Off"}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center justify-between p-3 bg-background rounded-lg border">
+                          <div>
+                            <p className="font-medium text-sm">Auto Restart</p>
+                            <p className="text-xs text-muted-foreground">Service restart after cert</p>
+                          </div>
+                          <Badge variant={connection.auto_restart_service ? "default" : "secondary"} className="rounded-[4px]">
+                            {connection.auto_restart_service ? "On" : "Off"}
+                          </Badge>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </TabsContent>
               </div>
@@ -1131,7 +1152,7 @@ const Home = ({ onStatusUpdate }) => {
                             <td className="p-4 font-medium">{connection.name}</td>
                             <td className="p-4">{getConnectionDisplayHostname(connection)}</td>
                             <td className="p-4">
-                              <Badge variant="outline" className="px-2 py-1 rounded-[4px]">{connection.application_type.toUpperCase()}</Badge>
+                              <Badge variant="outline" className="px-2 py-1 rounded-[4px]">{formatApplicationType(connection.application_type)}</Badge>
                             </td>
                             <td className="p-4">{getStatusBadge(connection)}</td>
                             <td className="p-4">

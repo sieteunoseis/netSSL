@@ -1640,23 +1640,23 @@ app.post('/api/generate-csr', asyncHandler(async (req: Request, res: Response) =
 // Admin endpoints for monitoring active renewals
 app.get('/api/admin/active-renewals', asyncHandler(async (req: Request, res: Response) => {
   try {
-    // Get all active operations of type certificate_renewal
-    const activeOps = await database.getActiveOperationsByType(0, 'certificate_renewal', false);
+    // Get all active operations of type certificate_renewal (only pending and in_progress)
+    const activeOps = await database.getActiveOperationsByType(0, 'certificate_renewal', true);
     
     // Enrich with connection details
     const enrichedOps = await Promise.all(activeOps.map(async (op) => {
-      const connection = await database.getConnectionById(op.connection_id);
+      const connection = await database.getConnectionById(op.connectionId);
       return {
         id: op.id,
-        connectionId: op.connection_id,
+        connectionId: op.connectionId,
         connectionName: connection?.name || 'Unknown',
         hostname: connection?.hostname || 'Unknown',
-        type: op.operation_type,
+        type: op.type,
         status: op.status,
         progress: op.progress || 0,
         message: op.message || '',
-        startedAt: new Date(op.started_at).toISOString(),
-        createdBy: op.created_by || 'system',
+        startedAt: op.startedAt ? new Date(op.startedAt).toISOString() : new Date().toISOString(),
+        createdBy: op.createdBy || 'system',
         metadata: op.metadata
       };
     }));

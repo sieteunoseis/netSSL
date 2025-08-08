@@ -2007,6 +2007,12 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
 
       // Update status to show we're starting the service restart
       await this.updateStatus(status, 'uploading_certificate', 'Starting Cisco Tomcat service restart...', 94);
+      
+      // Log the start of service restart
+      if (connection.id) {
+        await accountManager.saveRenewalLog(connection.id, fqdn, `🔄 Initiating Cisco Tomcat service restart on ${fqdn}`);
+      }
+      status.logs.push(`🔄 Initiating Cisco Tomcat service restart on ${fqdn}`);
 
       // Execute service restart command with streaming support and extended timeout (5 minutes)
       const restartResult = await SSHClient.executeCommandWithStream({
@@ -2020,21 +2026,61 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
           if (chunk.includes('[STARTING]') || totalOutput.includes('Cisco Tomcat[STARTING]')) {
             Logger.info(`Detected Cisco Tomcat [STARTING] for ${fqdn} during certificate renewal`);
             await this.updateStatus(status, 'uploading_certificate', 'Cisco Tomcat service is starting...', 97);
-            status.logs.push(`🔄 Cisco Tomcat service is starting on ${fqdn}`);
+            const logMessage = `🔄 Cisco Tomcat service is starting on ${fqdn}`;
+            status.logs.push(logMessage);
+            // Also save to renewal logs
+            if (connection.id) {
+              await accountManager.saveRenewalLog(connection.id, fqdn, logMessage);
+            }
+          }
+          // Check for [STOPPING] pattern
+          if (chunk.includes('[STOPPING]') || totalOutput.includes('Cisco Tomcat[STOPPING]')) {
+            const logMessage = `⏸️ Cisco Tomcat service is stopping on ${fqdn}`;
+            status.logs.push(logMessage);
+            if (connection.id) {
+              await accountManager.saveRenewalLog(connection.id, fqdn, logMessage);
+            }
+          }
+          // Check for [RUNNING] pattern
+          if (chunk.includes('[RUNNING]') || totalOutput.includes('Cisco Tomcat[RUNNING]')) {
+            const logMessage = `✅ Cisco Tomcat service is now running on ${fqdn}`;
+            status.logs.push(logMessage);
+            if (connection.id) {
+              await accountManager.saveRenewalLog(connection.id, fqdn, logMessage);
+            }
           }
         }
       });
 
       if (restartResult.success) {
         Logger.info(`Successfully restarted Cisco Tomcat service for ${fqdn}`);
-        status.logs.push(`✅ Cisco Tomcat service restarted successfully on ${fqdn}`);
-        status.logs.push(`Service restart output: ${restartResult.output || 'Command completed'}`);
+        const successMsg = `✅ Cisco Tomcat service restarted successfully on ${fqdn}`;
+        status.logs.push(successMsg);
+        if (connection.id) {
+          await accountManager.saveRenewalLog(connection.id, fqdn, successMsg);
+        }
+        
+        const outputMsg = `Service restart output: ${restartResult.output || 'Command completed'}`;
+        status.logs.push(outputMsg);
+        if (connection.id) {
+          await accountManager.saveRenewalLog(connection.id, fqdn, outputMsg);
+        }
+        
         return { success: true, requiresManualRestart: false };
       } else {
         const errorMsg = `Failed to restart Cisco Tomcat service for ${fqdn}: ${restartResult.error}`;
         Logger.error(errorMsg);
         status.logs.push(`⚠️ ${errorMsg}`);
-        status.logs.push(`📋 Manual action required: Run 'utils service restart Cisco Tomcat' on ${fqdn}`);
+        if (connection.id) {
+          await accountManager.saveRenewalLog(connection.id, fqdn, `⚠️ ${errorMsg}`);
+        }
+        
+        const manualMsg = `📋 Manual action required: Run 'utils service restart Cisco Tomcat' on ${fqdn}`;
+        status.logs.push(manualMsg);
+        if (connection.id) {
+          await accountManager.saveRenewalLog(connection.id, fqdn, manualMsg);
+        }
+        
         return { 
           success: false, 
           requiresManualRestart: true, 

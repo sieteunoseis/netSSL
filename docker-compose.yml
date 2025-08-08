@@ -13,7 +13,7 @@ services:
       # Frontend Branding Configuration
       - VITE_BRANDING_URL=https://automate.builders
       - VITE_BRANDING_NAME=Automate Builders
-      - VITE_BACKGROUND_LOGO_TEXT=AB
+      - VITE_BACKGROUND_LOGO_TEXT=NETSSL
       # Frontend Debug Configuration
       - VITE_DEBUG=false
       - VITE_DEBUG_WEBSOCKET=false
