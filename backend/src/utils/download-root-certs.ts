@@ -19,9 +19,9 @@ export const ROOT_CERTIFICATES: RootCertificate[] = [
   },
   {
     name: 'ISRG Root X2',
-    url: 'https://letsencrypt.org/certs/isrg-root-x2-cross-signed.pem',
-    filename: 'isrg-root-x2-cross-signed.pem',
-    description: 'Let\'s Encrypt\'s ECDSA root certificate (cross-signed)'
+    url: 'https://letsencrypt.org/certs/isrg-root-x2.pem',
+    filename: 'isrg-root-x2.pem',
+    description: 'Let\'s Encrypt\'s ECDSA root certificate (self-signed, valid until 2035)'
   }
 ];
 
@@ -56,11 +56,25 @@ export async function downloadRootCertificate(cert: RootCertificate, targetDir: 
   });
 }
 
+// Deprecated certificate files that should be cleaned up
+const DEPRECATED_CERTIFICATES = [
+  'isrg-root-x2-cross-signed.pem'  // Expired September 2025, replaced by isrg-root-x2.pem
+];
+
 export async function downloadAllRootCertificates(targetDir: string): Promise<void> {
   if (!fs.existsSync(targetDir)) {
     fs.mkdirSync(targetDir, { recursive: true });
   }
-  
+
+  // Clean up deprecated certificate files
+  for (const filename of DEPRECATED_CERTIFICATES) {
+    const deprecatedPath = path.join(targetDir, filename);
+    if (fs.existsSync(deprecatedPath)) {
+      fs.unlinkSync(deprecatedPath);
+      Logger.info(`Removed deprecated certificate: ${filename}`);
+    }
+  }
+
   for (const cert of ROOT_CERTIFICATES) {
     const targetPath = path.join(targetDir, cert.filename);
     if (fs.existsSync(targetPath)) {

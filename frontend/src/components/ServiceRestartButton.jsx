@@ -53,8 +53,16 @@ const ServiceRestartButton = ({ connection, onConfirmRestart }) => {
       return;
     }
 
-    // Show confirmation dialog
-    onConfirmRestart(connection);
+    if (onConfirmRestart) {
+      // Let the parent handle confirmation dialog
+      onConfirmRestart(connection);
+    } else {
+      // No confirmation handler — confirm inline and start directly
+      if (!confirm(`Are you sure you want to restart Cisco Tomcat on ${connection.hostname}.${connection.domain}?`)) {
+        return;
+      }
+      await ServiceRestartButton.startRestart(connection.id, toast);
+    }
   };
 
 

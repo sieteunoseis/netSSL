@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +13,7 @@ import BackgroundLogo from "@/components/BackgroundLogo";
 
 const Logs = () => {
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
   const [accounts, setAccounts] = useState([]);
   const [selectedAccount, setSelectedAccount] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -22,22 +24,33 @@ const Logs = () => {
   const [refreshInterval, setRefreshInterval] = useState(null);
   const scrollAreaRef = useRef(null);
   const logsEndRef = useRef(null);
+  const initialSelectionDone = useRef(false);
 
   const fetchLogs = async () => {
     setLoading(true);
     try {
       const response = await apiCall('/logs/all');
       const data = await response.json();
-      
+
       if (response.ok) {
         setAccounts(data.accounts);
         setLastUpdated(data.timestamp);
-        
-        // Auto-select first account with logs if none selected
-        if (!selectedAccount && data.accounts.length > 0) {
-          const firstAccountWithLogs = data.accounts.find(acc => acc.hasLogs);
-          if (firstAccountWithLogs) {
-            setSelectedAccount(firstAccountWithLogs);
+
+        // Auto-select account: prefer URL param ?connection=id, else first with logs
+        if (!initialSelectionDone.current && data.accounts.length > 0) {
+          initialSelectionDone.current = true;
+          const connectionId = searchParams.get('connection');
+          if (connectionId) {
+            const targetAccount = data.accounts.find(acc => String(acc.connection.id) === connectionId);
+            if (targetAccount) {
+              setSelectedAccount(targetAccount);
+            }
+          }
+          if (!connectionId || !data.accounts.find(acc => String(acc.connection.id) === connectionId)) {
+            const firstAccountWithLogs = data.accounts.find(acc => acc.hasLogs);
+            if (firstAccountWithLogs) {
+              setSelectedAccount(firstAccountWithLogs);
+            }
           }
         }
       } else {

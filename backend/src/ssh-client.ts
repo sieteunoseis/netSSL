@@ -146,6 +146,7 @@ export class SSHClient {
     return new Promise((resolve) => {
       let dataReceived = '';
       let resolved = false;
+      let welcomeSent = false;
 
       const cleanup = () => {
         if (!resolved) {
@@ -160,13 +161,13 @@ export class SSHClient {
       };
 
       // Set a timeout for the entire operation
-      // Increased to accommodate Cisco VOS startup time
+      // Cisco VOS CLI can take 60+ seconds to fully initialize on slower nodes
       const timeout = setTimeout(() => {
         resolveResult({
           success: false,
-          error: 'Connection timeout after 45 seconds'
+          error: 'Connection timeout after 90 seconds'
         });
-      }, 45000);
+      }, 90000);
 
       conn.on('ready', () => {
         Logger.info(`SSH connection established to ${hostname}`);
@@ -209,13 +210,21 @@ export class SSHClient {
                 message: 'Successfully connected to Cisco VOS CLI'
               });
             }
+
+            // After the Welcome message appears, send a newline to trigger the admin: prompt
+            // The CLI may need a nudge after initialization completes
+            if (!resolved && !welcomeSent && dataReceived.includes('Welcome to the Platform Command Line Interface')) {
+              welcomeSent = true;
+              Logger.info(`Detected Welcome message on ${hostname}, sending newline to trigger prompt`);
+              stream.write('\r\n');
+            }
           });
 
           stream.stderr.on('data', (data: Buffer) => {
             Logger.error(`SSH stderr: ${data.toString()}`);
           });
 
-          // Send a newline to potentially trigger the prompt
+          // Send a newline early to potentially trigger the prompt
           setTimeout(() => {
             if (!resolved) {
               Logger.info(`Sending newline to ${hostname} to trigger prompt`);
@@ -249,7 +258,7 @@ export class SSHClient {
             } else {
               Logger.info(`Shell timeout cleared for ${hostname} - already resolved`);
             }
-          }, 60000); // Wait up to 60 seconds for prompt
+          }, 120000); // Wait up to 120 seconds for prompt
         });
       });
 
@@ -333,7 +342,7 @@ export class SSHClient {
 
       conn.on('ready', () => {
         Logger.info(`SSH connection established to ${hostname} for command execution`);
-        
+
         conn.shell((err, stream) => {
           if (err) {
             clearTimeout(timeout);
@@ -345,6 +354,8 @@ export class SSHClient {
           }
 
           Logger.info(`Executing command on ${hostname}: ${command}`);
+          let commandSent = false;
+          let welcomeSent = false;
 
           stream.on('close', () => {
             clearTimeout(timeout);
@@ -354,17 +365,35 @@ export class SSHClient {
           stream.on('data', (data: Buffer) => {
             const chunk = data.toString();
             commandOutput += chunk;
-            
+
             Logger.info(`Command output from ${hostname}:`, {
               chunk: chunk.trim(),
               totalLength: commandOutput.length
             });
 
+            // Before command is sent, detect the admin: prompt
+            if (!commandSent) {
+              // Send newline after Welcome message to trigger prompt on slow VOS nodes
+              if (!welcomeSent && commandOutput.includes('Welcome to the Platform Command Line Interface')) {
+                welcomeSent = true;
+                Logger.info(`Detected Welcome message on ${hostname}, sending newline to trigger prompt`);
+                stream.write('\r\n');
+              }
+              // When we see admin: prompt, send the command
+              if (chunk.includes('admin:')) {
+                commandSent = true;
+                Logger.info(`Detected admin prompt on ${hostname}, sending command: ${command}`);
+                stream.write(`${command}\r\n`);
+              }
+              return;
+            }
+
             // Check if command execution is complete
             // For service restart commands, look for specific completion patterns
             if (command.includes('service restart') && command.includes('Cisco Tomcat')) {
               // Look for service restart completion patterns
-              if (commandOutput.includes('[STARTED]') && chunk.includes('admin:')) {
+              // VOS may show [STARTED] or just return to admin: after [STARTING] phases
+              if ((commandOutput.includes('[STARTED]') || commandOutput.includes('[STARTING]')) && chunk.includes('admin:')) {
                 clearTimeout(timeout);
                 Logger.info(`Cisco Tomcat service restart completed for ${hostname}`);
                 resolveResult({
@@ -398,26 +427,14 @@ export class SSHClient {
             commandOutput += data.toString();
           });
 
-          // Wait for the admin prompt first, then send the command
+          // Fallback: if admin: prompt not detected within 30s, send command anyway
           setTimeout(() => {
-            if (!resolved) {
-              Logger.info(`Sending command to ${hostname}: ${command}`);
+            if (!commandSent && !resolved) {
+              commandSent = true;
+              Logger.warn(`Admin prompt not detected on ${hostname} after 30s, sending command anyway: ${command}`);
               stream.write(`${command}\r\n`);
-              
-              // Set a timeout for command completion (use remaining time from main timeout)
-              const remainingTime = Math.max(commandTimeout - 10000, 30000); // At least 30 seconds, or remaining time minus 10s buffer
-              setTimeout(() => {
-                if (!resolved) {
-                  clearTimeout(timeout);
-                  resolveResult({
-                    success: false,
-                    error: `Command execution timeout - no response from server after ${remainingTime / 1000} seconds`,
-                    output: commandOutput
-                  });
-                }
-              }, remainingTime);
             }
-          }, 5000); // Wait 5 seconds for initial prompt
+          }, 30000);
         });
       });
 
@@ -502,8 +519,8 @@ export class SSHClient {
       }, commandTimeout);
 
       conn.on('ready', () => {
-        Logger.info(`SSH connection established to ${hostname} for command execution`);
-        
+        Logger.info(`SSH connection established to ${hostname} for streaming command execution`);
+
         conn.shell((err, stream) => {
           if (err) {
             clearTimeout(timeout);
@@ -516,6 +533,8 @@ export class SSHClient {
           }
 
           Logger.info(`Executing command on ${hostname}: ${command}`);
+          let commandSent = false;
+          let welcomeSent = false;
 
           stream.on('close', () => {
             clearTimeout(timeout);
@@ -525,26 +544,40 @@ export class SSHClient {
           stream.on('data', (data: Buffer) => {
             const chunk = data.toString();
             commandOutput += chunk;
-            
+
             Logger.info(`Command output from ${hostname}:`, {
               chunk: chunk.trim(),
               totalLength: commandOutput.length
             });
 
-            // Call the onData callback if provided
+            // Call the onData callback if provided (even before command is sent, for visibility)
             if (onData) {
               onData(chunk, commandOutput);
+            }
+
+            // Before command is sent, detect the admin: prompt
+            if (!commandSent) {
+              // Send newline after Welcome message to trigger prompt on slow VOS nodes
+              if (!welcomeSent && commandOutput.includes('Welcome to the Platform Command Line Interface')) {
+                welcomeSent = true;
+                Logger.info(`Detected Welcome message on ${hostname}, sending newline to trigger prompt`);
+                stream.write('\r\n');
+              }
+              // When we see admin: prompt, send the command
+              if (chunk.includes('admin:')) {
+                commandSent = true;
+                Logger.info(`Detected admin prompt on ${hostname}, sending command: ${command}`);
+                stream.write(`${command}\r\n`);
+              }
+              return;
             }
 
             // Check if command execution is complete
             // For service restart commands, look for specific completion patterns
             if (command.includes('service restart') && command.includes('Cisco Tomcat')) {
               // Look for service restart completion patterns
-              if (commandOutput.includes('[STARTING]')) {
-                // Don't resolve yet, just notify via callback
-                Logger.info(`Cisco Tomcat service is starting on ${hostname}`);
-              }
-              if (commandOutput.includes('[STARTED]') && chunk.includes('admin:')) {
+              // VOS may show [STARTED] or just return to admin: after [STARTING] phases
+              if ((commandOutput.includes('[STARTED]') || commandOutput.includes('[STARTING]')) && chunk.includes('admin:')) {
                 clearTimeout(timeout);
                 Logger.info(`Cisco Tomcat service restart completed for ${hostname}`);
                 resolveResult({
@@ -578,26 +611,14 @@ export class SSHClient {
             commandOutput += data.toString();
           });
 
-          // Wait for the admin prompt first, then send the command
+          // Fallback: if admin: prompt not detected within 30s, send command anyway
           setTimeout(() => {
-            if (!resolved) {
-              Logger.info(`Sending command to ${hostname}: ${command}`);
+            if (!commandSent && !resolved) {
+              commandSent = true;
+              Logger.warn(`Admin prompt not detected on ${hostname} after 30s, sending command anyway: ${command}`);
               stream.write(`${command}\r\n`);
-              
-              // Set a timeout for command completion (use remaining time from main timeout)
-              const remainingTime = Math.max(commandTimeout - 10000, 30000); // At least 30 seconds, or remaining time minus 10s buffer
-              setTimeout(() => {
-                if (!resolved) {
-                  clearTimeout(timeout);
-                  resolveResult({
-                    success: false,
-                    error: `Command execution timeout - no response from server after ${remainingTime / 1000} seconds`,
-                    output: commandOutput
-                  });
-                }
-              }, remainingTime);
             }
-          }, 5000); // Wait 5 seconds for initial prompt
+          }, 30000);
         });
       });
 

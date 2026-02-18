@@ -171,19 +171,32 @@ const CertificateInfoComponent: React.FC<CertificateInfoProps> = ({ connectionId
       });
       
       // Refresh certificate info after successful renewal
+      // Use longer delay — Tomcat may still be restarting after cert install
+      const refreshCertInfo = async (attempt = 1) => {
+        try {
+          await fetchCertificateInfo();
+          if (onRenewalComplete) {
+            onRenewalComplete();
+          }
+        } catch {
+          // Retry up to 3 times with increasing delay (service may still be starting)
+          if (attempt < 3) {
+            setTimeout(() => refreshCertInfo(attempt + 1), 5000);
+          }
+        }
+      };
+      setTimeout(() => refreshCertInfo(), 5000);
+
+      // Also do a second refresh after 15 seconds in case the first was too early
       setTimeout(() => {
         fetchCertificateInfo();
-        // Notify parent component that renewal completed
-        if (onRenewalComplete) {
-          onRenewalComplete();
-        }
-      }, 1000);
-      
-      // Hide completion message after 5 seconds
+      }, 15000);
+
+      // Hide completion message after 10 seconds
       setTimeout(() => {
         setShowCompletionMessage(false);
         setLastRenewalProgress(0); // Reset for next renewal
-      }, 5000);
+      }, 10000);
     }
     
     if (renewalStatus === 'failed' && renewalError) {

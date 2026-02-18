@@ -1,0 +1,16 @@
+# LocalStack for Route53 integration testing
+# Usage: docker compose -f docker-compose.localstack.yml up -d
+
+name: netssl-localstack
+
+services:
+  localstack:
+    image: localstack/localstack:latest
+    container_name: netssl-localstack
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=route53
+      - DEBUG=0
+    volumes:
+      - ./localstack:/etc/localstack/init/ready.d

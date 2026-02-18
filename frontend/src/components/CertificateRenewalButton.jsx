@@ -169,7 +169,7 @@ const CertificateRenewalButton = ({ connection, onConfirmRenew }) => {
     if (isRenewing) {
       const progressText = progress > 0 ? ` (${progress}%)` : '';
       
-      // Show more detailed status messages during DNS verification
+      // Show more detailed status messages for key phases
       let displayMessage = message || 'Renewing...';
       if (renewalStatus === 'waiting_manual_dns') {
         displayMessage = 'Waiting for manual DNS entry';
@@ -177,6 +177,8 @@ const CertificateRenewalButton = ({ connection, onConfirmRenew }) => {
         displayMessage = 'Waiting for DNS propagation';
       } else if (renewalStatus === 'completing_validation') {
         displayMessage = 'Completing DNS validation';
+      } else if (renewalStatus === 'restarting_service') {
+        displayMessage = message || 'Restarting Tomcat...';
       }
       
       return (

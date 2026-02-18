@@ -14,15 +14,16 @@ export class Route53DNSProvider {
   private client: Route53Client;
   private domain: string;
   private zoneId: string;
-  private recordIds: Map<string, string> = new Map();
+  private recordData: Map<string, { changeId: string; value: string }> = new Map();
 
-  constructor(accessKeyId: string, secretAccessKey: string, zoneId: string, domain: string) {
+  constructor(accessKeyId: string, secretAccessKey: string, zoneId: string, domain: string, endpoint?: string) {
     this.client = new Route53Client({
       region: 'us-east-1', // Route53 is a global service
       credentials: {
         accessKeyId,
         secretAccessKey
-      }
+      },
+      ...(endpoint && { endpoint })
     });
     this.domain = domain;
     this.zoneId = zoneId;
@@ -37,9 +38,12 @@ export class Route53DNSProvider {
     if (!accessKeyId || !secretAccessKey || !zoneId) {
       throw new Error('AWS Route53 credentials not configured. Please add AWS_ACCESS_KEY, AWS_SECRET_KEY, and AWS_ZONE_ID to your settings.');
     }
-    
-    const provider = new Route53DNSProvider(accessKeyId, secretAccessKey, zoneId, domain);
-    Logger.info(`AWS Route53 DNS provider initialized for ${domain}`);
+
+    // Optional custom endpoint (e.g., LocalStack for testing)
+    const endpoint = settings.find(s => s.key_name === 'AWS_ENDPOINT')?.key_value || undefined;
+
+    const provider = new Route53DNSProvider(accessKeyId, secretAccessKey, zoneId, domain, endpoint);
+    Logger.info(`AWS Route53 DNS provider initialized for ${domain}${endpoint ? ` (endpoint: ${endpoint})` : ''}`);
     return provider;
   }
 
@@ -74,7 +78,7 @@ export class Route53DNSProvider {
       const response = await this.client.send(command);
       
       const recordId = `${recordType}_${recordName}`;
-      this.recordIds.set(recordId, response.ChangeInfo?.Id || '');
+      this.recordData.set(recordId, { changeId: response.ChangeInfo?.Id || '', value });
       
       Logger.info(`Route53 DNS record created with change ID: ${response.ChangeInfo?.Id}`);
       
@@ -122,6 +126,13 @@ export class Route53DNSProvider {
       const recordName = nameParts.join('_');
       const fqdn = recordName.endsWith('.') ? recordName : `${recordName}.`;
 
+      // Retrieve the stored record value for the DELETE request
+      const stored = this.recordData.get(recordId);
+      if (!stored) {
+        Logger.warn(`No stored record data for ${recordId}, skipping delete`);
+        return;
+      }
+
       const params = {
         HostedZoneId: this.zoneId,
         ChangeBatch: {
@@ -132,7 +143,7 @@ export class Route53DNSProvider {
               Type: recordType as RRType,
               TTL: 60,
               ResourceRecords: [{
-                Value: recordType === 'TXT' ? `"${recordName}"` : recordName
+                Value: stored.value
               }]
             }
           }]

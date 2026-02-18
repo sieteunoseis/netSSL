@@ -235,12 +235,13 @@ export class AutoRenewalCron {
         return;
       }
 
-      // Execute service restart command
+      // Execute service restart command (5 minute timeout for Tomcat restart)
       const restartResult = await SSHClient.executeCommand({
         hostname: fqdn,
         username: connection.username,
         password: connection.password,
-        command: 'utils service restart Cisco Tomcat'
+        command: 'utils service restart Cisco Tomcat',
+        timeout: 300000
       });
 
       if (restartResult.success) {

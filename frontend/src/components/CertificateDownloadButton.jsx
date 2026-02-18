@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Button } from "@/components/ui/button";
-import { 
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -11,15 +11,27 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { Download, ChevronDown, FileText, Key, Link, Shield } from "lucide-react";
 import { apiCall } from "@/lib/api";
+import { useCertificateRenewal } from "@/contexts/WebSocketContext";
 
 const CertificateDownloadButton = ({ connection, refreshTrigger, isRenewing }) => {
   const { toast } = useToast();
   const [availableFiles, setAvailableFiles] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const { status: renewalStatus } = useCertificateRenewal(connection.id);
+  const prevRenewalStatus = useRef(renewalStatus);
 
   useEffect(() => {
     fetchAvailableFiles();
   }, [connection.id, refreshTrigger]);
+
+  // Re-fetch file list when a renewal completes
+  useEffect(() => {
+    if (prevRenewalStatus.current !== 'completed' && renewalStatus === 'completed') {
+      // Delay to allow files to be written to disk
+      setTimeout(() => fetchAvailableFiles(), 3000);
+    }
+    prevRenewalStatus.current = renewalStatus;
+  }, [renewalStatus]);
 
   const fetchAvailableFiles = async () => {
     try {

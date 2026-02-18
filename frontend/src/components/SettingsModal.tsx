@@ -103,12 +103,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger, onConnectionsUpd
     { 
       id: 'route53', 
       name: 'AWS Route53', 
-      keys: ['AWS_ACCESS_KEY', 'AWS_SECRET_KEY', 'AWS_ZONE_ID'],
+      keys: ['AWS_ACCESS_KEY', 'AWS_SECRET_KEY', 'AWS_ZONE_ID', 'AWS_ENDPOINT'],
       description: 'DNS provider for automatic DNS validation',
       keyInfo: {
         'AWS_ACCESS_KEY': 'IAM user access key with Route53 permissions',
         'AWS_SECRET_KEY': 'Secret access key for the IAM user',
-        'AWS_ZONE_ID': 'Hosted zone ID from Route53 console'
+        'AWS_ZONE_ID': 'Hosted zone ID from Route53 console',
+        'AWS_ENDPOINT': 'Optional: custom endpoint URL (e.g., http://localhost:4566 for LocalStack)'
       }
     },
     { 
@@ -404,7 +405,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger, onConnectionsUpd
         <DialogTrigger asChild>
           {trigger || defaultTrigger}
         </DialogTrigger>
-        <DialogContent className="sm:max-w-[700px] max-h-[90vh] flex flex-col">
+        <DialogContent className="sm:max-w-[700px] max-h-[90vh] !flex !flex-col overflow-hidden">
           <DialogHeader>
             <DialogTitle>API Keys & Settings</DialogTitle>
             <DialogDescription>
@@ -464,8 +465,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger, onConnectionsUpd
             </Accordion>
           </TabsContent>
           
-          <TabsContent value="configure" className="space-y-4 flex-1 flex flex-col">
-            <Tabs defaultValue={providers[0].id} orientation="vertical" className="flex flex-col flex-1">
+          <TabsContent value="configure" className="space-y-4 flex-1 flex flex-col min-h-0">
+            <Tabs defaultValue={providers[0].id} orientation="vertical" className="flex flex-col flex-1 min-h-0">
               <div className="relative group">
                 {/* Left scroll button */}
                 {showLeftScroll && (
@@ -519,7 +520,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger, onConnectionsUpd
                 )}
               </div>
               
-              <div className="flex-1 overflow-y-auto">
+              <div className="flex-1 overflow-y-auto min-h-0">
               {providers.map(provider => (
                 <TabsContent key={provider.id} value={provider.id} className="space-y-4 mt-0">
                   <Card>

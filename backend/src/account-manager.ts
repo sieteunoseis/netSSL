@@ -215,7 +215,7 @@ export class AccountManager {
         } else if (chainCerts.length === 1) {
           // Let's Encrypt now only provides intermediate cert, check for root certificates in accounts folder
           const isrgRootX1Path = path.join(this.accountsDir, 'isrgrootx1.pem');
-          const isrgRootX2Path = path.join(this.accountsDir, 'isrg-root-x2-cross-signed.pem');
+          const isrgRootX2Path = path.join(this.accountsDir, 'isrg-root-x2.pem');
           
           // Try to use ISRG Root X1 if available
           if (fs.existsSync(isrgRootX1Path)) {
@@ -304,6 +304,20 @@ export class AccountManager {
     } catch (error) {
       Logger.error(`Failed to load CSR for connection ${connectionId} (${domain}):`, error);
       return null;
+    }
+  }
+
+  async clearCSR(connectionId: number, domain: string): Promise<void> {
+    try {
+      const connectionEnvDir = this.getConnectionEnvDir(connectionId);
+      const csrPath = path.join(connectionEnvDir, 'certificate.csr');
+
+      if (fs.existsSync(csrPath)) {
+        await fs.promises.unlink(csrPath);
+        Logger.info(`Cleared cached CSR for connection ${connectionId} (${domain})`);
+      }
+    } catch (error) {
+      Logger.warn(`Failed to clear CSR for connection ${connectionId} (${domain}):`, error);
     }
   }
 

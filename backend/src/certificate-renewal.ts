@@ -15,7 +15,7 @@ import { ISEProvider } from './platform-providers/ise-provider';
 export interface RenewalStatus {
   id: string;
   connectionId: number;
-  status: 'pending' | 'generating_csr' | 'creating_account' | 'requesting_certificate' | 'creating_dns_challenge' | 'dns_validation' | 'waiting_dns_propagation' | 'waiting_manual_dns' | 'completing_validation' | 'downloading_certificate' | 'uploading_certificate' | 'completed' | 'failed';
+  status: 'pending' | 'generating_csr' | 'creating_account' | 'requesting_certificate' | 'creating_dns_challenge' | 'dns_validation' | 'waiting_dns_propagation' | 'waiting_manual_dns' | 'completing_validation' | 'downloading_certificate' | 'uploading_certificate' | 'restarting_service' | 'completed' | 'failed';
   message: string;
   progress: number;
   startTime: Date;
@@ -292,7 +292,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         
         // Notify user about service restart attempt (VOS only)
         if (connection.application_type === 'vos' && connection.enable_ssh && connection.auto_restart_service) {
-          await updateStatusWithOp('uploading_certificate', 'Certificate ready. Now attempting to restart Cisco Tomcat service...', 91);
+          await updateStatusWithOp('restarting_service', 'Restarting Tomcat...', 91);
         }
         
         // Handle service restart if enabled
@@ -404,7 +404,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         const envDir = isStaging ? 'staging' : 'prod';
         await accountManager.saveRenewalLog(connectionId, fullFQDN, `Certificate files available in: ./accounts/connection-${connectionId}/${envDir}/`);
         
-        // Create CRT and KEY files for easier ESXi import
+        // Create CRT and KEY files for easier manual import
         try {
           const domainEnvDir = path.join(accountManager['accountsDir'], `connection-${connectionId}`, envDir);
           const certPath = path.join(domainEnvDir, 'certificate.pem');
@@ -419,8 +419,8 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
             const crtPath = path.join(domainEnvDir, `${fullFQDN}.crt`);
             await fs.promises.writeFile(crtPath, certContent);
             await accountManager.saveRenewalLog(connectionId, fullFQDN, `DEBUG: Created ${fullFQDN}.crt successfully`);
-            status.logs.push(`Created ${fullFQDN}.crt file for ESXi import`);
-            await accountManager.saveRenewalLog(connectionId, fullFQDN, `Created ${fullFQDN}.crt file for ESXi import`);
+            status.logs.push(`Created ${fullFQDN}.crt file for manual import`);
+            await accountManager.saveRenewalLog(connectionId, fullFQDN, `Created ${fullFQDN}.crt file for manual import`);
           }
           
           // Create .key file from private_key.pem
@@ -429,8 +429,8 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
             if (keyContent.trim()) { // Only create if not empty
               const keyPath = path.join(domainEnvDir, `${fullFQDN}.key`);
               await fs.promises.writeFile(keyPath, keyContent);
-              status.logs.push(`Created ${fullFQDN}.key file for ESXi import`);
-              await accountManager.saveRenewalLog(connectionId, fullFQDN, `Created ${fullFQDN}.key file for ESXi import`);
+              status.logs.push(`Created ${fullFQDN}.key file for manual import`);
+              await accountManager.saveRenewalLog(connectionId, fullFQDN, `Created ${fullFQDN}.key file for manual import`);
             }
           }
         } catch (error) {
@@ -445,11 +445,13 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         // For VOS applications, upload via API
         await updateStatusWithOp('uploading_certificate', 'Uploading certificate to VOS application', 90);
         await this.uploadCertificateToVOS(connectionId, connection, certificate, status);
+        // Clear cached CSR after successful upload — VOS has consumed it
+        await accountManager.clearCSR(connectionId, fullFQDN);
       }
       
       // Notify user about service restart attempt (VOS only)
       if (connection.application_type === 'vos' && connection.enable_ssh && connection.auto_restart_service) {
-        await updateStatusWithOp('uploading_certificate', 'Certificate uploaded. Now attempting to restart Cisco Tomcat service...', 91);
+        await updateStatusWithOp('restarting_service', 'Restarting Tomcat...', 91);
       }
       
       // Handle service restart if enabled
@@ -477,6 +479,16 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       status.endTime = new Date();
       status.logs.push(`ERROR: ${errorMessage}`);
       await updateStatusWithOp('failed', `Certificate renewal failed: ${errorMessage}`, 0);
+      // Clear cached CSR on failure so next retry generates a fresh one from VOS
+      try {
+        const conn = await database.getConnectionById(connectionId);
+        if (conn) {
+          const fqdn = getDomainFromConnection(conn);
+          if (fqdn) await accountManager.clearCSR(connectionId, fqdn);
+        }
+      } catch (clearErr) {
+        Logger.warn(`Failed to clear CSR after renewal failure: ${clearErr}`);
+      }
     } finally {
       // Always remove from active renewals
       this.activeRenewals.delete(connectionId);
@@ -622,14 +634,9 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         // Construct full FQDN from hostname and domain
         const fullFQDN = `${connection.hostname}.${connection.domain}`;
         
-        // Check if we have an existing CSR
-        const existingCSR = await accountManager.loadCSR(connectionId, fullFQDN);
-        if (existingCSR) {
-          status.logs.push(`Using existing CSR for ${fullFQDN}`);
-          await accountManager.saveRenewalLog(connectionId, fullFQDN, `Using existing CSR for renewal`);
-          resolve(existingCSR);
-          return;
-        }
+        // Always generate a fresh CSR from VOS — VOS CSRs are tied to internal
+        // tracking IDs and keypairs, so cached ones cause 500 errors on upload
+        await accountManager.clearCSR(connectionId, fullFQDN);
 
         if (!connection.username || !connection.password) {
           throw new Error('Username and password are required for VOS applications');
@@ -1101,44 +1108,13 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         return certificate;
       
       } catch (error) {
-        // API failed, fall back to manual DNS mode
-        Logger.error(`Automated DNS provider failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        await accountManager.saveRenewalLog(connectionId, fullFQDN, `Automated DNS failed: ${error instanceof Error ? error.message : 'Unknown error'}, falling back to manual DNS`);
-        status.logs.push(`Automated DNS failed, switching to manual DNS mode`);
-        
-        // Add key authorizations to challenges for manual mode
-        for (let i = 0; i < order.challenges.length; i++) {
-          const challenge = order.challenges[i];
-          const keyAuthorization = await acmeClient.getChallengeKeyAuthorization(challenge);
-          status.challenges[i].keyAuthorization = keyAuthorization;
-        }
-        
-        // Use custom DNS handler for manual mode
-        await this.handleCustomDNSChallenge(connectionId, connection, [], status, operationManager);
-        
-        // Complete the challenges
-        await this.updateStatus(status, 'completing_validation', 'Completing Let\'s Encrypt validation', 70);
-        for (const challenge of order.challenges) {
-          await acmeClient.completeChallenge(challenge);
-        }
-        
-        // Wait for order completion and finalize certificate
-        await acmeClient.waitForOrderCompletion(order.order, 300000); // 5 minutes
-        const certificateData = await acmeClient.finalizeCertificate(order.order, csr);
-        await accountManager.saveRenewalLog(connectionId, fullFQDN, 'Let\'s Encrypt certificate downloaded successfully');
-        status.logs.push('Let\'s Encrypt certificate downloaded successfully');
-        
-        // Save certificate and chain to accounts folder with individual certificate extraction
-        await accountManager.saveRenewalLog(connectionId, fullFQDN, `DEBUG: About to save certificate chain. Certificate data length: ${certificateData.length}`);
-        Logger.debug(`About to save certificate chain for ${fullFQDN}. Certificate data length: ${certificateData.length}`);
-        
-        if (!certificateData || certificateData.length === 0) {
-          throw new Error('Certificate data is empty - cannot save certificate chain');
-        }
-        
-        await this.saveCertificateChain(connectionId, fullFQDN, certificateData, status);
-        
-        return certificateData;
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        Logger.error(`Automated DNS provider failed: ${errorMessage}`);
+        await accountManager.saveRenewalLog(connectionId, fullFQDN, `Automated DNS failed for ${dnsProvider}: ${errorMessage}`);
+
+        // Don't silently fall back to manual DNS for API providers — fail with the actual error
+        // so the user can fix their provider configuration and retry
+        throw new Error(`${dnsProvider} DNS provider failed: ${errorMessage}`);
       }
       
     } catch (error) {
@@ -1647,11 +1623,8 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
           return reject(new Error('No certificates found to upload.'));
         }
 
-        // Upload the full certificate chain (leaf + intermediates)
-        await this.uploadLeafCertificate(connectionId, connection, certificate, status);
-
-        // Upload the CA certificates separately (root and intermediates)
-        // VOS may already have these, so we'll handle errors gracefully
+        // Upload CA certificates (intermediate + root) to trust store FIRST
+        // VOS must have the signing CA in its trust store before it will accept the identity cert
         if (certificates.length > 1) {
           try {
             await this.uploadCaCertificates(connectionId, connection, certificates.slice(1), status);
@@ -1659,9 +1632,12 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
             const fullFQDN = `${connection.hostname}.${connection.domain}`;
             await accountManager.saveRenewalLog(connectionId, fullFQDN, `CA certificate upload warning: ${caError.message}`);
             status.logs.push(`CA certificates may already exist on server (this is normal)`);
-            // Continue anyway - the leaf certificate is what matters most
+            // Continue anyway - VOS may already have these trust certs
           }
         }
+
+        // Now upload the identity certificate chain (leaf + intermediates)
+        await this.uploadLeafCertificate(connectionId, connection, certificate, status);
 
         resolve();
       } catch (error) {
@@ -2019,15 +1995,17 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
    * Restart Cisco Tomcat service via SSH if auto_restart_service is enabled
    */
   private async handleServiceRestart(connection: ConnectionRecord, status: RenewalStatus): Promise<{success: boolean; requiresManualRestart: boolean; message?: string}> {
+    Logger.info(`handleServiceRestart called for ${connection.hostname}.${connection.domain} - application_type=${connection.application_type}, enable_ssh=${connection.enable_ssh} (${typeof connection.enable_ssh}), auto_restart_service=${connection.auto_restart_service} (${typeof connection.auto_restart_service})`);
+
     // Only VOS applications support service restart
     if (connection.application_type !== 'vos') {
       Logger.info(`Skipping service restart for ${connection.hostname}.${connection.domain} - Not a VOS application (${connection.application_type})`);
       return { success: true, requiresManualRestart: false };
     }
-    
+
     // Only proceed if SSH is enabled and auto_restart_service is enabled
     if (!connection.enable_ssh || !connection.auto_restart_service) {
-      Logger.info(`Skipping service restart for ${connection.hostname}.${connection.domain} - SSH or auto restart not enabled`);
+      Logger.info(`Skipping service restart for ${connection.hostname}.${connection.domain} - SSH or auto restart not enabled (enable_ssh=${connection.enable_ssh}, auto_restart_service=${connection.auto_restart_service})`);
       return { success: true, requiresManualRestart: false };
     }
 
@@ -2036,7 +2014,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       Logger.info(`Starting Cisco Tomcat service restart for ${fqdn}`);
       
       status.logs.push(`Restarting Cisco Tomcat service on ${fqdn}`);
-      await this.updateStatus(status, 'uploading_certificate', 'Attempting to restart Cisco Tomcat service (if enabled)', 92);
+      await this.updateStatus(status, 'restarting_service', 'Testing SSH connection...', 92);
 
       // Test SSH connection first
       const sshTest = await SSHClient.testConnection({
@@ -2058,7 +2036,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       }
 
       // Update status to show we're starting the service restart
-      await this.updateStatus(status, 'uploading_certificate', 'Starting Cisco Tomcat service restart...', 94);
+      await this.updateStatus(status, 'restarting_service', 'Restarting Tomcat...', 94);
       
       // Log the start of service restart
       if (connection.id) {
@@ -2077,7 +2055,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
           // Check for [STARTING] pattern and update progress to 97%
           if (chunk.includes('[STARTING]') || totalOutput.includes('Cisco Tomcat[STARTING]')) {
             Logger.info(`Detected Cisco Tomcat [STARTING] for ${fqdn} during certificate renewal`);
-            await this.updateStatus(status, 'uploading_certificate', 'Cisco Tomcat service is starting...', 97);
+            await this.updateStatus(status, 'restarting_service', 'Tomcat starting...', 97);
             const logMessage = `🔄 Cisco Tomcat service is starting on ${fqdn}`;
             status.logs.push(logMessage);
             // Also save to renewal logs
@@ -2087,6 +2065,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
           }
           // Check for [STOPPING] pattern
           if (chunk.includes('[STOPPING]') || totalOutput.includes('Cisco Tomcat[STOPPING]')) {
+            await this.updateStatus(status, 'restarting_service', 'Tomcat stopping...', 95);
             const logMessage = `⏸️ Cisco Tomcat service is stopping on ${fqdn}`;
             status.logs.push(logMessage);
             if (connection.id) {
@@ -2095,6 +2074,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
           }
           // Check for [RUNNING] pattern
           if (chunk.includes('[RUNNING]') || totalOutput.includes('Cisco Tomcat[RUNNING]')) {
+            await this.updateStatus(status, 'restarting_service', 'Tomcat running', 99);
             const logMessage = `✅ Cisco Tomcat service is now running on ${fqdn}`;
             status.logs.push(logMessage);
             if (connection.id) {
