@@ -823,7 +823,11 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       await this.updateStatus(status, 'creating_dns_challenge', 'Setting up DNS challenges', 40);
       
       // Check DNS challenge mode and provider
+      Logger.info(`DNS provider from connection: raw='${connection.dns_provider}', type=${typeof connection.dns_provider}`);
+      await accountManager.saveRenewalLog(connectionId, fullFQDN, `DNS provider from connection: raw='${connection.dns_provider}', type=${typeof connection.dns_provider}`);
       const dnsProvider = connection.dns_provider || 'cloudflare';
+      Logger.info(`Resolved DNS provider: '${dnsProvider}'`);
+      await accountManager.saveRenewalLog(connectionId, fullFQDN, `Resolved DNS provider: '${dnsProvider}'`);
       
       // Store challenges for manual mode
       status.challenges = order.challenges.map(challenge => ({

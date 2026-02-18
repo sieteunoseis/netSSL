@@ -425,7 +425,7 @@ export class DatabaseManager {
           Logger.error('Failed to fetch connection by ID:', err);
           reject(err);
         } else {
-          Logger.debug(`Retrieved connection with ID: ${id}`);
+          Logger.debug(`Retrieved connection with ID: ${id}, dns_provider='${row?.dns_provider}', ssl_provider='${row?.ssl_provider}'`);
           // Convert integer/string boolean values back to booleans for API consistency
           if (row) {
             if (row.is_enabled !== undefined) {
@@ -459,6 +459,10 @@ export class DatabaseManager {
       // Include all columns including the newer fields
       const allColumns = [...this.tableColumns, 'application_type', 'custom_csr', 'is_enabled'];
       const columnValues = allColumns.map(col => (data as any)[col] || null);
+
+      // Debug: log dns_provider value being stored
+      const dnsProviderIdx = allColumns.indexOf('dns_provider');
+      Logger.info(`createConnection: dns_provider input='${(data as any).dns_provider}', stored='${columnValues[dnsProviderIdx]}', index=${dnsProviderIdx}`);
 
       const insertQuery = `
         INSERT INTO connections (${allColumns.join(', ')}, password_hash) 
