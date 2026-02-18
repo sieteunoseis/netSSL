@@ -109,6 +109,27 @@ cd backend && npm run build   # Backend TypeScript build
 docker-compose up --build  # Full containerized build
 ```
 
+### DNS Provider System
+The application supports multiple DNS providers for ACME/Let's Encrypt certificate challenges. Provider implementations live in `backend/src/dns-providers/`:
+
+| Provider         | File              | Status                                                    |
+| ---------------- | ----------------- | --------------------------------------------------------- |
+| Cloudflare       | `cloudflare.ts`   | Fully implemented and wired in                            |
+| DigitalOcean     | `digitalocean.ts` | Provider class complete                                   |
+| AWS Route53      | `route53.ts`      | Provider class complete (uses `@aws-sdk/client-route-53`) |
+| Azure DNS        | `azure.ts`        | Skeleton only                                             |
+| Google Cloud DNS | `google.ts`       | Skeleton only                                             |
+| Custom (Manual)  | `custom.ts`       | Fully implemented                                         |
+
+The Let's Encrypt challenge flow in `backend/src/certificate-renewal.ts` dynamically imports and instantiates the correct DNS provider based on `connection.dns_provider`. All providers use the common `createDNSRecord()` method, with Cloudflare-specific methods (cleanup, verification, deletion) handled via conditional dispatch.
+
+**Required API keys per provider** (validated in `backend/src/server.ts`):
+- `cloudflare`: CF_KEY, CF_ZONE
+- `digitalocean`: DO_KEY
+- `route53`: AWS_ACCESS_KEY, AWS_SECRET_KEY, AWS_ZONE_ID
+- `azure`: AZURE_SUBSCRIPTION_ID, AZURE_RESOURCE_GROUP, AZURE_ZONE_NAME
+- `google`: GOOGLE_PROJECT_ID, GOOGLE_ZONE_NAME
+
 ## Project Structure
 
 - `frontend/src/pages/` - Main application pages (Home, Connections, Error)
@@ -116,7 +137,9 @@ docker-compose up --build  # Full containerized build
 - `frontend/src/lib/connection-utils.js` - Connection utility functions including enable/disable logic
 - `frontend/public/dbSetup.json` - Dynamic form configuration with conditional field visibility
 - `backend/src/server.ts` - Express API server with SQLite integration and connection management
+- `backend/src/certificate-renewal.ts` - Let's Encrypt ACME certificate renewal with DNS challenges
 - `backend/src/auto-renewal-cron.ts` - Scheduled certificate renewal service (respects connection enabled state)
+- `backend/src/dns-providers/` - DNS provider implementations (Cloudflare, Route53, DigitalOcean, etc.)
 - `backend/db/` - SQLite database files (auto-created)
 
 ## Environment Configuration

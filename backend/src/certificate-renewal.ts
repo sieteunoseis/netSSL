@@ -472,11 +472,11 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       
     } catch (error) {
       Logger.error(`Certificate renewal error for ${renewalId}:`, error);
-      status.status = 'failed';
-      status.error = error instanceof Error ? error.message : 'Unknown error';
-      status.message = 'Certificate renewal failed';
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      status.error = errorMessage;
       status.endTime = new Date();
-      status.logs.push(`ERROR: ${status.error}`);
+      status.logs.push(`ERROR: ${errorMessage}`);
+      await updateStatusWithOp('failed', `Certificate renewal failed: ${errorMessage}`, 0);
     } finally {
       // Always remove from active renewals
       this.activeRenewals.delete(connectionId);
@@ -762,7 +762,6 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
   private async requestLetsEncryptCertificate(connection: ConnectionRecord, csr: string, settings: any[], database: DatabaseManager, status: RenewalStatus, connectionId: number, operationManager?: OperationStatusManager): Promise<string> {
     try {
       const { acmeClient } = await import('./acme-client');
-      const CloudflareProvider = (await import('./dns-providers/cloudflare')).default;
       
       const fullFQDN = `${connection.hostname}.${connection.domain}`;
       
@@ -932,121 +931,170 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       
       // Try automated DNS provider first, fall back to manual on failure
       try {
-        // Initialize automated DNS provider
-        const cloudflare = await CloudflareProvider.create(database, fullFQDN);
+        // Dynamically initialize the correct DNS provider based on connection config
+        let provider: any;
+        switch (dnsProvider) {
+          case 'cloudflare': {
+            const { CloudflareProvider } = await import('./dns-providers/cloudflare');
+            provider = await CloudflareProvider.create(database, fullFQDN);
+            break;
+          }
+          case 'route53': {
+            const { Route53DNSProvider } = await import('./dns-providers/route53');
+            provider = await Route53DNSProvider.create(database, fullFQDN);
+            break;
+          }
+          case 'digitalocean': {
+            const { DigitalOceanDNSProvider } = await import('./dns-providers/digitalocean');
+            provider = await DigitalOceanDNSProvider.create(database, fullFQDN);
+            break;
+          }
+          case 'azure': {
+            const { AzureDNSProvider } = await import('./dns-providers/azure');
+            provider = await AzureDNSProvider.create(database, fullFQDN);
+            break;
+          }
+          case 'google': {
+            const { GoogleDNSProvider } = await import('./dns-providers/google');
+            provider = await GoogleDNSProvider.create(database, fullFQDN);
+            break;
+          }
+          default:
+            throw new Error(`Unsupported DNS provider for automated challenges: ${dnsProvider}`);
+        }
         await accountManager.saveRenewalLog(connectionId, fullFQDN, `${dnsProvider} DNS provider initialized`);
-        
+
         // Create DNS TXT records for challenges
         const dnsRecords: any[] = [];
         await accountManager.saveRenewalLog(connectionId, fullFQDN, `Setting up ${order.challenges.length} DNS challenge(s)`);
-        
+
         for (const challenge of order.challenges) {
           const keyAuthorization = await acmeClient.getChallengeKeyAuthorization(challenge);
-          
+
           // Log the key authorization for debugging
           await accountManager.saveRenewalLog(connectionId, fullFQDN, `Key authorization: ${keyAuthorization}`);
-          
+
           const dnsValue = acmeClient.getDNSRecordValue(keyAuthorization);
-          
+
           // Extract domain from challenge
-          const challengeDomain = challenge.url.includes('identifier') 
+          const challengeDomain = challenge.url.includes('identifier')
             ? domains.find(d => challenge.url.includes(d)) || domains[0]
             : domains[0];
-          
+
           await accountManager.saveRenewalLog(connectionId, fullFQDN, `Processing challenge for domain: ${challengeDomain}`);
           await accountManager.saveRenewalLog(connectionId, fullFQDN, `Challenge URL: ${challenge.url}`);
           await accountManager.saveRenewalLog(connectionId, fullFQDN, `DNS value: ${dnsValue}`);
-          
-          // Clean up any existing TXT records before creating new one
-          await accountManager.saveRenewalLog(connectionId, fullFQDN, `Cleaning up existing TXT records for ${challengeDomain}`);
-          await cloudflare.cleanupTxtRecords(challengeDomain);
-          
-          const record = await cloudflare.createTxtRecord(challengeDomain, dnsValue);
+
+          const acmeRecordName = `_acme-challenge.${challengeDomain}`;
+
+          // Clean up any existing TXT records before creating new one (Cloudflare only)
+          if (dnsProvider === 'cloudflare' && typeof provider.cleanupTxtRecords === 'function') {
+            await accountManager.saveRenewalLog(connectionId, fullFQDN, `Cleaning up existing TXT records for ${challengeDomain}`);
+            await provider.cleanupTxtRecords(challengeDomain);
+          }
+
+          // Use createDNSRecord (available on all providers) with the full _acme-challenge record name
+          const record = await provider.createDNSRecord(acmeRecordName, dnsValue, 'TXT');
           dnsRecords.push({ record, challenge, domain: challengeDomain });
-          
+
           await accountManager.saveRenewalLog(connectionId, fullFQDN, `Created DNS TXT record for ${challengeDomain}: ${record.id}`);
           status.logs.push(`Created DNS TXT record for ${challengeDomain}: ${record.id}`);
         }
-        
+
         await this.updateStatus(status, 'waiting_dns_propagation', 'Waiting for DNS propagation', 50);
         await accountManager.saveRenewalLog(connectionId, fullFQDN, `Waiting for DNS propagation of ${dnsRecords.length} record(s)`);
-        
+
         // Wait for DNS propagation
         for (const { challenge, domain } of dnsRecords) {
           const keyAuthorization = await acmeClient.getChallengeKeyAuthorization(challenge);
           const expectedValue = acmeClient.getDNSRecordValue(keyAuthorization);
-          
+          const acmeRecordName = `_acme-challenge.${domain}`;
+
           await accountManager.saveRenewalLog(connectionId, fullFQDN, `Verifying DNS propagation for ${domain}, expected value: ${expectedValue}`);
-          const isVerified = await cloudflare.verifyTxtRecord(domain, expectedValue);
+
+          // Cloudflare uses verifyTxtRecord (which prepends _acme-challenge internally),
+          // all other providers use waitForDNSPropagation with the full record name
+          let isVerified: boolean;
+          if (dnsProvider === 'cloudflare' && typeof provider.verifyTxtRecord === 'function') {
+            isVerified = await provider.verifyTxtRecord(domain, expectedValue);
+          } else {
+            isVerified = await provider.waitForDNSPropagation(acmeRecordName, expectedValue);
+          }
+
           if (!isVerified) {
             await accountManager.saveRenewalLog(connectionId, fullFQDN, `ERROR: DNS propagation verification failed for ${domain}`);
             throw new Error(`DNS propagation verification failed for ${domain}`);
           }
-          
+
           await accountManager.saveRenewalLog(connectionId, fullFQDN, `DNS propagation verified for ${domain}`);
           status.logs.push(`DNS propagation verified for ${domain}`);
         }
-        
+
         await this.updateStatus(status, 'completing_validation', 'Completing Let\'s Encrypt validation', 70);
         await accountManager.saveRenewalLog(connectionId, fullFQDN, `Completing ${dnsRecords.length} Let's Encrypt challenge(s)`);
-        
+
         // Complete challenges
         for (const { challenge } of dnsRecords) {
           await accountManager.saveRenewalLog(connectionId, fullFQDN, `Completing challenge: ${challenge.url}`);
           await acmeClient.completeChallenge(challenge);
           await accountManager.saveRenewalLog(connectionId, fullFQDN, `Challenge completed successfully: ${challenge.url}`);
         }
-        
+
         // Add delay to ensure Let's Encrypt processes the completed challenges
         Logger.info('Waiting for Let\'s Encrypt to process challenge completion...');
         await accountManager.saveRenewalLog(connectionId, fullFQDN, `Waiting 3 seconds for Let's Encrypt to process challenge completion...`);
         await new Promise(resolve => setTimeout(resolve, 3000));
-        
+
         // Wait for order completion
         await accountManager.saveRenewalLog(connectionId, fullFQDN, `Waiting for order completion: ${order.order.url}`);
         const completedOrder = await acmeClient.waitForOrderCompletion(order.order);
         await accountManager.saveRenewalLog(connectionId, fullFQDN, `Order completed successfully`);
-        
+
         await this.updateStatus(status, 'downloading_certificate', 'Downloading certificate', 80);
-        
+
         // Finalize and get certificate
         await accountManager.saveRenewalLog(connectionId, fullFQDN, `Finalizing certificate order`);
         const certificate = await acmeClient.finalizeCertificate(completedOrder, csr);
         await accountManager.saveRenewalLog(connectionId, fullFQDN, `Certificate downloaded successfully`);
-        
+
         // Clean up DNS records - skip in staging mode for debugging
         const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
         if (!isStaging || process.env.LETSENCRYPT_CLEANUP_DNS === 'true') {
           await accountManager.saveRenewalLog(connectionId, fullFQDN, `Cleaning up ${dnsRecords.length} DNS TXT record(s)`);
           for (const { record } of dnsRecords) {
             try {
-            await cloudflare.deleteTxtRecord(record.id);
-            await accountManager.saveRenewalLog(connectionId, fullFQDN, `Cleaned up DNS TXT record: ${record.id}`);
-            status.logs.push(`Cleaned up DNS TXT record: ${record.id}`);
-          } catch (error) {
-            Logger.warn(`Failed to clean up DNS record ${record.id}:`, error);
-            await accountManager.saveRenewalLog(connectionId, fullFQDN, `WARNING: Failed to clean up DNS record ${record.id}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+              // Cloudflare uses deleteTxtRecord, all other providers use deleteDNSRecord
+              if (dnsProvider === 'cloudflare' && typeof provider.deleteTxtRecord === 'function') {
+                await provider.deleteTxtRecord(record.id);
+              } else {
+                await provider.deleteDNSRecord(record.id);
+              }
+              await accountManager.saveRenewalLog(connectionId, fullFQDN, `Cleaned up DNS TXT record: ${record.id}`);
+              status.logs.push(`Cleaned up DNS TXT record: ${record.id}`);
+            } catch (error) {
+              Logger.warn(`Failed to clean up DNS record ${record.id}:`, error);
+              await accountManager.saveRenewalLog(connectionId, fullFQDN, `WARNING: Failed to clean up DNS record ${record.id}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            }
           }
+        } else {
+          Logger.info(`Skipping DNS record cleanup in staging mode (${dnsRecords.length} records)`);
+          await accountManager.saveRenewalLog(connectionId, fullFQDN, `Skipping DNS record cleanup in staging mode (${dnsRecords.length} records)`);
+          status.logs.push(`Skipped DNS cleanup in staging mode for debugging`);
         }
-      } else {
-        Logger.info(`Skipping DNS record cleanup in staging mode (${dnsRecords.length} records)`);
-        await accountManager.saveRenewalLog(connectionId, fullFQDN, `Skipping DNS record cleanup in staging mode (${dnsRecords.length} records)`);
-        status.logs.push(`Skipped DNS cleanup in staging mode for debugging`);
-      }
-      
-      // Save certificate and chain to accounts folder with individual certificate extraction
-      await accountManager.saveRenewalLog(connectionId, fullFQDN, `DEBUG: About to save certificate chain. Certificate data length: ${certificate.length}`);
-      Logger.debug(`About to save certificate chain for ${fullFQDN}. Certificate data length: ${certificate.length}`);
-      
-      if (!certificate || certificate.length === 0) {
-        throw new Error('Certificate data is empty - cannot save certificate chain');
-      }
-      
-      await this.saveCertificateChain(connectionId, fullFQDN, certificate, status);
-      
-      await accountManager.saveRenewalLog(connectionId, fullFQDN, `=== Certificate obtained successfully from Let's Encrypt ===`);
-      status.logs.push('Certificate obtained from Let\'s Encrypt');
-      return certificate;
+
+        // Save certificate and chain to accounts folder with individual certificate extraction
+        await accountManager.saveRenewalLog(connectionId, fullFQDN, `DEBUG: About to save certificate chain. Certificate data length: ${certificate.length}`);
+        Logger.debug(`About to save certificate chain for ${fullFQDN}. Certificate data length: ${certificate.length}`);
+
+        if (!certificate || certificate.length === 0) {
+          throw new Error('Certificate data is empty - cannot save certificate chain');
+        }
+
+        await this.saveCertificateChain(connectionId, fullFQDN, certificate, status);
+
+        await accountManager.saveRenewalLog(connectionId, fullFQDN, `=== Certificate obtained successfully from Let's Encrypt ===`);
+        status.logs.push('Certificate obtained from Let\'s Encrypt');
+        return certificate;
       
       } catch (error) {
         // API failed, fall back to manual DNS mode
