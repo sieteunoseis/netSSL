@@ -67,12 +67,27 @@ const DataForm: React.FC<DataFormProps> = ({
   useEffect(() => {
     if (fields) {
       setData(fields);
+      // Merge defaults from this tab's fields into shared form data
+      // so that fields with defaults (like ssl_provider, dns_provider) are included
+      if (sharedFormData && onFormDataChange) {
+        const defaults: Record<string, string | boolean> = {};
+        let hasNewDefaults = false;
+        for (const field of fields) {
+          if (field.default !== undefined && !(field.name in sharedFormData)) {
+            defaults[field.name] = field.default;
+            hasNewDefaults = true;
+          }
+        }
+        if (hasNewDefaults) {
+          onFormDataChange({ ...sharedFormData, ...defaults });
+        }
+      }
     } else {
       const fetchData = async () => {
         const response = await fetch("/dbSetup.json"); // Note the leading '/'
         const jsonData: Column[] = await response.json();
         setData(jsonData);
-        
+
         // Initialize form data with default values
         const initialData = jsonData.reduce((obj: Record<string, string | boolean>, value) => {
           obj[value.name] = value.default !== undefined ? value.default : (value.type === "SWITCH" ? false : "");
@@ -85,7 +100,7 @@ const DataForm: React.FC<DataFormProps> = ({
 
       fetchData();
     }
-  }, [fields, sharedFormData]);
+  }, [fields]);
 
   // Sync with shared form data
   useEffect(() => {

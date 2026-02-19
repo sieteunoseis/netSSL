@@ -32,6 +32,7 @@ interface ProviderConfig {
   id: string;
   name: string;
   keys: string[];
+  optionalKeys?: string[];
   description: string;
   keyInfo: Record<string, string>;
   keyDefaults?: Record<string, string>;
@@ -100,10 +101,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger, onConnectionsUpd
         'DO_KEY': 'Personal Access Token from API > Generate New Token'
       }
     },
-    { 
-      id: 'route53', 
-      name: 'AWS Route53', 
+    {
+      id: 'route53',
+      name: 'AWS Route53',
       keys: ['AWS_ACCESS_KEY', 'AWS_SECRET_KEY', 'AWS_ZONE_ID', 'AWS_ENDPOINT'],
+      optionalKeys: ['AWS_ENDPOINT'],
       description: 'DNS provider for automatic DNS validation',
       keyInfo: {
         'AWS_ACCESS_KEY': 'IAM user access key with Route53 permissions',
@@ -262,12 +264,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger, onConnectionsUpd
   const getProviderStatus = (providerId: string) => {
     const provider = providers.find(p => p.id === providerId);
     if (!provider) return { configured: false, missing: [] };
-    
+
     const providerData = providerSettings[providerId] || {};
+    const optionalKeys = provider.optionalKeys || [];
     const missing = provider.keys.filter(key => !providerData[key]);
-    
+    // Only required (non-optional) missing keys affect "configured" status
+    const requiredMissing = missing.filter(key => !optionalKeys.includes(key));
+
     return {
-      configured: missing.length === 0,
+      configured: requiredMissing.length === 0,
       missing
     };
   };
@@ -454,9 +459,21 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger, onConnectionsUpd
                           </div>
                         </div>
                         
-                        {status.missing.length > 0 && (
-                          <p className="text-red-600 font-medium">Missing: {status.missing.join(', ')}</p>
-                        )}
+                        {status.missing.length > 0 && (() => {
+                          const optionalKeys = provider.optionalKeys || [];
+                          const requiredMissing = status.missing.filter((k: string) => !optionalKeys.includes(k));
+                          const optionalMissing = status.missing.filter((k: string) => optionalKeys.includes(k));
+                          return (
+                            <>
+                              {requiredMissing.length > 0 && (
+                                <p className="text-red-600 font-medium">Missing: {requiredMissing.join(', ')}</p>
+                              )}
+                              {optionalMissing.length > 0 && (
+                                <p className="text-muted-foreground text-sm">Optional: {optionalMissing.join(', ')}</p>
+                              )}
+                            </>
+                          );
+                        })()}
                       </div>
                     </AccordionContent>
                   </AccordionItem>

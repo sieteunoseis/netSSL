@@ -176,8 +176,9 @@ app.get('/api/data/:id/cert-status', asyncHandler(async (req: Request, res: Resp
 
 // Create new connection
 app.post('/api/data', asyncHandler(async (req: Request, res: Response) => {
-  // Log the incoming request for debugging
-  Logger.info('POST /api/data request body:', JSON.stringify(req.body, null, 2));
+  // Log the incoming request for debugging (redact sensitive fields)
+  const { password: _pw, ise_private_key: _ipk, general_private_key: _gpk, ...safeBody } = req.body;
+  Logger.info('POST /api/data request body:', JSON.stringify(safeBody, null, 2));
   
   // Validate input data
   const validation = validateConnectionData(req.body);
