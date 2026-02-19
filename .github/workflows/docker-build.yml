@@ -2,26 +2,7 @@ name: Build and Push Docker Image
 
 on:
   push:
-    branches: [ main, master, security-stability-improvements ]
     tags: [ 'v*' ]
-    paths-ignore:
-      - '**.md'
-      - '**.png'
-      - '**.jpg'
-      - '**.jpeg'
-      - '**.gif'
-      - '**.svg'
-      - 'docs/**'
-  pull_request:
-    branches: [ main, master ]
-    paths-ignore:
-      - '**.md'
-      - '**.png'
-      - '**.jpg'
-      - '**.jpeg'
-      - '**.gif'
-      - '**.svg'
-      - 'docs/**'
 
 env:
   REGISTRY: ghcr.io
