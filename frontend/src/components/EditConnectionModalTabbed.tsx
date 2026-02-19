@@ -9,9 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import validator from "validator";
-import { Terminal, Loader2 } from "lucide-react";
 import { apiCall } from '../lib/api';
-import { getConnectionDisplayHostname } from '../lib/connection-utils';
 import CSRGeneratorWizard from './CSRGeneratorWizard';
 
 interface Column {
