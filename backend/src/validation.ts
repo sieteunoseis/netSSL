@@ -164,15 +164,32 @@ export const validateConnectionData = (data: any): { isValid: boolean; errors: s
     }
   }
 
-  // For general applications, custom CSR and private key are required
+  // For general applications, custom CSR and private key are optional
+  // (only needed when requesting a certificate, not for connection management)
   if (data.application_type === 'general') {
-    if (!data.custom_csr || data.custom_csr.trim() === '') {
-      errors.push('CSR is required for general applications');
+    if (data.general_private_key && data.general_private_key.trim() !== '') {
+      if (!data.general_private_key.includes('-----BEGIN PRIVATE KEY-----') && !data.general_private_key.includes('-----BEGIN RSA PRIVATE KEY-----')) {
+        errors.push('Private key must be in PEM format');
+      }
     }
-    if (!data.general_private_key || data.general_private_key.trim() === '') {
-      errors.push('Private key is required for general applications');
-    } else if (!data.general_private_key.includes('-----BEGIN PRIVATE KEY-----') && !data.general_private_key.includes('-----BEGIN RSA PRIVATE KEY-----')) {
-      errors.push('Private key must be in PEM format');
+
+    // SSH credential validation for general connections with SSH enabled
+    if (data.enable_ssh) {
+      if (!data.username || typeof data.username !== 'string' || data.username.trim() === '') {
+        errors.push('Username is required when SSH is enabled');
+      }
+      if (!data.password || typeof data.password !== 'string' || data.password.trim() === '') {
+        errors.push('Password is required when SSH is enabled');
+      }
+      if (data.ssh_cert_path && typeof data.ssh_cert_path === 'string' && !data.ssh_cert_path.startsWith('/')) {
+        errors.push('Remote certificate path must be an absolute path (starting with /)');
+      }
+      if (data.ssh_key_path && typeof data.ssh_key_path === 'string' && !data.ssh_key_path.startsWith('/')) {
+        errors.push('Remote private key path must be an absolute path (starting with /)');
+      }
+      if (data.ssh_chain_path && typeof data.ssh_chain_path === 'string' && !data.ssh_chain_path.startsWith('/')) {
+        errors.push('Remote chain path must be an absolute path (starting with /)');
+      }
     }
   }
 
@@ -226,7 +243,21 @@ export const sanitizeConnectionData = (data: any): Partial<ConnectionRecord> => 
     sanitized.password = validator.escape(String(data.password));
   }
 
-  // Handle boolean fields for VOS applications
+  // SSH path fields for general connections - don't escape, paths contain /
+  if (data.ssh_cert_path) {
+    sanitized.ssh_cert_path = String(data.ssh_cert_path);
+  }
+  if (data.ssh_key_path) {
+    sanitized.ssh_key_path = String(data.ssh_key_path);
+  }
+  if (data.ssh_chain_path) {
+    sanitized.ssh_chain_path = String(data.ssh_chain_path);
+  }
+  if (data.ssh_restart_command) {
+    sanitized.ssh_restart_command = String(data.ssh_restart_command); // Don't escape - may contain shell characters like &&
+  }
+
+  // Handle boolean fields
   if (data.enable_ssh !== undefined) {
     sanitized.enable_ssh = Boolean(data.enable_ssh);
   }

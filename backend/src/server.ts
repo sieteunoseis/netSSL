@@ -69,7 +69,11 @@ const TABLE_COLUMNS = [
   'auto_restart_service',
   'auto_renew',
   'auto_renew_status',
-  'auto_renew_last_attempt'
+  'auto_renew_last_attempt',
+  'ssh_cert_path',
+  'ssh_key_path',
+  'ssh_chain_path',
+  'ssh_restart_command'
 ];
 
 console.log('Using hardcoded TABLE_COLUMNS:', TABLE_COLUMNS);
@@ -350,9 +354,10 @@ app.put('/api/data/:id', asyncHandler(async (req: Request, res: Response) => {
   // Validate input data
   const validation = validateConnectionData(req.body);
   if (!validation.isValid) {
-    return res.status(400).json({ 
-      error: 'Validation failed', 
-      details: validation.errors 
+    Logger.warn('Validation failed for connection update:', { id, errors: validation.errors });
+    return res.status(400).json({
+      error: 'Validation failed',
+      details: validation.errors
     });
   }
 
@@ -1314,23 +1319,21 @@ app.get('/api/accounts/debug', asyncHandler(async (req: Request, res: Response) 
 
 // SSH test endpoint
 app.post('/api/ssh/test', asyncHandler(async (req: Request, res: Response) => {
-  const { hostname, username, password } = req.body;
+  const { hostname, username, password, application_type } = req.body;
 
   if (!hostname || !username || !password) {
-    return res.status(400).json({ 
-      error: 'Missing required fields', 
-      details: 'hostname, username, and password are required' 
+    return res.status(400).json({
+      error: 'Missing required fields',
+      details: 'hostname, username, and password are required'
     });
   }
 
-  Logger.info(`Testing SSH connection to ${hostname}`);
+  Logger.info(`Testing SSH connection to ${hostname} (type: ${application_type || 'vos'})`);
 
   try {
-    const result = await SSHClient.testConnection({
-      hostname,
-      username,
-      password
-    });
+    const result = application_type === 'general'
+      ? await SSHClient.testGenericConnection({ hostname, username, password })
+      : await SSHClient.testConnection({ hostname, username, password });
 
     return res.json(result);
   } catch (error: any) {
@@ -1370,11 +1373,9 @@ app.post('/api/data/:id/test-ssh', asyncHandler(async (req: Request, res: Respon
   Logger.info(`Testing SSH connection to ${fqdn} for connection ${id}`);
   
   try {
-    const result = await SSHClient.testConnection({
-      hostname: fqdn,
-      username: connection.username,
-      password: connection.password
-    });
+    const result = connection.application_type === 'general'
+      ? await SSHClient.testGenericConnection({ hostname: fqdn, username: connection.username, password: connection.password })
+      : await SSHClient.testConnection({ hostname: fqdn, username: connection.username, password: connection.password });
     
     return res.json(result);
   } catch (error: any) {

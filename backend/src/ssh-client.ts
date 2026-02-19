@@ -1,4 +1,4 @@
-import { Client } from 'ssh2';
+import { Client, SFTPWrapper } from 'ssh2';
 import { Logger } from './logger';
 
 export interface SSHTestParams {
@@ -33,6 +33,20 @@ export interface SSHStreamCommandResult extends SSHCommandResult {
   output: string;
 }
 
+export interface SFTPUploadParams {
+  localContent: string;
+  remotePath: string;
+  backupSuffix?: string;
+}
+
+export interface SFTPUploadResult {
+  success: boolean;
+  message?: string;
+  error?: string;
+  backedUp?: boolean;
+  backupPath?: string;
+}
+
 export class SSHClient {
   private client: Client | null = null;
   private isConnected = false;
@@ -59,11 +73,17 @@ export class SSHClient {
         this.isConnected = false;
       });
 
+      // Handle keyboard-interactive auth (used by ESXi and other systems)
+      this.client.on('keyboard-interactive', (_name, _instructions, _lang, _prompts, finish) => {
+        finish([config.password]);
+      });
+
       const connectConfig: any = {
         host: config.host,
         port: config.port || 22,
         username: config.username,
         password: config.password,
+        tryKeyboard: true,
         readyTimeout: 30000,
         keepaliveInterval: 5000
       };
@@ -132,6 +152,150 @@ export class SSHClient {
    */
   isClientConnected(): boolean {
     return this.isConnected;
+  }
+
+  /**
+   * Get an SFTP session from the connected client
+   */
+  private getSFTP(): Promise<SFTPWrapper> {
+    if (!this.client || !this.isConnected) {
+      throw new Error('SSH client is not connected');
+    }
+
+    return new Promise((resolve, reject) => {
+      this.client!.sftp((err, sftp) => {
+        if (err) {
+          reject(new Error(`Failed to start SFTP session: ${err.message}`));
+        } else {
+          resolve(sftp);
+        }
+      });
+    });
+  }
+
+  /**
+   * Upload file content to a remote path via SFTP.
+   * Optionally backs up the existing remote file before overwriting.
+   */
+  async uploadFile(params: SFTPUploadParams): Promise<SFTPUploadResult> {
+    const { localContent, remotePath, backupSuffix } = params;
+
+    try {
+      const sftp = await this.getSFTP();
+
+      let backedUp = false;
+      let backupPath: string | undefined;
+
+      if (backupSuffix) {
+        backupPath = `${remotePath}.${backupSuffix}`;
+        try {
+          await new Promise<void>((resolve) => {
+            sftp.stat(remotePath, (err) => {
+              if (err) {
+                // File doesn't exist, no backup needed
+                resolve();
+              } else {
+                sftp.rename(remotePath, backupPath!, (renameErr) => {
+                  if (renameErr) {
+                    Logger.warn(`Failed to backup ${remotePath} to ${backupPath}: ${renameErr.message}`);
+                  } else {
+                    backedUp = true;
+                    Logger.info(`Backed up ${remotePath} to ${backupPath}`);
+                  }
+                  resolve();
+                });
+              }
+            });
+          });
+        } catch (backupError: any) {
+          Logger.warn(`Backup attempt failed for ${remotePath}: ${backupError.message}`);
+        }
+      }
+
+      await new Promise<void>((resolve, reject) => {
+        sftp.writeFile(remotePath, localContent, { mode: 0o644 }, (err) => {
+          if (err) {
+            reject(new Error(`Failed to write file to ${remotePath}: ${err.message}`));
+          } else {
+            resolve();
+          }
+        });
+      });
+
+      Logger.info(`Successfully uploaded file to ${remotePath}`);
+      return {
+        success: true,
+        message: `File uploaded to ${remotePath}`,
+        backedUp,
+        backupPath: backedUp ? backupPath : undefined
+      };
+    } catch (error: any) {
+      Logger.error(`SFTP upload failed for ${remotePath}:`, error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Upload certificate files to a remote server via SFTP and optionally run a restart command.
+   * One-shot operation: connects, uploads, optionally executes restart, disconnects.
+   */
+  static async uploadCertificateFiles(params: {
+    hostname: string;
+    username: string;
+    password: string;
+    port?: number;
+    files: SFTPUploadParams[];
+    restartCommand?: string;
+  }): Promise<{
+    success: boolean;
+    uploadResults: SFTPUploadResult[];
+    restartOutput?: string;
+    error?: string;
+  }> {
+    const client = new SSHClient();
+    const uploadResults: SFTPUploadResult[] = [];
+
+    try {
+      await client.connect({
+        host: params.hostname,
+        username: params.username,
+        password: params.password,
+        port: params.port
+      });
+
+      for (const file of params.files) {
+        const result = await client.uploadFile(file);
+        uploadResults.push(result);
+        if (!result.success) {
+          throw new Error(`Failed to upload to ${file.remotePath}: ${result.error}`);
+        }
+      }
+
+      let restartOutput: string | undefined;
+      if (params.restartCommand) {
+        Logger.info(`Executing restart command: ${params.restartCommand}`);
+        restartOutput = await client.executeCommand(params.restartCommand);
+        Logger.info(`Restart command output: ${restartOutput}`);
+      }
+
+      return {
+        success: true,
+        uploadResults,
+        restartOutput
+      };
+    } catch (error: any) {
+      Logger.error(`Certificate upload operation failed:`, error);
+      return {
+        success: false,
+        uploadResults,
+        error: error.message
+      };
+    } finally {
+      await client.disconnect();
+    }
   }
 
   /**
@@ -296,6 +460,74 @@ export class SSHClient {
           //   serverHostKey: ['ssh-rsa', 'ssh-dss', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521'],
           //   hmac: ['hmac-sha2-256', 'hmac-sha2-512', 'hmac-sha1']
           // }
+        });
+      } catch (err: any) {
+        clearTimeout(timeout);
+        resolveResult({
+          success: false,
+          error: `Failed to initiate connection: ${err.message}`
+        });
+      }
+    });
+  }
+
+  /**
+   * Test SSH connection to a generic server (non-VOS)
+   * Simply verifies that SSH authentication succeeds
+   */
+  static async testGenericConnection(params: SSHTestParams): Promise<SSHTestResult> {
+    const { hostname, username, password, port = 22 } = params;
+    const conn = new Client();
+
+    return new Promise((resolve) => {
+      let resolved = false;
+
+      const resolveResult = (result: SSHTestResult) => {
+        if (!resolved) {
+          resolved = true;
+          conn.end();
+        }
+        resolve(result);
+      };
+
+      const timeout = setTimeout(() => {
+        resolveResult({
+          success: false,
+          error: 'Connection timeout after 30 seconds'
+        });
+      }, 30000);
+
+      conn.on('ready', () => {
+        clearTimeout(timeout);
+        Logger.info(`SSH connection established to ${hostname}`);
+        resolveResult({
+          success: true,
+          message: 'Successfully connected via SSH'
+        });
+      });
+
+      conn.on('error', (err) => {
+        clearTimeout(timeout);
+        Logger.error(`SSH connection error to ${hostname}: ${err.message}`);
+        resolveResult({
+          success: false,
+          error: `Connection error: ${err.message}`
+        });
+      });
+
+      // Handle keyboard-interactive auth (used by ESXi and other systems)
+      conn.on('keyboard-interactive', (_name, _instructions, _lang, _prompts, finish) => {
+        finish([password]);
+      });
+
+      try {
+        conn.connect({
+          host: hostname,
+          port,
+          username,
+          password,
+          tryKeyboard: true,
+          readyTimeout: 20000,
         });
       } catch (err: any) {
         clearTimeout(timeout);

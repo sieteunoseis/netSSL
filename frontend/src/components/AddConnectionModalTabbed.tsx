@@ -35,7 +35,7 @@ const FIELD_GROUPS = {
   basic: ["name", "application_type", "ise_application_subtype", "application_type_info", "application_type_info_ise", "application_type_info_general"],
   authentication: ["username", "password"],
   certificate: ["hostname", "domain", "ssl_provider", "dns_provider", "alt_names", "custom_csr", "general_private_key", "ise_nodes", "ise_certificate", "ise_private_key", "ise_cert_import_config"],
-  advanced: ["enable_ssh", "auto_restart_service", "auto_renew", "is_enabled"]
+  advanced: ["enable_ssh", "auto_restart_service", "ssh_cert_path", "ssh_key_path", "ssh_chain_path", "ssh_restart_command", "auto_renew", "is_enabled"]
 };
 
 const AddConnectionModalTabbed: React.FC<AddConnectionModalTabbedProps> = ({ 
@@ -95,29 +95,33 @@ const AddConnectionModalTabbed: React.FC<AddConnectionModalTabbedProps> = ({
     </Button>
   );
 
+  // Check if a field should be visible based on all its conditions (AND logic)
+  const isFieldVisible = (field: any) => {
+    if (!field.conditional && !field.conditionalMultiple && !field.conditionalNot) return true;
+
+    // All present conditions must pass (AND logic)
+    if (field.conditional) {
+      if (formData[field.conditional.field] !== field.conditional.value) return false;
+    }
+    if (field.conditionalMultiple) {
+      const multiMatch = field.conditionalMultiple.some((condition: FieldConditionMultiple) =>
+        condition.values.includes(formData[condition.field])
+      );
+      if (!multiMatch) return false;
+    }
+    if (field.conditionalNot) {
+      if (formData[field.conditionalNot.field] === field.conditionalNot.value) return false;
+    }
+    return true;
+  };
+
   // Check if a tab should be shown based on conditional fields
   const shouldShowTab = (tabName: string) => {
     const fields = FIELD_GROUPS[tabName as keyof typeof FIELD_GROUPS];
     return fields.some(fieldName => {
       const field = data.find(f => f.name === fieldName);
       if (!field) return false;
-      if (!field.conditional && !field.conditionalMultiple && !field.conditionalNot) return true;
-      
-      if (field.conditional) {
-        return formData[field.conditional.field] === field.conditional.value;
-      }
-      
-      if (field.conditionalMultiple) {
-        return field.conditionalMultiple.some((condition: FieldConditionMultiple) => 
-          condition.values.includes(formData[condition.field])
-        );
-      }
-      
-      if (field.conditionalNot) {
-        return formData[field.conditionalNot.field] !== field.conditionalNot.value;
-      }
-      
-      return true;
+      return isFieldVisible(field);
     });
   };
 
@@ -126,24 +130,7 @@ const AddConnectionModalTabbed: React.FC<AddConnectionModalTabbedProps> = ({
     const fieldNames = FIELD_GROUPS[tabName as keyof typeof FIELD_GROUPS];
     return data.filter(field => {
       if (!fieldNames.includes(field.name)) return false;
-      
-      if (!field.conditional && !field.conditionalMultiple && !field.conditionalNot) return true;
-      
-      if (field.conditional) {
-        return formData[field.conditional.field] === field.conditional.value;
-      }
-      
-      if (field.conditionalMultiple) {
-        return field.conditionalMultiple.some((condition: FieldConditionMultiple) => 
-          condition.values.includes(formData[condition.field])
-        );
-      }
-      
-      if (field.conditionalNot) {
-        return formData[field.conditionalNot.field] !== field.conditionalNot.value;
-      }
-      
-      return true;
+      return isFieldVisible(field);
     });
   };
 

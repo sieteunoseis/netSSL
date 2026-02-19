@@ -176,21 +176,21 @@ const Home = ({ onStatusUpdate }) => {
         method: 'POST'
       });
       
-      if (response.ok) {
-        const result = await response.json();
+      const result = await response.json();
+      if (response.ok && result.success) {
         toast({
           title: "SSH Test Successful",
-          description: `Successfully connected to ${connection.name} via SSH`,
+          description: result.message || `Successfully connected to ${connection.name} via SSH`,
           duration: 5000,
         });
       } else {
-        throw new Error('SSH test failed');
+        throw new Error(result.error || 'SSH test failed');
       }
     } catch (error) {
       console.error('SSH test error:', error);
       toast({
         title: "SSH Test Failed",
-        description: `Failed to connect to ${connection.name} via SSH. Check credentials and connectivity.`,
+        description: error.message || `Failed to connect to ${connection.name} via SSH. Check credentials and connectivity.`,
         variant: "destructive",
         duration: 5000,
       });
@@ -634,7 +634,7 @@ const Home = ({ onStatusUpdate }) => {
                         refreshTrigger={downloadRefreshTrigger}
                       />
 
-                      {connection.application_type === 'vos' && connection.enable_ssh && (
+                      {connection.enable_ssh && (connection.application_type === 'vos' || connection.application_type === 'general') && (
                         <ServiceRestartButton
                           connection={connection}
                           onSuccess={() => fetchCertificateStatus(connection)}
@@ -642,7 +642,7 @@ const Home = ({ onStatusUpdate }) => {
                         />
                       )}
 
-                      {connection.application_type === 'vos' && connection.enable_ssh && (
+                      {connection.enable_ssh && (connection.application_type === 'vos' || connection.application_type === 'general') && (
                         <Button
                           onClick={() => {
                             console.log('SSH Test - Connection:', connection);
@@ -689,15 +689,6 @@ const Home = ({ onStatusUpdate }) => {
                         View in Browser
                       </Button>
 
-                      <Button
-                        onClick={() => setEditingConnection(connection)}
-                        size="sm"
-                        variant="outline"
-                        className="justify-center border-purple-200 hover:border-purple-300 hover:bg-purple-50 dark:border-purple-800 dark:hover:border-purple-700 dark:hover:bg-purple-950"
-                      >
-                        <Edit className="h-4 w-4 mr-2 text-purple-600 dark:text-purple-400" />
-                        Edit
-                      </Button>
                     </div>
                   </TabsContent>
 
@@ -712,28 +703,39 @@ const Home = ({ onStatusUpdate }) => {
                           {connection.auto_renew && connection.dns_provider !== 'custom' ? "On" : "Off"}
                         </Badge>
                       </div>
-                      {connection.application_type === 'vos' && (
-                        <>
-                          <div className="flex items-center justify-between p-3 bg-background rounded-lg border">
-                            <div>
-                              <p className="font-medium text-sm">SSH Access</p>
-                              <p className="text-xs text-muted-foreground">Allow SSH connections</p>
-                            </div>
-                            <Badge variant={connection.enable_ssh ? "default" : "secondary"} className="rounded-[4px]">
-                              {connection.enable_ssh ? "On" : "Off"}
-                            </Badge>
+                      {(connection.application_type === 'vos' || connection.application_type === 'general') && (
+                        <div className="flex items-center justify-between p-3 bg-background rounded-lg border">
+                          <div>
+                            <p className="font-medium text-sm">SSH Access</p>
+                            <p className="text-xs text-muted-foreground">Allow SSH connections</p>
                           </div>
-                          <div className="flex items-center justify-between p-3 bg-background rounded-lg border">
-                            <div>
-                              <p className="font-medium text-sm">Auto Restart</p>
-                              <p className="text-xs text-muted-foreground">Restart service after cert</p>
-                            </div>
-                            <Badge variant={connection.auto_restart_service ? "default" : "secondary"} className="rounded-[4px]">
-                              {connection.auto_restart_service ? "On" : "Off"}
-                            </Badge>
-                          </div>
-                        </>
+                          <Badge variant={connection.enable_ssh ? "default" : "secondary"} className="rounded-[4px]">
+                            {connection.enable_ssh ? "On" : "Off"}
+                          </Badge>
+                        </div>
                       )}
+                      {connection.application_type === 'vos' && (
+                        <div className="flex items-center justify-between p-3 bg-background rounded-lg border">
+                          <div>
+                            <p className="font-medium text-sm">Auto Restart</p>
+                            <p className="text-xs text-muted-foreground">Restart service after cert</p>
+                          </div>
+                          <Badge variant={connection.auto_restart_service ? "default" : "secondary"} className="rounded-[4px]">
+                            {connection.auto_restart_service ? "On" : "Off"}
+                          </Badge>
+                        </div>
+                      )}
+                    </div>
+                    <div className="mt-3">
+                      <Button
+                        onClick={() => setEditingConnection(connection)}
+                        size="sm"
+                        variant="outline"
+                        className="w-full justify-center border-purple-200 hover:border-purple-300 hover:bg-purple-50 dark:border-purple-800 dark:hover:border-purple-700 dark:hover:bg-purple-950"
+                      >
+                        <Edit className="h-4 w-4 mr-2 text-purple-600 dark:text-purple-400" />
+                        Edit Connection
+                      </Button>
                     </div>
                   </TabsContent>
                 </div>
@@ -833,7 +835,7 @@ const Home = ({ onStatusUpdate }) => {
                       refreshTrigger={downloadRefreshTrigger}
                     />
 
-                    {connection.application_type === 'vos' && connection.enable_ssh && (
+                    {connection.enable_ssh && (connection.application_type === 'vos' || connection.application_type === 'general') && (
                       <ServiceRestartButton
                         connection={connection}
                         onSuccess={() => fetchCertificateStatus(connection)}
@@ -841,7 +843,7 @@ const Home = ({ onStatusUpdate }) => {
                       />
                     )}
 
-                    {connection.application_type === 'vos' && connection.enable_ssh && (
+                    {connection.enable_ssh && (connection.application_type === 'vos' || connection.application_type === 'general') && (
                       <Button
                         onClick={() => {
                           console.log('SSH Test (Compact) - Connection:', connection);
@@ -888,19 +890,6 @@ const Home = ({ onStatusUpdate }) => {
                       View
                     </Button>
 
-                    <Button
-                      onClick={() => {
-                        console.log('Edit (Compact) - Connection being edited:', connection);
-                        console.log('Edit (Compact) - App Type:', connection.application_type);
-                        setEditingConnection(connection);
-                      }}
-                      size="sm"
-                      variant="outline"
-                      className="justify-center border-purple-200 hover:border-purple-300 hover:bg-purple-50 dark:border-purple-800 dark:hover:border-purple-700 dark:hover:bg-purple-950"
-                    >
-                      <Edit className="h-4 w-4 mr-2 text-purple-600 dark:text-purple-400" />
-                      Edit
-                    </Button>
                   </div>
                 </TabsContent>
 
@@ -915,28 +904,39 @@ const Home = ({ onStatusUpdate }) => {
                         {connection.auto_renew && connection.dns_provider !== 'custom' ? "On" : "Off"}
                       </Badge>
                     </div>
-                    {connection.application_type === 'vos' && (
-                      <>
-                        <div className="flex items-center justify-between p-3 bg-background rounded-lg border">
-                          <div>
-                            <p className="font-medium text-sm">SSH Access</p>
-                            <p className="text-xs text-muted-foreground">Allow SSH connections</p>
-                          </div>
-                          <Badge variant={connection.enable_ssh ? "default" : "secondary"} className="rounded-[4px]">
-                            {connection.enable_ssh ? "On" : "Off"}
-                          </Badge>
+                    {(connection.application_type === 'vos' || connection.application_type === 'general') && (
+                      <div className="flex items-center justify-between p-3 bg-background rounded-lg border">
+                        <div>
+                          <p className="font-medium text-sm">SSH Access</p>
+                          <p className="text-xs text-muted-foreground">Allow SSH connections</p>
                         </div>
-                        <div className="flex items-center justify-between p-3 bg-background rounded-lg border">
-                          <div>
-                            <p className="font-medium text-sm">Auto Restart</p>
-                            <p className="text-xs text-muted-foreground">Service restart after cert</p>
-                          </div>
-                          <Badge variant={connection.auto_restart_service ? "default" : "secondary"} className="rounded-[4px]">
-                            {connection.auto_restart_service ? "On" : "Off"}
-                          </Badge>
-                        </div>
-                      </>
+                        <Badge variant={connection.enable_ssh ? "default" : "secondary"} className="rounded-[4px]">
+                          {connection.enable_ssh ? "On" : "Off"}
+                        </Badge>
+                      </div>
                     )}
+                    {connection.application_type === 'vos' && (
+                      <div className="flex items-center justify-between p-3 bg-background rounded-lg border">
+                        <div>
+                          <p className="font-medium text-sm">Auto Restart</p>
+                          <p className="text-xs text-muted-foreground">Service restart after cert</p>
+                        </div>
+                        <Badge variant={connection.auto_restart_service ? "default" : "secondary"} className="rounded-[4px]">
+                          {connection.auto_restart_service ? "On" : "Off"}
+                        </Badge>
+                      </div>
+                    )}
+                  </div>
+                  <div className="mt-3">
+                    <Button
+                      onClick={() => setEditingConnection(connection)}
+                      size="sm"
+                      variant="outline"
+                      className="w-full justify-center border-purple-200 hover:border-purple-300 hover:bg-purple-50 dark:border-purple-800 dark:hover:border-purple-700 dark:hover:bg-purple-950"
+                    >
+                      <Edit className="h-4 w-4 mr-2 text-purple-600 dark:text-purple-400" />
+                      Edit Connection
+                    </Button>
                   </div>
                 </TabsContent>
               </div>

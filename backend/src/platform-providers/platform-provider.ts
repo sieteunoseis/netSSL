@@ -136,7 +136,23 @@ export abstract class PlatformProvider {
 
     try {
       Logger.info(`Making API request to ${fullUrl} with username: ${username}`);
-      
+
+      // For mutating requests, fetch CSRF token + session cookie first (required by ISE when CSRF check is enabled)
+      if (method !== 'GET') {
+        try {
+          const csrf = await this.fetchCSRFToken(hostname, username, password);
+          if (csrf?.token) {
+            allHeaders['X-CSRF-Token'] = csrf.token;
+            if (csrf.cookie) {
+              allHeaders['Cookie'] = csrf.cookie;
+            }
+            Logger.info(`CSRF token and session cookie obtained for ${hostname}`);
+          }
+        } catch (csrfError: any) {
+          Logger.warn(`Could not fetch CSRF token for ${hostname}: ${csrfError.message} - proceeding without it`);
+        }
+      }
+
       const parsedUrl = url.parse(fullUrl);
       const options = {
         hostname: parsedUrl.hostname,
@@ -196,12 +212,13 @@ export abstract class PlatformProvider {
 
       if (!response.ok) {
         let errorMessage = `API request failed: ${response.status} ${response.statusText}`;
-        
+
         // Try to get more detailed error information
         if (response.body) {
           errorMessage += ` - ${response.body}`;
         }
-        
+
+        Logger.error(`API ${method} ${fullUrl} failed: ${response.status}, auth user: ${username}, response: ${response.body?.substring(0, 500)}`);
         throw new Error(errorMessage);
       }
       
@@ -246,6 +263,48 @@ export abstract class PlatformProvider {
       // Re-throw the original error if we can't provide a better message
       throw error;
     }
+  }
+
+  private async fetchCSRFToken(hostname: string, username: string, password: string): Promise<{ token: string; cookie: string } | null> {
+    const https = require('https');
+    const auth = Buffer.from(`${username}:${password}`).toString('base64');
+    Logger.info(`Fetching CSRF token from ${hostname}...`);
+
+    return new Promise((resolve) => {
+      const req = https.request({
+        hostname,
+        port: 443,
+        path: '/api/v1/certs/trusted-certificate',
+        method: 'GET',
+        headers: {
+          'Authorization': `Basic ${auth}`,
+          'Accept': 'application/json',
+          'X-CSRF-Token': 'fetch'
+        },
+        rejectUnauthorized: false,
+        timeout: 10000
+      }, (res: any) => {
+        res.on('data', () => {});
+        res.on('end', () => {
+          const csrfToken = res.headers['x-csrf-token'];
+          // Extract session cookies (JSESSIONIDSSO, etc.)
+          const setCookies = res.headers['set-cookie'] as string[] | undefined;
+          const cookieStr = setCookies
+            ? setCookies.map((c: string) => c.split(';')[0]).join('; ')
+            : '';
+          Logger.info(`CSRF fetch from ${hostname}: status=${res.statusCode}, token=${csrfToken ? 'present' : 'missing'}, cookies=${cookieStr ? 'present' : 'none'}`);
+          if (csrfToken) {
+            resolve({ token: csrfToken, cookie: cookieStr });
+          } else {
+            resolve(null);
+          }
+        });
+      });
+
+      req.on('error', (err: any) => { Logger.error(`CSRF fetch error for ${hostname}: ${err.message}`); resolve(null); });
+      req.on('timeout', () => { Logger.warn(`CSRF fetch timeout for ${hostname}`); req.destroy(); resolve(null); });
+      req.end();
+    });
   }
 
   protected async connectSSH(

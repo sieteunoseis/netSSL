@@ -512,6 +512,9 @@ export class DatabaseManager {
         
         // Handle password update if provided
         if (data.password) {
+          // Update both the raw password column (used for SSH/API connections) and the hash
+          updateColumns.push('password');
+          updateValues.push(data.password);
           const hashedPassword = await this.hashPassword(data.password);
           updateColumns.push('password_hash');
           updateValues.push(hashedPassword);

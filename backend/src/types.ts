@@ -23,6 +23,10 @@ export interface ConnectionRecord {
   auto_renew?: boolean;
   auto_renew_status?: string;
   auto_renew_last_attempt?: string;
+  ssh_cert_path?: string;
+  ssh_key_path?: string;
+  ssh_chain_path?: string;
+  ssh_restart_command?: string;
   is_enabled?: boolean | number;
   last_cert_issued?: string;
   cert_count_this_week?: number;

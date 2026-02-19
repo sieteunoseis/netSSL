@@ -52,7 +52,7 @@
       "field": "application_type",
       "value": "general"
     },
-    "description": "Includes: ESXi, other non-Cisco applications, or any system requiring certificate management. Requires manual CSR generation and certificate installation."
+    "description": "Includes: ESXi, other non-Cisco applications, or any system requiring certificate management. Enable SSH to automatically deploy certificates via SFTP, or download certificate files for manual installation."
   },
   {
     "name": "name",
@@ -107,7 +107,7 @@
     "conditionalMultiple": [
       {
         "field": "application_type",
-        "values": ["vos", "ise"]
+        "values": ["vos", "ise", "general"]
       }
     ]
   },
@@ -120,7 +120,7 @@
     "conditionalMultiple": [
       {
         "field": "application_type",
-        "values": ["vos", "ise"]
+        "values": ["vos", "ise", "general"]
       }
     ]
   },
@@ -254,7 +254,7 @@
     "conditionalMultiple": [
       {
         "field": "application_type",
-        "values": ["vos"]
+        "values": ["vos", "general"]
       }
     ]
   },
@@ -262,9 +262,71 @@
     "name": "auto_restart_service",
     "type": "SWITCH",
     "validator": { "name": "isAscii", "options": "" },
-    "label": "Auto Restart Services",
-    "description": "Automatically restart 'Cisco Tomcat' service after certificate installation (VOS applications only)",
+    "label": "Auto Restart Cisco Tomcat",
+    "description": "Automatically restart Cisco Tomcat service after certificate installation",
     "default": false,
+    "conditional": {
+      "field": "enable_ssh",
+      "value": true
+    },
+    "conditionalMultiple": [
+      {
+        "field": "application_type",
+        "values": ["vos"]
+      }
+    ]
+  },
+  {
+    "name": "ssh_cert_path",
+    "type": "TEXT",
+    "validator": { "name": "isAscii", "options": "" },
+    "label": "Remote Certificate Path",
+    "placeholder": "/etc/vmware/ssl/rui.crt",
+    "description": "Full path on the remote server where the certificate file should be installed",
+    "required": false,
+    "optional": true,
+    "conditional": {
+      "field": "enable_ssh",
+      "value": true
+    }
+  },
+  {
+    "name": "ssh_key_path",
+    "type": "TEXT",
+    "validator": { "name": "isAscii", "options": "" },
+    "label": "Remote Private Key Path",
+    "placeholder": "/etc/vmware/ssl/rui.key",
+    "description": "Full path on the remote server where the private key file should be installed",
+    "required": false,
+    "optional": true,
+    "conditional": {
+      "field": "enable_ssh",
+      "value": true
+    }
+  },
+  {
+    "name": "ssh_chain_path",
+    "type": "TEXT",
+    "validator": { "name": "isAscii", "options": "" },
+    "label": "Remote Full Chain Path (Optional)",
+    "placeholder": "/etc/vmware/ssl/castore.pem",
+    "description": "Full path for the certificate chain file (optional - leave blank to skip chain upload)",
+    "required": false,
+    "optional": true,
+    "conditional": {
+      "field": "enable_ssh",
+      "value": true
+    }
+  },
+  {
+    "name": "ssh_restart_command",
+    "type": "TEXT",
+    "validator": { "name": "isAscii", "options": "" },
+    "label": "Post-Install Restart Command (Optional)",
+    "placeholder": "/etc/init.d/hostd restart && /etc/init.d/vpxa restart",
+    "description": "Shell command to execute after certificate installation to restart services. Leave blank to skip.",
+    "required": false,
+    "optional": true,
     "conditional": {
       "field": "enable_ssh",
       "value": true

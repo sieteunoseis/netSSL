@@ -9,9 +9,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import validator from "validator";
-import { Badge } from "@/components/ui/badge";
-import { ToggleLeft, ToggleRight } from "lucide-react";
+import { Terminal, Loader2 } from "lucide-react";
 import { apiCall } from '../lib/api';
+import { getConnectionDisplayHostname } from '../lib/connection-utils';
+import CSRGeneratorWizard from './CSRGeneratorWizard';
 
 interface Column {
   name: string;
@@ -53,7 +54,7 @@ const FIELD_GROUPS = {
   basic: ["name", "application_type", "ise_application_subtype"],
   authentication: ["username", "password"],
   certificate: ["hostname", "domain", "ssl_provider", "dns_provider", "dns_challenge_mode", "alt_names", "custom_csr", "general_private_key", "ise_nodes", "ise_certificate", "ise_private_key", "ise_cert_import_config"],
-  advanced: ["enable_ssh", "auto_restart_service", "auto_renew", "is_enabled"]
+  advanced: ["enable_ssh", "auto_restart_service", "ssh_cert_path", "ssh_key_path", "ssh_chain_path", "ssh_restart_command", "auto_renew", "is_enabled"]
 };
 
 const EditConnectionModalTabbed: React.FC<EditConnectionModalTabbedProps> = ({ 
@@ -68,6 +69,31 @@ const EditConnectionModalTabbed: React.FC<EditConnectionModalTabbedProps> = ({
   const [formData, setFormData] = useState<Record<string, string | boolean>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCSRWizardOpen, setIsCSRWizardOpen] = useState(false);
+
+  const handleCSRGenerated = (generatedData: { csr: string; privateKey: string; subject: string; commonName: string }) => {
+    const applicationTypeValue = formData.application_type;
+    let updates: Record<string, string> = {};
+
+    if (applicationTypeValue === 'general') {
+      updates = {
+        custom_csr: generatedData.csr,
+        general_private_key: generatedData.privateKey
+      };
+    } else if (applicationTypeValue === 'ise') {
+      updates = {
+        ise_certificate: generatedData.csr,
+        ise_private_key: generatedData.privateKey
+      };
+    }
+
+    setFormData(prev => ({ ...prev, ...updates }));
+    toast({
+      title: "CSR Generated",
+      description: "Certificate Signing Request and private key have been generated and populated.",
+      duration: 3000,
+    });
+  };
 
   // Fetch configuration data
   useEffect(() => {
@@ -285,29 +311,33 @@ const EditConnectionModalTabbed: React.FC<EditConnectionModalTabbedProps> = ({
       .join(' ');
   };
 
+  // Check if a field should be visible based on all its conditions (AND logic)
+  const isFieldVisible = (field: any) => {
+    if (!field.conditional && !field.conditionalMultiple && !field.conditionalNot) return true;
+
+    // All present conditions must pass (AND logic)
+    if (field.conditional) {
+      if (formData[field.conditional.field] !== field.conditional.value) return false;
+    }
+    if (field.conditionalMultiple) {
+      const multiMatch = field.conditionalMultiple.some((condition: any) =>
+        condition.values.includes(formData[condition.field])
+      );
+      if (!multiMatch) return false;
+    }
+    if (field.conditionalNot) {
+      if (formData[field.conditionalNot.field] === field.conditionalNot.value) return false;
+    }
+    return true;
+  };
+
   // Check if a tab should be shown based on conditional fields
   const shouldShowTab = (tabName: string) => {
     const fields = FIELD_GROUPS[tabName as keyof typeof FIELD_GROUPS];
     return fields.some(fieldName => {
       const field = data.find(f => f.name === fieldName);
       if (!field) return false;
-      if (!field.conditional && !field.conditionalMultiple && !field.conditionalNot) return true;
-      
-      if (field.conditional) {
-        return formData[field.conditional.field] === field.conditional.value;
-      }
-      
-      if (field.conditionalMultiple) {
-        return field.conditionalMultiple.some(condition => 
-          condition.values.includes(formData[condition.field])
-        );
-      }
-      
-      if (field.conditionalNot) {
-        return formData[field.conditionalNot.field] !== field.conditionalNot.value;
-      }
-      
-      return true;
+      return isFieldVisible(field);
     });
   };
 
@@ -316,24 +346,7 @@ const EditConnectionModalTabbed: React.FC<EditConnectionModalTabbedProps> = ({
     const fieldNames = FIELD_GROUPS[tabName as keyof typeof FIELD_GROUPS];
     return data.filter(field => {
       if (!fieldNames.includes(field.name)) return false;
-      
-      if (!field.conditional && !field.conditionalMultiple && !field.conditionalNot) return true;
-      
-      if (field.conditional) {
-        return formData[field.conditional.field] === field.conditional.value;
-      }
-      
-      if (field.conditionalMultiple) {
-        return field.conditionalMultiple.some(condition => 
-          condition.values.includes(formData[condition.field])
-        );
-      }
-      
-      if (field.conditionalNot) {
-        return formData[field.conditionalNot.field] !== field.conditionalNot.value;
-      }
-      
-      return true;
+      return isFieldVisible(field);
     });
   };
 
@@ -353,7 +366,22 @@ const EditConnectionModalTabbed: React.FC<EditConnectionModalTabbedProps> = ({
 
     return (
       <div key={col.name} className="space-y-2">
-        {col.type !== "SWITCH" && <Label>{label}</Label>}
+        {col.type !== "SWITCH" && (
+          <div className="flex items-center justify-between">
+            <Label>{label}</Label>
+            {col.type === "TEXTAREA" && (col.name === 'custom_csr' || col.name === 'ise_certificate') &&
+             (formData.application_type === 'general' || formData.application_type === 'ise') && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsCSRWizardOpen(true)}
+              >
+                Generate CSR
+              </Button>
+            )}
+          </div>
+        )}
         
         {col.type === "SELECT" ? (
           (() => {
@@ -459,45 +487,18 @@ const EditConnectionModalTabbed: React.FC<EditConnectionModalTabbedProps> = ({
         <DialogHeader>
           <div className="flex items-center justify-between pr-6">
             <DialogTitle>Edit Connection</DialogTitle>
-            <button
-              type="button"
-              onClick={async () => {
-                const newValue = !Boolean(formData.is_enabled);
-                try {
-                  await apiCall(`/data/${record.id}`, {
-                    method: "PUT",
-                    body: JSON.stringify({ ...formData, is_enabled: newValue }),
-                  });
-                  setFormData(prev => ({ ...prev, is_enabled: newValue }));
-                  onConnectionUpdated();
-                  toast({
-                    title: newValue ? "Connection Enabled" : "Connection Disabled",
-                    description: `${record.name || 'Connection'} has been ${newValue ? 'enabled' : 'disabled'}.`,
-                    duration: 3000,
-                  });
-                } catch (error) {
-                  toast({
-                    title: "Error",
-                    description: "Failed to update connection status.",
-                    variant: "destructive",
-                    duration: 5000,
-                  });
-                }
-              }}
-              className="flex items-center gap-2 cursor-pointer"
-            >
-              {Boolean(formData.is_enabled) ? (
-                <Badge variant="outline" className="gap-1.5 px-2.5 py-1 text-xs font-medium border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900 transition-colors">
-                  <ToggleRight className="h-3.5 w-3.5" />
-                  Enabled
-                </Badge>
-              ) : (
-                <Badge variant="outline" className="gap-1.5 px-2.5 py-1 text-xs font-medium border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900 transition-colors">
-                  <ToggleLeft className="h-3.5 w-3.5" />
-                  Disabled
-                </Badge>
-              )}
-            </button>
+            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium tracking-wide uppercase ${
+              Boolean(formData.is_enabled)
+                ? 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400'
+                : 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400'
+            }`}>
+              <span className={`inline-block h-1.5 w-1.5 rounded-full ${
+                Boolean(formData.is_enabled)
+                  ? 'bg-green-500 dark:bg-green-400'
+                  : 'bg-red-500 dark:bg-red-400'
+              }`} />
+              {Boolean(formData.is_enabled) ? 'Enabled' : 'Disabled'}
+            </span>
           </div>
           <DialogDescription>
             Update the connection details for {record.name || 'this connection'}.
@@ -550,6 +551,14 @@ const EditConnectionModalTabbed: React.FC<EditConnectionModalTabbedProps> = ({
           </form>
         </Tabs>
       </DialogContent>
+
+      <CSRGeneratorWizard
+        isOpen={isCSRWizardOpen}
+        onClose={() => setIsCSRWizardOpen(false)}
+        onGenerated={handleCSRGenerated}
+        hostname={String(formData.hostname || "")}
+        domain={String(formData.domain || "")}
+      />
     </Dialog>
   );
 };

@@ -55,15 +55,16 @@ const DataTable = ({ data, onDataChange }) => {
           hostname: fqdn,
           username: record.username,
           password: record.password,
+          application_type: record.application_type,
         }),
       });
 
       const result = await response.json();
-      
+
       if (result.success) {
         toast({
           title: "SSH Test Successful",
-          description: "Successfully connected to Cisco VOS CLI",
+          description: result.message || "Successfully connected via SSH",
         });
       } else {
         toast({
@@ -486,8 +487,8 @@ const DataTable = ({ data, onDataChange }) => {
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {/* SSH Test Button - show only for VOS applications with SSH enabled */}
-                    {record.enable_ssh && record.application_type === 'vos' && (
+                    {/* SSH Test Button - show for applications with SSH enabled */}
+                    {record.enable_ssh && (record.application_type === 'vos' || record.application_type === 'general') && (
                       <Button
                         variant="outline"
                         size="sm"
