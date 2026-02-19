@@ -22,3 +22,7 @@ frontend.env
 backend/accounts/*
 !backend/accounts/README.md
 CISCO IOS.md
+
+# Log files
+backend/logs/
+logs/

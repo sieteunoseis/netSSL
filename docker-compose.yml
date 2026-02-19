@@ -31,9 +31,16 @@ services:
       - LETSENCRYPT_STAGING=${LETSENCRYPT_STAGING:-true}
       # Certificate accounts directory
       - ACCOUNTS_DIR=${ACCOUNTS_DIR:-./accounts}
+      # Logging Configuration
+      - LOG_TO_FILE=${LOG_TO_FILE:-false}
+      - LOG_DIR=${LOG_DIR:-./logs}
+      - LOG_MAX_SIZE=${LOG_MAX_SIZE:-20m}
+      - LOG_MAX_FILES=${LOG_MAX_FILES:-14d}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
     volumes:
       - app_db:/app/backend/db  # Persist database
       - app_accounts:/app/backend/accounts  # Persist certificates and accounts
+      - app_logs:/app/backend/logs  # Persist log files
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/api/data"]
@@ -46,4 +53,6 @@ volumes:
   app_db:
     driver: local
   app_accounts:
+    driver: local
+  app_logs:
     driver: local

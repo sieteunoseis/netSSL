@@ -9,6 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import validator from "validator";
+import { Badge } from "@/components/ui/badge";
+import { ToggleLeft, ToggleRight } from "lucide-react";
 import { apiCall } from '../lib/api';
 
 interface Column {
@@ -455,7 +457,48 @@ const EditConnectionModalTabbed: React.FC<EditConnectionModalTabbedProps> = ({
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent tabIndex={-1} className="max-w-4xl w-[95vw] sm:w-[90vw] max-h-[90vh] flex flex-col overflow-hidden">
         <DialogHeader>
-          <DialogTitle>Edit Connection</DialogTitle>
+          <div className="flex items-center justify-between pr-6">
+            <DialogTitle>Edit Connection</DialogTitle>
+            <button
+              type="button"
+              onClick={async () => {
+                const newValue = !Boolean(formData.is_enabled);
+                try {
+                  await apiCall(`/data/${record.id}`, {
+                    method: "PUT",
+                    body: JSON.stringify({ ...formData, is_enabled: newValue }),
+                  });
+                  setFormData(prev => ({ ...prev, is_enabled: newValue }));
+                  onConnectionUpdated();
+                  toast({
+                    title: newValue ? "Connection Enabled" : "Connection Disabled",
+                    description: `${record.name || 'Connection'} has been ${newValue ? 'enabled' : 'disabled'}.`,
+                    duration: 3000,
+                  });
+                } catch (error) {
+                  toast({
+                    title: "Error",
+                    description: "Failed to update connection status.",
+                    variant: "destructive",
+                    duration: 5000,
+                  });
+                }
+              }}
+              className="flex items-center gap-2 cursor-pointer"
+            >
+              {Boolean(formData.is_enabled) ? (
+                <Badge variant="outline" className="gap-1.5 px-2.5 py-1 text-xs font-medium border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900 transition-colors">
+                  <ToggleRight className="h-3.5 w-3.5" />
+                  Enabled
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="gap-1.5 px-2.5 py-1 text-xs font-medium border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900 transition-colors">
+                  <ToggleLeft className="h-3.5 w-3.5" />
+                  Disabled
+                </Badge>
+              )}
+            </button>
+          </div>
           <DialogDescription>
             Update the connection details for {record.name || 'this connection'}.
           </DialogDescription>

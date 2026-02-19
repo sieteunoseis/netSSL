@@ -5,35 +5,10 @@ import versionInfo from "../version.json";
 import { ChevronLeft, ChevronRight, Home, FileText, HelpCircle } from 'lucide-react';
 import { cn } from "@/lib/utils";
 import { ModeToggle } from "./mode-toggle";
-import { useTheme } from "./theme-context";
-import { useEffect, useState } from "react";
 
 const RightSidebar = ({ isExpanded, onCollapse, onToggle }) => {
   const config = useConfig();
   const location = useLocation();
-  const { theme } = useTheme();
-  const [actualTheme, setActualTheme] = useState('light');
-
-  useEffect(() => {
-    // Determine actual theme (light or dark)
-    if (theme === 'system') {
-      const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      setActualTheme(isDark ? 'dark' : 'light');
-    } else {
-      setActualTheme(theme);
-    }
-
-    // Listen for system theme changes
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const handleChange = (e) => {
-      if (theme === 'system') {
-        setActualTheme(e.matches ? 'dark' : 'light');
-      }
-    };
-    
-    mediaQuery.addEventListener('change', handleChange);
-    return () => mediaQuery.removeEventListener('change', handleChange);
-  }, [theme]);
 
   const navigationItems = [
     {
@@ -139,16 +114,13 @@ const RightSidebar = ({ isExpanded, onCollapse, onToggle }) => {
         {/* Mode Toggle - above footer */}
         <div className={cn(
           "p-4",
-          isExpanded ? "pb-32" : "pb-20"  // Consistent padding to account for footer
+          isExpanded ? "pb-32" : "pb-20"
         )}>
           <div className={cn(
             "flex items-center rounded-lg",
-            isExpanded ? "space-x-3 px-4 py-3" : "justify-center py-3"
+            isExpanded ? "justify-center px-4 py-3" : "justify-center py-3"
           )}>
-            <div className={!isExpanded ? "flex-shrink-0" : ""}>
-              <ModeToggle />
-            </div>
-            {isExpanded && <span className="font-medium whitespace-nowrap">{actualTheme === 'dark' ? 'Light' : 'Dark'} Mode</span>}
+            <ModeToggle variant={isExpanded ? "inline" : "icon"} />
           </div>
         </div>
 

@@ -124,10 +124,70 @@ The application uses SQLite with dynamic table creation. Configure your VOS serv
 
 ### Environment Variables
 
-Key environment variables:
-- `LETSENCRYPT_STAGING`: Use Let's Encrypt staging environment (default: true)
-- DNS provider credentials (varies by provider)
-- Branding customization (VITE_BRANDING_URL, VITE_BRANDING_NAME)
+#### Branding
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `VITE_BRANDING_URL` | `https://automate.builders` | Company/project URL |
+| `VITE_BRANDING_NAME` | `Automate Builders` | Display name in sidebar |
+| `VITE_BACKGROUND_LOGO_TEXT` | `NETSSL` | Background watermark text |
+
+#### Backend
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `PORT` | `3000` | Backend API port |
+| `NODE_ENV` | `development` | Environment mode |
+
+#### Certificate Auto-Renewal
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `CERT_RENEWAL_DAYS` | `7` | Days before expiry to auto-renew |
+| `CERT_WARNING_DAYS` | `30` | Days before expiry to show warning |
+| `CERT_CHECK_SCHEDULE` | `0 0 * * *` | Cron schedule for renewal checks |
+
+#### Let's Encrypt
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `LETSENCRYPT_STAGING` | `true` | Use staging environment for testing |
+| `LETSENCRYPT_CLEANUP_DNS` | `false` | Force DNS cleanup in staging mode |
+| `ACCOUNTS_DIR` | `./accounts` | Directory for account/cert storage |
+
+#### DNS Provider Credentials
+
+Configure credentials in Settings > API Keys for your DNS provider:
+
+| Provider | Required Keys |
+| --- | --- |
+| Cloudflare | `CF_KEY`, `CF_ZONE` |
+| AWS Route53 | `AWS_ACCESS_KEY`, `AWS_SECRET_KEY`, `AWS_ZONE_ID` (optional: `AWS_ENDPOINT`) |
+| DigitalOcean | `DO_KEY` |
+| Azure DNS | `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `AZURE_ZONE_NAME` |
+| Google Cloud DNS | `GOOGLE_PROJECT_ID`, `GOOGLE_ZONE_NAME` |
+
+#### Logging
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `LOG_TO_FILE` | `false` | Enable rotating log files |
+| `LOG_DIR` | `./logs` | Log file directory |
+| `LOG_MAX_SIZE` | `20m` | Max size per file before rotation |
+| `LOG_MAX_FILES` | `14d` | Retention period (e.g., `14d` or `30`) |
+| `LOG_LEVEL` | `info` | Log level: `error`, `warn`, `info`, `debug` |
+
+When `LOG_TO_FILE=true`, two rotating log files are created:
+
+- `app-YYYY-MM-DD.log` — all log levels
+- `error-YYYY-MM-DD.log` — errors only (for quick troubleshooting)
+
+#### Debug
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `VITE_DEBUG` | `false` | General debug messages in browser console |
+| `VITE_DEBUG_WEBSOCKET` | `false` | WebSocket debug messages in browser console |
 
 Note: Database table columns are hardcoded in the application for consistency and reliability.
 
@@ -182,9 +242,17 @@ cd backend && npm run build
 The application is packaged as a single Docker container containing both frontend (nginx) and backend (Node.js) services:
 
 - **nginx** serves the React frontend and proxies API requests
-- **Node.js backend** handles API requests on internal port 5000
+- **Node.js backend** handles API requests on an internal port
 - **PM2** manages both processes with automatic restart
-- **Persistent volumes** for database and certificate storage
+- **Persistent volumes** for database, certificates, and logs
+
+### Volumes
+
+| Volume | Container Path | Purpose |
+| --- | --- | --- |
+| `app_db` | `/app/backend/db` | SQLite database |
+| `app_accounts` | `/app/backend/accounts` | Let's Encrypt accounts and certificates |
+| `app_logs` | `/app/backend/logs` | Rotating log files (when `LOG_TO_FILE=true`) |
 
 ### Advanced Docker Usage
 
@@ -192,30 +260,11 @@ The application is packaged as a single Docker container containing both fronten
 # Build and run directly with Docker
 docker build -t netssl .
 docker run -p 3000:80 \
-  -v ./backend/db:/app/db \
-  -v ./backend/accounts:/app/accounts \
+  -v netssl_db:/app/backend/db \
+  -v netssl_accounts:/app/backend/accounts \
+  -v netssl_logs:/app/backend/logs \
   --env-file .env \
   netssl
-```
-
-### Production Environment Variables
-
-Create a `.env` file with your configuration:
-```bash
-# Required environment variables
-VITE_BRANDING_URL=https://your-domain.com
-VITE_BRANDING_NAME=Your Company
-PORT=5000
-NODE_ENV=production
-
-# Let's Encrypt settings
-LETSENCRYPT_STAGING=false
-
-# DNS provider credentials (as needed)
-CLOUDFLARE_TOKEN=your-token
-AZURE_CLIENT_ID=your-client-id
-AZURE_CLIENT_SECRET=your-secret
-AZURE_TENANT_ID=your-tenant-id
 ```
 
 ## Security Considerations
@@ -231,4 +280,4 @@ MIT License - see [LICENSE](LICENSE) file for details
 
 ## Contributing
 
-[Your Contributing Guidelines]
+Contributions are welcome! Please open an issue or submit a pull request on [GitHub](https://github.com/sieteunoseis/netSSL).
