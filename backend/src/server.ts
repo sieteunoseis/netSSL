@@ -1713,6 +1713,102 @@ app.post('/api/admin/cancel-renewal/:renewalId', asyncHandler(async (req: Reques
   }
 }));
 
+// Admin diagnostics endpoint
+app.get('/api/admin/diagnostics', asyncHandler(async (req: Request, res: Response) => {
+  try {
+    // WebSocket client count
+    const io = getWebSocketServer();
+    const wsClientCount = io ? (io.engine as any).clientsCount ?? 0 : 0;
+
+    // Permission checks — write test on accounts/, db/, logs/
+    const directories: Record<string, string> = {
+      accounts: process.env.ACCOUNTS_DIR || './accounts',
+      db: './db',
+      logs: process.env.LOG_DIR || './logs'
+    };
+
+    const permissionResults: Record<string, { readable: boolean; writable: boolean; exists: boolean; error?: string }> = {};
+
+    for (const [name, dir] of Object.entries(directories)) {
+      try {
+        const resolvedDir = path.resolve(dir);
+        const dirExists = fs.existsSync(resolvedDir);
+        if (!dirExists) {
+          permissionResults[name] = { exists: false, readable: false, writable: false, error: 'Directory does not exist' };
+          continue;
+        }
+
+        let readable = false;
+        try {
+          fs.readdirSync(resolvedDir);
+          readable = true;
+        } catch { readable = false; }
+
+        let writable = false;
+        const testFile = path.join(resolvedDir, `.diagnostic-test-${Date.now()}.tmp`);
+        try {
+          fs.writeFileSync(testFile, 'diagnostic-test');
+          const content = fs.readFileSync(testFile, 'utf-8');
+          writable = content === 'diagnostic-test';
+          fs.unlinkSync(testFile);
+        } catch {
+          writable = false;
+          try { fs.unlinkSync(testFile); } catch {}
+        }
+
+        permissionResults[name] = { exists: true, readable, writable };
+      } catch (error: any) {
+        permissionResults[name] = { exists: false, readable: false, writable: false, error: error.message };
+      }
+    }
+
+    // Process info
+    const processInfo = {
+      uid: process.getuid ? process.getuid() : null,
+      gid: process.getgid ? process.getgid() : null,
+      nodeVersion: process.version,
+      platform: process.platform,
+      arch: process.arch,
+      uptime: process.uptime(),
+      memoryUsage: process.memoryUsage(),
+      pid: process.pid
+    };
+
+    // Environment config (non-sensitive allowlist)
+    const envConfig: Record<string, string> = {
+      LETSENCRYPT_STAGING: process.env.LETSENCRYPT_STAGING || 'true',
+      CERT_RENEWAL_DAYS: process.env.CERT_RENEWAL_DAYS || '7',
+      CERT_CHECK_SCHEDULE: process.env.CERT_CHECK_SCHEDULE || '0 0 * * *',
+      CERT_WARNING_DAYS: process.env.CERT_WARNING_DAYS || '30',
+      LOG_TO_FILE: process.env.LOG_TO_FILE || 'false',
+      LOG_LEVEL: process.env.LOG_LEVEL || 'info',
+      NODE_ENV: process.env.NODE_ENV || 'development',
+      PORT: process.env.PORT || '3000'
+    };
+
+    // Accounts directory stats
+    const accountsDir = process.env.ACCOUNTS_DIR || './accounts';
+    const accountsSize = getAccountsSize(accountsDir);
+
+    res.json({
+      websocket: { clientCount: wsClientCount },
+      permissions: permissionResults,
+      process: processInfo,
+      environment: envConfig,
+      accounts: {
+        directory: accountsDir,
+        totalFiles: accountsSize.totalFiles,
+        totalSize: formatBytes(accountsSize.totalSize),
+        totalSizeBytes: accountsSize.totalSize
+      },
+      timestamp: new Date().toISOString()
+    });
+  } catch (error: any) {
+    Logger.error('Failed to run diagnostics:', error);
+    res.status(500).json({ error: 'Failed to run diagnostics' });
+  }
+}));
+
 // Apply error handling middleware
 app.use(errorHandler);
 

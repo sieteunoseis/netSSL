@@ -109,6 +109,25 @@ cd backend && npm run build   # Backend TypeScript build
 docker-compose up --build  # Full containerized build
 ```
 
+### Releasing a New Version
+The Docker build workflow only triggers on version tags (not on every push). To release:
+```bash
+# 1. Bump version in root package.json
+# 2. Sync version to frontend
+node scripts/sync-version.js
+# 3. Commit, tag, and push
+git add package.json frontend/src/version.json
+git commit -m "bump version to v1.x.x"
+git tag v1.x.x
+git push && git push --tags
+```
+This builds and pushes the container image to `ghcr.io/sieteunoseis/netssl` with `latest`, semver, and sha tags.
+
+### Important Build Notes
+- **Always run `tsc` before pushing** — the Docker build runs `tsc -b && vite build` for the frontend. Unused imports or type errors will fail the build.
+- **`frontend/dist/` and `backend/db/` are gitignored** — build artifacts and database files are not tracked in version control.
+- **Documentation lives on the GitHub wiki** at https://github.com/sieteunoseis/netSSL/wiki (not in the repo).
+
 ### DNS Provider System
 The application supports multiple DNS providers for ACME/Let's Encrypt certificate challenges. Provider implementations live in `backend/src/dns-providers/`:
 

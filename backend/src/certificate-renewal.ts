@@ -263,6 +263,11 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         throw new Error(`Invalid connection configuration: missing hostname/domain for connection ${connectionId}`);
       }
 
+      // Log connection identifier header for traceability
+      const connLabel = `[conn-${connectionId}]`;
+      Logger.info(`${connLabel} === Renewal started: name="${connection.name}", domain="${fullFQDN}", type="${connection.application_type}", accounts=connection-${connectionId}/ ===`);
+      status.logs.push(`Connection: id=${connectionId}, name="${connection.name}", domain="${fullFQDN}", type="${connection.application_type}"`);
+
       // Check for existing valid certificate
       const existingCert = await this.getExistingCertificate(fullFQDN);
       
@@ -616,8 +621,8 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     status.status = newStatus;
     status.message = message;
     status.progress = progress;
-    status.logs.push(`${new Date().toISOString()}: ${message}`);
-    Logger.info(`Renewal ${status.id}: ${message}`);
+    status.logs.push(`[${new Date().toISOString()}] ${message}`);
+    Logger.info(`[conn-${status.connectionId}] Renewal ${status.id}: ${message}`);
     
     // Update operation status - this will automatically emit WebSocket events
     if (operationManager) {
