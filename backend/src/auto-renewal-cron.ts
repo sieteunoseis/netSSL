@@ -131,7 +131,7 @@ export class AutoRenewalCron {
       }
 
       // Wait for renewal to complete (with timeout)
-      const maxWaitTime = 300000; // 5 minutes
+      const maxWaitTime = 900000; // 15 minutes (must exceed service restart timeout of 10 min)
       const startTime = Date.now();
       
       while (Date.now() - startTime < maxWaitTime) {
@@ -235,17 +235,19 @@ export class AutoRenewalCron {
         return;
       }
 
-      // Execute service restart command (5 minute timeout for Tomcat restart)
+      // Execute service restart command (10 minute timeout for Tomcat restart - CUC can be very slow)
       const restartResult = await SSHClient.executeCommand({
         hostname: fqdn,
         username: connection.username,
         password: connection.password,
         command: 'utils service restart Cisco Tomcat',
-        timeout: 300000
+        timeout: 600000
       });
 
       if (restartResult.success) {
         Logger.info(`Successfully restarted Cisco Tomcat service for ${fqdn}`);
+      } else if (restartResult.error?.includes('timeout')) {
+        Logger.warn(`Service restart confirmation timed out for ${fqdn} - service is likely still restarting. Manual verification recommended.`);
       } else {
         Logger.error(`Failed to restart Cisco Tomcat service for ${fqdn}: ${restartResult.error}`);
       }

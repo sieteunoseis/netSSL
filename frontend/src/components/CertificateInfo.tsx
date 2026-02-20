@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Shield, Calendar, AlertCircle, CheckCircle, RefreshCw, FileText, X } from "lucide-react";
+import LoadingState from "@/components/LoadingState";
 import { useToast } from "@/hooks/use-toast";
 import { apiCall } from "@/lib/api";
 import { useCertificateRenewal } from "@/contexts/WebSocketContext";
@@ -210,18 +211,18 @@ const CertificateInfoComponent: React.FC<CertificateInfoProps> = ({ connectionId
   }, [renewalStatus, isRenewing, renewalError, activeOperation, lastRenewalProgress, showCompletionMessage, toast]);
 
   const getCertificateStatus = () => {
-    if (!certInfo) return { status: "unknown", color: "bg-gray-100 text-gray-800", icon: AlertCircle };
-    
+    if (!certInfo) return { status: "unknown", variant: "secondary" as const, icon: AlertCircle };
+
     if (!certInfo.isValid) {
-      return { status: "invalid", color: "bg-red-100 text-red-800", icon: AlertCircle };
+      return { status: "invalid", variant: "destructive" as const, icon: AlertCircle };
     }
-    
+
     if (certInfo.daysUntilExpiry <= 0) {
-      return { status: "expired", color: "bg-red-100 text-red-800", icon: AlertCircle };
+      return { status: "expired", variant: "destructive" as const, icon: AlertCircle };
     } else if (certInfo.daysUntilExpiry <= certificateSettings.warningDays) {
-      return { status: "expiring", color: "bg-yellow-100 text-yellow-800", icon: AlertCircle };
+      return { status: "expiring", variant: "warning" as const, icon: AlertCircle };
     } else {
-      return { status: "valid", color: "bg-green-100 text-green-800", icon: CheckCircle };
+      return { status: "valid", variant: "success" as const, icon: CheckCircle };
     }
   };
 
@@ -230,12 +231,7 @@ const CertificateInfoComponent: React.FC<CertificateInfoProps> = ({ connectionId
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-4">
-        <RefreshCw className="w-4 h-4 animate-spin mr-2" />
-        <span className="text-sm text-muted-foreground">Loading certificate info...</span>
-      </div>
-    );
+    return <LoadingState variant="section" text="Loading certificate info..." />;
   }
 
   if (error) {
@@ -271,7 +267,7 @@ const CertificateInfoComponent: React.FC<CertificateInfoProps> = ({ connectionId
         <div className="flex items-center space-x-2">
           <Shield className="w-4 h-4" />
           <span className="text-sm font-medium">Certificate Information</span>
-          <Badge className={status.color}>
+          <Badge variant={status.variant}>
             <StatusIcon className="w-3 h-3 mr-1" />
             {status.status === "valid" && "Valid"}
             {status.status === "expiring" && "Expiring"}

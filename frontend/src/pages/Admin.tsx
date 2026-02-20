@@ -12,7 +12,9 @@ import {
 import { useWebSocket } from '@/contexts/WebSocketContext';
 import { useToast } from '@/hooks/use-toast';
 import BackgroundLogo from '@/components/BackgroundLogo';
+import LoadingState from '@/components/LoadingState';
 import { apiCall } from '@/lib/api';
+import { formatDateTime, calculateDuration } from '@/lib/date-utils';
 
 interface ActiveRenewal {
   id: string;
@@ -238,7 +240,7 @@ export default function Admin() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'pending':
-        return 'bg-yellow-500';
+        return 'bg-status-warning';
       case 'in_progress':
       case 'generating_csr':
       case 'creating_account':
@@ -249,43 +251,19 @@ export default function Admin() {
       case 'completing_validation':
       case 'downloading_certificate':
       case 'uploading_certificate':
-        return 'bg-blue-500';
+        return 'bg-primary';
       case 'waiting_manual_dns':
-        return 'bg-orange-500';
+        return 'bg-status-warning';
       case 'completed':
-        return 'bg-green-500';
+        return 'bg-status-valid';
       case 'failed':
-        return 'bg-red-500';
+        return 'bg-status-expired';
       default:
-        return 'bg-gray-500';
+        return 'bg-muted-foreground';
     }
   };
 
-  const formatDate = (dateString: string) => {
-    if (!dateString) return 'Unknown';
-    try {
-      const date = new Date(dateString);
-      if (isNaN(date.getTime())) return 'Invalid Date';
-      return date.toLocaleString();
-    } catch {
-      return 'Invalid Date';
-    }
-  };
-
-  const calculateDuration = (startedAt: string) => {
-    if (!startedAt) return '0m 0s';
-    try {
-      const start = new Date(startedAt).getTime();
-      if (isNaN(start)) return '0m 0s';
-      const now = Date.now();
-      const diff = now - start;
-      const minutes = Math.floor(diff / 60000);
-      const seconds = Math.floor((diff % 60000) / 1000);
-      return `${minutes}m ${seconds}s`;
-    } catch {
-      return '0m 0s';
-    }
-  };
+  // formatDateTime and calculateDuration imported from @/lib/date-utils
 
   const formatUptime = (seconds: number): string => {
     const days = Math.floor(seconds / 86400);
@@ -305,15 +283,11 @@ export default function Admin() {
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="h-8 w-8 animate-spin" />
-      </div>
-    );
+    return <LoadingState variant="page" />;
   }
 
   return (
-    <div className="min-h-full w-full py-20 relative bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-slate-900 dark:to-indigo-950">
+    <div className="min-h-full w-full py-20 relative bg-background">
       <BackgroundLogo />
       <div className="max-w-6xl mx-auto px-4">
         <div className="mb-6">
@@ -321,8 +295,8 @@ export default function Admin() {
             <div className="flex items-center space-x-3">
               <Shield className="h-8 w-8 text-primary" />
               <div>
-                <h1 className="text-3xl font-bold">Admin Dashboard</h1>
-                <p className="text-muted-foreground">Monitor and manage certificate renewals and system health</p>
+                <h1 className="text-3xl font-bold">System Info</h1>
+                <p className="text-muted-foreground">Certificate renewals, system health, and diagnostics</p>
               </div>
             </div>
           </div>
@@ -347,7 +321,7 @@ export default function Admin() {
 
           {/* Active Renewals Tab */}
           <TabsContent value="renewals">
-            <Card className="bg-card/85 backdrop-blur-sm">
+            <Card className="bg-card">
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
                   <CardTitle>Active Certificate Renewals</CardTitle>
@@ -409,7 +383,7 @@ export default function Admin() {
                             <span className="text-muted-foreground">Progress</span>
                             <span>{renewal.progress}%</span>
                           </div>
-                          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                          <div className="w-full bg-muted rounded-full h-2">
                             <div
                               className="bg-primary h-2 rounded-full transition-all duration-300"
                               style={{ width: `${renewal.progress}%` }}
@@ -419,7 +393,7 @@ export default function Admin() {
 
                         <div className="space-y-1 text-sm">
                           <p className="text-muted-foreground">Status: {renewal.message}</p>
-                          <p className="text-muted-foreground">Started: {formatDate(renewal.startedAt)}</p>
+                          <p className="text-muted-foreground">Started: {formatDateTime(renewal.startedAt)}</p>
                           <p className="text-muted-foreground">Duration: {calculateDuration(renewal.startedAt)}</p>
                         </div>
 
@@ -444,13 +418,11 @@ export default function Admin() {
           {/* Diagnostics Tab */}
           <TabsContent value="diagnostics">
             {diagnosticsLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-8 w-8 animate-spin" />
-              </div>
+              <LoadingState variant="section" />
             ) : diagnostics ? (
               <div className="space-y-4">
                 {/* WebSocket Status */}
-                <Card className="bg-card/85 backdrop-blur-sm">
+                <Card className="bg-card">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2 text-lg">
                       <Activity className="h-5 w-5" />
@@ -461,11 +433,11 @@ export default function Admin() {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         {connected ? (
-                          <Badge className="bg-green-500 text-white">
+                          <Badge variant="success">
                             <Wifi className="h-3 w-3 mr-1" /> Connected
                           </Badge>
                         ) : (
-                          <Badge className="bg-red-500 text-white">
+                          <Badge variant="destructive">
                             <WifiOff className="h-3 w-3 mr-1" /> Disconnected
                           </Badge>
                         )}
@@ -489,7 +461,7 @@ export default function Admin() {
                 </Card>
 
                 {/* Permission Validation */}
-                <Card className="bg-card/85 backdrop-blur-sm">
+                <Card className="bg-card">
                   <CardHeader className="flex flex-row items-center justify-between">
                     <CardTitle className="flex items-center gap-2 text-lg">
                       <FolderCheck className="h-5 w-5" />
@@ -510,15 +482,15 @@ export default function Admin() {
                           </div>
                           <div className="space-y-1 text-sm">
                             <div className="flex items-center gap-2">
-                              {perms.exists ? <CheckCircle2 className="h-4 w-4 text-green-500" /> : <XOctagon className="h-4 w-4 text-red-500" />}
+                              {perms.exists ? <CheckCircle2 className="h-4 w-4 text-status-valid" /> : <XOctagon className="h-4 w-4 text-status-expired" />}
                               Exists
                             </div>
                             <div className="flex items-center gap-2">
-                              {perms.readable ? <CheckCircle2 className="h-4 w-4 text-green-500" /> : <XOctagon className="h-4 w-4 text-red-500" />}
+                              {perms.readable ? <CheckCircle2 className="h-4 w-4 text-status-valid" /> : <XOctagon className="h-4 w-4 text-status-expired" />}
                               Readable
                             </div>
                             <div className="flex items-center gap-2">
-                              {perms.writable ? <CheckCircle2 className="h-4 w-4 text-green-500" /> : <XOctagon className="h-4 w-4 text-red-500" />}
+                              {perms.writable ? <CheckCircle2 className="h-4 w-4 text-status-valid" /> : <XOctagon className="h-4 w-4 text-status-expired" />}
                               Writable
                             </div>
                           </div>
@@ -538,7 +510,7 @@ export default function Admin() {
                 </Card>
 
                 {/* Environment & System Info */}
-                <Card className="bg-card/85 backdrop-blur-sm">
+                <Card className="bg-card">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2 text-lg">
                       <Settings className="h-5 w-5" />

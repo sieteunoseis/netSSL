@@ -993,6 +993,106 @@ app.get('/api/settings/:provider/validate', asyncHandler(async (req: Request, re
   });
 }));
 
+// Test DNS provider connectivity
+app.post('/api/settings/:provider/test', asyncHandler(async (req: Request, res: Response) => {
+  const provider = req.params.provider;
+  const settings = await database.getSettingsByProvider(provider);
+  const getKey = (name: string) => settings.find(s => s.key_name === name)?.key_value;
+
+  Logger.info(`Testing provider: ${provider}, found ${settings.length} settings: ${settings.map(s => s.key_name).join(', ')}`);
+
+  try {
+    switch (provider) {
+      case 'cloudflare': {
+        const apiKey = getKey('CF_KEY');
+        const zoneId = getKey('CF_ZONE');
+        if (!apiKey || !zoneId) {
+          return res.json({ success: false, message: `Missing ${!apiKey ? 'CF_KEY' : ''}${!apiKey && !zoneId ? ' and ' : ''}${!zoneId ? 'CF_ZONE' : ''}` });
+        }
+        // Verify zone access to confirm credentials
+        const cfResponse = await fetch(`https://api.cloudflare.com/client/v4/zones/${zoneId}`, {
+          headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
+        });
+        const cfData = await cfResponse.json() as any;
+        if (cfData.success && cfData.result?.name) {
+          return res.json({ success: true, message: `Connected to zone: ${cfData.result.name}` });
+        }
+        return res.json({ success: false, message: cfData.errors?.[0]?.message || `HTTP ${cfResponse.status}: Authentication failed` });
+      }
+      case 'digitalocean': {
+        const doKey = getKey('DO_KEY');
+        if (!doKey) {
+          return res.json({ success: false, message: 'Missing DO_KEY' });
+        }
+        const doResponse = await fetch('https://api.digitalocean.com/v2/account', {
+          headers: { 'Authorization': `Bearer ${doKey}` }
+        });
+        if (doResponse.ok) {
+          const doData = await doResponse.json() as any;
+          return res.json({ success: true, message: `Connected as: ${doData.account?.email || 'verified'}` });
+        }
+        return res.json({ success: false, message: `HTTP ${doResponse.status}: Authentication failed` });
+      }
+      case 'route53': {
+        const accessKey = getKey('AWS_ACCESS_KEY');
+        const secretKey = getKey('AWS_SECRET_KEY');
+        const zoneId = getKey('AWS_ZONE_ID');
+        if (!accessKey || !secretKey || !zoneId) {
+          return res.json({ success: false, message: 'Missing required AWS credentials' });
+        }
+        return res.json({ success: true, message: `Credentials present for zone ${zoneId}` });
+      }
+      case 'letsencrypt': {
+        const email = getKey('LETSENCRYPT_EMAIL');
+        if (!email) {
+          return res.json({ success: false, message: 'Missing LETSENCRYPT_EMAIL' });
+        }
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+          return res.json({ success: false, message: `Invalid email format: ${email}` });
+        }
+        return res.json({ success: true, message: `Email valid: ${email}` });
+      }
+      case 'zerossl': {
+        const key = getKey('ZEROSSL_KEY');
+        if (!key) {
+          return res.json({ success: false, message: 'Missing ZEROSSL_KEY' });
+        }
+        return res.json({ success: true, message: 'ZeroSSL API key present' });
+      }
+      case 'azure': {
+        const subId = getKey('AZURE_SUBSCRIPTION_ID');
+        const rg = getKey('AZURE_RESOURCE_GROUP');
+        const zone = getKey('AZURE_ZONE_NAME');
+        if (!subId || !rg || !zone) {
+          return res.json({ success: false, message: 'Missing required Azure credentials' });
+        }
+        return res.json({ success: true, message: `Credentials present for zone ${zone}` });
+      }
+      case 'google': {
+        const projectId = getKey('GOOGLE_PROJECT_ID');
+        const zoneName = getKey('GOOGLE_ZONE_NAME');
+        if (!projectId || !zoneName) {
+          return res.json({ success: false, message: 'Missing required Google Cloud credentials' });
+        }
+        return res.json({ success: true, message: `Credentials present for project ${projectId}` });
+      }
+      case 'custom': {
+        const dns1 = getKey('CUSTOM_DNS_SERVER_1');
+        if (!dns1) {
+          return res.json({ success: false, message: 'Missing CUSTOM_DNS_SERVER_1' });
+        }
+        return res.json({ success: true, message: `DNS server: ${dns1}` });
+      }
+      default:
+        return res.json({ success: false, message: `Unknown provider: ${provider}` });
+    }
+  } catch (error: any) {
+    Logger.error(`Provider test failed for ${provider}:`, error);
+    return res.json({ success: false, message: error.message || 'Connection test failed' });
+  }
+}));
+
 // Get certificate information for a connection
 app.get('/api/data/:id/certificate', asyncHandler(async (req: Request, res: Response) => {
   const id = parseInt(req.params.id);
@@ -1450,7 +1550,7 @@ app.post('/api/data/:id/restart-service', asyncHandler(async (req: Request, res:
       operationId: operation.id,
       status: 'started',
       message: 'Service restart initiated',
-      estimatedDuration: 300000 // 5 minutes
+      estimatedDuration: 600000 // 10 minutes
     });
 
     // Perform the restart asynchronously
@@ -1531,7 +1631,7 @@ async function performServiceRestart(operationId: string, connection: any, fqdn:
       username: connection.username,
       password: connection.password,
       command: 'utils service restart Cisco Tomcat',
-      timeout: 300000, // 5 minutes
+      timeout: 600000, // 10 minutes (CUC Tomcat can be very slow)
       onData: async (chunk: string, totalOutput: string) => {
         // Log various status patterns we detect
         if (domain) {
@@ -1573,18 +1673,36 @@ async function performServiceRestart(operationId: string, connection: any, fqdn:
       });
       Logger.info(`Successfully restarted Cisco Tomcat service for ${fqdn}`);
     } else {
-      if (domain) {
-        await accountManager.saveRenewalLog(connection.id, domain, `Service restart failed: ${restartResult.error}`);
-      }
-      await operationManager.updateOperation(operationId, {
-        status: 'failed',
-        progress: 100,
-        error: `Service restart failed: ${restartResult.error}`,
-        metadata: {
-          output: restartResult.output
+      const isTimeout = restartResult.error?.includes('timeout');
+
+      if (isTimeout) {
+        if (domain) {
+          await accountManager.saveRenewalLog(connection.id, domain, `Service restart initiated but confirmation timed out. The service is likely still restarting.`);
         }
-      });
-      Logger.error(`Failed to restart Cisco Tomcat service for ${fqdn}: ${restartResult.error}`);
+        await operationManager.updateOperation(operationId, {
+          status: 'completed',
+          progress: 100,
+          message: 'Service restart initiated - confirmation timed out. Manual verification recommended.',
+          metadata: {
+            output: restartResult.output,
+            timedOut: true
+          }
+        });
+        Logger.warn(`Service restart confirmation timed out for ${fqdn} - service is likely still restarting`);
+      } else {
+        if (domain) {
+          await accountManager.saveRenewalLog(connection.id, domain, `Service restart failed: ${restartResult.error}`);
+        }
+        await operationManager.updateOperation(operationId, {
+          status: 'failed',
+          progress: 100,
+          error: `Service restart failed: ${restartResult.error}`,
+          metadata: {
+            output: restartResult.output
+          }
+        });
+        Logger.error(`Failed to restart Cisco Tomcat service for ${fqdn}: ${restartResult.error}`);
+      }
     }
 
   } catch (error: any) {
