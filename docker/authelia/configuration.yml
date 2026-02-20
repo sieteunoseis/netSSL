@@ -1,0 +1,73 @@
+# Authelia Configuration — Sample for netSSL
+# Full docs: https://www.authelia.com/configuration/
+#
+# IMPORTANT: Update the following before deploying:
+#   - jwt_secret (generate with: docker run --rm authelia/authelia:latest authelia crypto rand --length 64 --charset alphanumeric)
+#   - default_redirection_url (your netSSL domain)
+#   - session.domain (your root domain)
+#   - storage.encryption_key (generate with same command as jwt_secret)
+
+server:
+  address: 'tcp://0.0.0.0:9091/'
+
+log:
+  level: info
+
+# Generate a secure random string for this
+jwt_secret: change_me_to_a_random_secret
+
+# The URL users are redirected to after login
+default_redirection_url: https://netssl.yourdomain.com
+
+totp:
+  issuer: netssl
+
+authentication_backend:
+  file:
+    path: /config/users_database.yml
+    password:
+      algorithm: argon2id
+      iterations: 3
+      memory: 65536
+      parallelism: 4
+      key_length: 32
+      salt_length: 16
+
+access_control:
+  default_policy: deny
+  rules:
+    # Allow access to the netSSL dashboard for authenticated users
+    - domain: netssl.yourdomain.com
+      policy: one_factor
+    # Require two-factor for admin operations (optional)
+    # - domain: netssl.yourdomain.com
+    #   resources:
+    #     - '^/api/admin.*$'
+    #   policy: two_factor
+
+session:
+  name: authelia_session
+  # Generate a secure random string
+  secret: change_me_to_another_random_secret
+  expiration: 3600      # 1 hour
+  inactivity: 300       # 5 minutes
+  domain: yourdomain.com
+
+storage:
+  # Generate a secure random string
+  encryption_key: change_me_to_yet_another_random_secret
+  local:
+    path: /data/db.sqlite3
+
+notifier:
+  # Option 1: File-based (for testing)
+  filesystem:
+    filename: /data/notification.txt
+
+  # Option 2: SMTP (for production — uncomment and configure)
+  # smtp:
+  #   host: smtp.gmail.com
+  #   port: 587
+  #   username: your-email@gmail.com
+  #   password: your-app-password
+  #   sender: "Authelia <authelia@yourdomain.com>"

@@ -1,0 +1,193 @@
+# Docker Compose — Full Stack Example
+# netSSL + Nginx Proxy Manager (SSL) + Authelia (Auth) + Apprise (Alerts)
+#
+# This is a reference configuration showing how to deploy netSSL with:
+#   - Nginx Proxy Manager: Reverse proxy with automatic SSL/TLS certificates
+#   - Authelia: Authentication middleware (2FA, SSO, LDAP support)
+#   - Apprise: Self-hosted notification gateway (MS Teams, Slack, Email, etc.)
+#
+# Network architecture:
+#   Internet → [80/443] Nginx Proxy Manager → [internal network] → netSSL / Authelia / Apprise
+#   Only Nginx Proxy Manager is exposed to the host. All other services are internal only.
+#
+# Usage:
+#   1. Copy this file and the authelia/ folder to your deployment directory
+#   2. Create a .env file (see docker/README.md)
+#   3. docker compose -f docker-compose.full-stack.yml up -d
+#
+# First-time setup:
+#   - Nginx Proxy Manager admin: http://your-server:81 (admin@example.com / changeme)
+#   - Configure a proxy host pointing to netssl-dashboard:80
+#   - Enable SSL with Let's Encrypt
+#   - Add Authelia as a custom location or advanced config (see Authelia docs)
+
+name: netssl-full-stack
+
+services:
+  # ─────────────────────────────────────────────
+  # netSSL — Certificate Management Dashboard
+  # ─────────────────────────────────────────────
+  # Internal only — no ports exposed to the host.
+  # Accessed exclusively through Nginx Proxy Manager.
+  app:
+    image: ghcr.io/sieteunoseis/netssl:${TAG:-latest}
+    container_name: netssl-dashboard
+    expose:
+      - "80"
+    env_file:
+      - .env
+    environment:
+      - LOG_TO_FILE=${LOG_TO_FILE:-true}
+    volumes:
+      - app_db:/app/backend/db
+      - app_accounts:/app/backend/accounts
+      - app_logs:/app/backend/logs
+    networks:
+      - internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/api/data"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ─────────────────────────────────────────────
+  # Nginx Proxy Manager — Reverse Proxy + SSL
+  # ─────────────────────────────────────────────
+  # The ONLY service exposed to the host network.
+  # All traffic flows through here.
+  #
+  # Admin UI: http://your-server:81
+  # Default login: admin@example.com / changeme
+  #
+  # Setup:
+  #   1. Log in and change the default password
+  #   2. Add a Proxy Host:
+  #      - Domain: netssl.yourdomain.com
+  #      - Forward Hostname: netssl-dashboard
+  #      - Forward Port: 80
+  #      - Enable WebSocket Support (required for real-time notifications)
+  #   3. SSL tab: Request a new SSL certificate with Let's Encrypt
+  #   4. Advanced tab: Add Authelia forward-auth snippet (see Authelia docs)
+  nginx-proxy-manager:
+    image: jc21/nginx-proxy-manager:latest
+    container_name: nginx-proxy-manager
+    ports:
+      - "80:80"       # HTTP (redirects to HTTPS)
+      - "443:443"     # HTTPS
+      - "81:81"       # Admin UI — restrict access via firewall in production
+    volumes:
+      - npm_data:/data
+      - npm_letsencrypt:/etc/letsencrypt
+    networks:
+      - external
+      - internal
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────────
+  # Authelia — Authentication Middleware
+  # ─────────────────────────────────────────────
+  # Internal only — Nginx Proxy Manager forwards auth requests here.
+  # Provides login portal, 2FA, SSO, and LDAP/AD integration.
+  #
+  # Setup:
+  #   1. Edit authelia/configuration.yml with your domain and secrets
+  #   2. Edit authelia/users_database.yml with your users
+  #   3. In Nginx Proxy Manager, add to your proxy host's Advanced tab:
+  #
+  #      # Authelia authentication
+  #      location /authelia {
+  #          internal;
+  #          set $upstream_authelia http://authelia:9091/api/authz/forward-auth;
+  #          proxy_pass $upstream_authelia;
+  #          # [See Authelia docs for full NPM integration snippet]
+  #      }
+  #
+  # Docs: https://www.authelia.com/integration/proxies/nginx-proxy-manager/
+  authelia:
+    image: authelia/authelia:latest
+    container_name: authelia
+    expose:
+      - "9091"
+    volumes:
+      - ./authelia:/config
+      - authelia_data:/data
+    networks:
+      - internal
+    restart: unless-stopped
+    environment:
+      TZ: "America/Chicago"
+
+  # ─────────────────────────────────────────────
+  # Apprise — Notification Gateway
+  # ─────────────────────────────────────────────
+  # Internal only — netSSL sends notifications via the internal network.
+  # No ports exposed to the host.
+  #
+  # netSSL will integrate with this in a future release.
+  # In the meantime, you can test from inside the Docker network or
+  # temporarily expose port 8000 for testing.
+  #
+  # Test from host (requires temporarily adding ports: "8000:8000"):
+  #   curl -X POST http://localhost:8000/notify \
+  #     -H "Content-Type: application/json" \
+  #     -d '{
+  #       "urls": ["mailto://user:pass@gmail.com"],
+  #       "title": "netSSL Test",
+  #       "body": "Notification gateway is working!"
+  #     }'
+  #
+  # Test from inside the network:
+  #   docker exec netssl-dashboard curl -X POST http://apprise:8000/notify \
+  #     -H "Content-Type: application/json" \
+  #     -d '{"urls": ["mailto://user:pass@gmail.com"], "title": "Test", "body": "Works!"}'
+  #
+  # Notification URL examples:
+  #   MS Teams:  msteams://TokenA/TokenB/TokenC
+  #   Slack:     slack://TokenA/TokenB/TokenC
+  #   Email:     mailto://user:pass@gmail.com
+  #   Discord:   discord://WebhookID/WebhookToken
+  #   Telegram:  tgram://BotToken/ChatID
+  #   Pushover:  pover://UserKey@AppToken
+  #
+  # Full list: https://github.com/caronc/apprise/wiki
+  apprise:
+    image: caronc/apprise:latest
+    container_name: apprise
+    expose:
+      - "8000"
+    volumes:
+      - apprise_config:/config
+    networks:
+      - internal
+    restart: unless-stopped
+    environment:
+      APPRISE_STATEFUL_MODE: simple
+
+volumes:
+  app_db:
+    driver: local
+  app_accounts:
+    driver: local
+  app_logs:
+    driver: local
+  npm_data:
+    driver: local
+  npm_letsencrypt:
+    driver: local
+  authelia_data:
+    driver: local
+  apprise_config:
+    driver: local
+
+networks:
+  # External network — only Nginx Proxy Manager connects here
+  # This is the only network with host port bindings
+  external:
+    driver: bridge
+  # Internal network — all services communicate here
+  # Not accessible from the host
+  internal:
+    driver: bridge
+    internal: true
