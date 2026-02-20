@@ -9,13 +9,13 @@ const CertificateBadges = ({ overallStatus }) => {
       label: overallStatus.total,
       text: "Total",
       icon: Shield,
-      color: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300"
+      variant: "info"
     },
     {
       label: overallStatus.valid,
       text: "Valid",
       icon: Shield,
-      color: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300"
+      variant: "success"
     }
   ];
 
@@ -25,7 +25,7 @@ const CertificateBadges = ({ overallStatus }) => {
       label: overallStatus.expiring,
       text: "Expiring",
       icon: Clock,
-      color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300"
+      variant: "warning"
     });
   }
 
@@ -35,7 +35,7 @@ const CertificateBadges = ({ overallStatus }) => {
       label: overallStatus.expired,
       text: "Expired",
       icon: AlertCircle,
-      color: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300"
+      variant: "destructive"
     });
   }
 
@@ -45,23 +45,24 @@ const CertificateBadges = ({ overallStatus }) => {
       label: overallStatus.autoRenew,
       text: "Auto-Renew",
       icon: RotateCcw,
-      color: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300"
+      variant: "default"
     });
   }
 
   return (
-    <div className="flex items-center space-x-1 md:space-x-2">
+    <div className="flex items-center gap-1 md:gap-1.5">
       {badges.map((badge, index) => {
         const Icon = badge.icon;
         return (
-          <Badge 
+          <Badge
             key={index}
-            className={`flex items-center space-x-1 px-1 py-1 md:px-2 rounded-[4px] ${badge.color}`}
+            variant={badge.variant}
+            className="flex items-center gap-1 px-1.5 py-0.5 md:px-2 md:py-1"
+            title={`${badge.label} ${badge.text}`}
           >
-            <Icon size={10} className="md:hidden" />
-            <Icon size={12} className="hidden md:block" />
-            <span className="font-semibold text-xs md:text-sm">{badge.label}</span>
-            <span className="text-xs hidden sm:inline">{badge.text}</span>
+            <Icon className="w-3 h-3" />
+            <span className="font-semibold font-mono text-xs">{badge.label}</span>
+            <span className="text-xs hidden lg:inline">{badge.text}</span>
           </Badge>
         );
       })}

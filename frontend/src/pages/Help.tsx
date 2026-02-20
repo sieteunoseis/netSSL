@@ -7,7 +7,7 @@ import BackgroundLogo from "@/components/BackgroundLogo";
 
 export default function Help() {
   return (
-    <div className="min-h-screen relative bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-slate-900 dark:to-indigo-950">
+    <div className="min-h-screen relative bg-background">
       <BackgroundLogo />
       <div className="container mx-auto py-6 space-y-6 relative z-10">
         <div className="space-y-2">
@@ -50,7 +50,7 @@ export default function Help() {
         </TabsList>
 
         <TabsContent value="certificates" className="space-y-4">
-          <Card className="bg-card/85 backdrop-blur-sm">
+          <Card className="bg-card">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Shield className="h-5 w-5" />
@@ -91,7 +91,7 @@ export default function Help() {
                 </p>
                 <h4 className="text-sm font-semibold text-muted-foreground pt-1">Root Certificates</h4>
                 <div className="grid gap-4 md:grid-cols-2">
-                  <Card className="bg-card/85 backdrop-blur-sm">
+                  <Card className="bg-card">
                     <CardHeader className="pb-3">
                       <CardTitle className="text-base">ISRG Root X1</CardTitle>
                       <CardDescription className="text-sm">
@@ -113,7 +113,7 @@ export default function Help() {
                     </CardContent>
                   </Card>
 
-                  <Card className="bg-card/85 backdrop-blur-sm">
+                  <Card className="bg-card">
                     <CardHeader className="pb-3">
                       <CardTitle className="text-base">ISRG Root X2</CardTitle>
                       <CardDescription className="text-sm">
@@ -138,7 +138,7 @@ export default function Help() {
 
                 <h4 className="text-sm font-semibold text-muted-foreground pt-2">Intermediate Certificates</h4>
                 <div className="grid gap-4 md:grid-cols-3">
-                  <Card className="bg-card/85 backdrop-blur-sm">
+                  <Card className="bg-card">
                     <CardHeader className="pb-3">
                       <CardTitle className="text-base">R11</CardTitle>
                       <CardDescription className="text-sm">
@@ -160,7 +160,7 @@ export default function Help() {
                     </CardContent>
                   </Card>
 
-                  <Card className="bg-card/85 backdrop-blur-sm">
+                  <Card className="bg-card">
                     <CardHeader className="pb-3">
                       <CardTitle className="text-base">R12</CardTitle>
                       <CardDescription className="text-sm">
@@ -182,7 +182,7 @@ export default function Help() {
                     </CardContent>
                   </Card>
 
-                  <Card className="bg-card/85 backdrop-blur-sm">
+                  <Card className="bg-card">
                     <CardHeader className="pb-3">
                       <CardTitle className="text-base">R13</CardTitle>
                       <CardDescription className="text-sm">
@@ -211,7 +211,7 @@ export default function Help() {
                 <p className="text-sm text-muted-foreground">
                   Certificates are stored per-connection in isolated directories:
                 </p>
-                <pre className="bg-muted p-3 rounded-md text-sm">
+                <pre className="bg-muted p-3 rounded-md text-sm font-mono">
 {`accounts/
 ├── connection-1/
 │   ├── prod/
@@ -246,7 +246,7 @@ export default function Help() {
         </TabsContent>
 
         <TabsContent value="platforms" className="space-y-4">
-          <Card className="bg-card/85 backdrop-blur-sm">
+          <Card className="bg-card">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Server className="h-5 w-5" />
@@ -344,7 +344,7 @@ export default function Help() {
         </TabsContent>
 
         <TabsContent value="automation" className="space-y-4">
-          <Card className="bg-card/85 backdrop-blur-sm">
+          <Card className="bg-card">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Key className="h-5 w-5" />
@@ -437,7 +437,7 @@ export default function Help() {
         </TabsContent>
 
         <TabsContent value="troubleshooting" className="space-y-4">
-          <Card className="bg-card/85 backdrop-blur-sm">
+          <Card className="bg-card">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <BookOpen className="h-5 w-5" />
@@ -450,14 +450,14 @@ export default function Help() {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <h3 className="text-lg font-semibold">Docker Permissions</h3>
-                <div className="border-l-4 border-yellow-500 pl-4 space-y-1">
+                <div className="border-l-4 border-status-warning pl-4 space-y-1">
                   <p className="font-medium text-sm">EACCES: Permission denied on accounts/db/logs</p>
                   <p className="text-sm text-muted-foreground">
                     The container runs as appuser with a specific UID/GID. Host-mounted volumes
                     must be writable by this user. Check the actual UID/GID on the Admin &gt; Diagnostics page,
                     then fix ownership:
                   </p>
-                  <pre className="bg-muted p-2 rounded-md text-xs mt-1">
+                  <pre className="bg-muted p-2 rounded-md text-xs font-mono mt-1">
 {`# Check container's UID/GID
 docker exec netssl-dashboard id appuser
 
@@ -469,14 +469,14 @@ sudo chown -R <UID>:<GID> accounts/ db/ logs/`}</pre>
               <div className="space-y-2">
                 <h3 className="text-lg font-semibold">Certificate Issues</h3>
                 <div className="space-y-2">
-                  <div className="border-l-4 border-yellow-500 pl-4">
+                  <div className="border-l-4 border-status-warning pl-4">
                     <p className="font-medium text-sm">Certificate not trusted by browser</p>
                     <p className="text-sm text-muted-foreground">
                       Check if LETSENCRYPT_STAGING is set to true. Staging certificates
                       are not trusted. Set to false for production certificates.
                     </p>
                   </div>
-                  <div className="border-l-4 border-yellow-500 pl-4">
+                  <div className="border-l-4 border-status-warning pl-4">
                     <p className="font-medium text-sm">ISE: "Security Check Failed" (HTTP 400)</p>
                     <p className="text-sm text-muted-foreground">
                       Let's Encrypt certificates contain an apostrophe in the issuer field
@@ -484,7 +484,7 @@ sudo chown -R <UID>:<GID> accounts/ db/ logs/`}</pre>
                       upload trust certs via ISE GUI.
                     </p>
                   </div>
-                  <div className="border-l-4 border-yellow-500 pl-4">
+                  <div className="border-l-4 border-status-warning pl-4">
                     <p className="font-medium text-sm">ISE: "Failed to Verify Certificate Path" (HTTP 422)</p>
                     <p className="text-sm text-muted-foreground">
                       ISE can't build a trust chain. Ensure both intermediate (R11/R12/R13)
@@ -497,14 +497,14 @@ sudo chown -R <UID>:<GID> accounts/ db/ logs/`}</pre>
               <div className="space-y-2">
                 <h3 className="text-lg font-semibold">DNS Challenge Issues</h3>
                 <div className="space-y-2">
-                  <div className="border-l-4 border-yellow-500 pl-4">
+                  <div className="border-l-4 border-status-warning pl-4">
                     <p className="font-medium text-sm">DNS record not found</p>
                     <p className="text-sm text-muted-foreground">
                       Verify API credentials in Settings, check Zone ID matches the domain,
                       and ensure the API user has write access to DNS records.
                     </p>
                   </div>
-                  <div className="border-l-4 border-yellow-500 pl-4">
+                  <div className="border-l-4 border-status-warning pl-4">
                     <p className="font-medium text-sm">DNS propagation timeout</p>
                     <p className="text-sm text-muted-foreground">
                       TXT records typically propagate in 30-120 seconds. If validation
@@ -518,14 +518,14 @@ sudo chown -R <UID>:<GID> accounts/ db/ logs/`}</pre>
               <div className="space-y-2">
                 <h3 className="text-lg font-semibold">SSH Connection Issues</h3>
                 <div className="space-y-2">
-                  <div className="border-l-4 border-yellow-500 pl-4">
+                  <div className="border-l-4 border-status-warning pl-4">
                     <p className="font-medium text-sm">Permission denied or timeout</p>
                     <p className="text-sm text-muted-foreground">
                       Verify credentials, ensure SSH is enabled on the target system,
                       and check that port 22 is not blocked by a firewall.
                     </p>
                   </div>
-                  <div className="border-l-4 border-yellow-500 pl-4">
+                  <div className="border-l-4 border-status-warning pl-4">
                     <p className="font-medium text-sm">ESXi: keyboard-interactive auth</p>
                     <p className="text-sm text-muted-foreground">
                       ESXi uses keyboard-interactive instead of standard password auth.
@@ -538,7 +538,7 @@ sudo chown -R <UID>:<GID> accounts/ db/ logs/`}</pre>
 
               <div className="space-y-2">
                 <h3 className="text-lg font-semibold">Verification Commands</h3>
-                <pre className="bg-muted p-3 rounded-md text-xs">
+                <pre className="bg-muted p-3 rounded-md text-xs font-mono">
 {`# Check certificate on remote host
 openssl s_client -connect hostname:443 -servername hostname 2>/dev/null \\
   | openssl x509 -noout -subject -issuer -dates

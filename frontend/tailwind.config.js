@@ -4,6 +4,10 @@ module.exports = {
   content: ["./index.html", "./src/**/*.{ts,tsx,js,jsx}"],
   theme: {
   	extend: {
+  		fontFamily: {
+  			sans: ['"DM Sans"', 'system-ui', '-apple-system', 'sans-serif'],
+  			mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+  		},
   		borderRadius: {
   			lg: 'var(--radius)',
   			md: 'calc(var(--radius) - 2px)',
@@ -49,6 +53,28 @@ module.exports = {
   				'3': 'hsl(var(--chart-3))',
   				'4': 'hsl(var(--chart-4))',
   				'5': 'hsl(var(--chart-5))'
+  			},
+  			status: {
+  				valid: {
+  					DEFAULT: 'hsl(var(--status-valid))',
+  					foreground: 'hsl(var(--status-valid-foreground))'
+  				},
+  				warning: {
+  					DEFAULT: 'hsl(var(--status-warning))',
+  					foreground: 'hsl(var(--status-warning-foreground))'
+  				},
+  				expired: {
+  					DEFAULT: 'hsl(var(--status-expired))',
+  					foreground: 'hsl(var(--status-expired-foreground))'
+  				},
+  				info: {
+  					DEFAULT: 'hsl(var(--status-info))',
+  					foreground: 'hsl(var(--status-info-foreground))'
+  				},
+  				disabled: {
+  					DEFAULT: 'hsl(var(--status-disabled))',
+  					foreground: 'hsl(var(--status-disabled-foreground))'
+  				}
   			}
   		},
   		keyframes: {
@@ -70,6 +96,14 @@ module.exports = {
   					opacity: '1'
   				}
   			},
+  			'glow-pulse': {
+  				'0%, 100%': {
+  					boxShadow: '0 0 4px hsl(var(--primary) / 0.4)'
+  				},
+  				'50%': {
+  					boxShadow: '0 0 12px hsl(var(--primary) / 0.7)'
+  				}
+  			},
   			'accordion-down': {
   				from: {
   					height: '0'
@@ -89,8 +123,9 @@ module.exports = {
   		},
   		animation: {
   			'fade-in': 'fade-in 0.5s ease-out',
-  			'slide-up': 'slide-up 0.5s ease-out',
-  			'slide-up-delayed': 'slide-up 0.5s ease-out 0.2s',
+  			'slide-up': 'slide-up 0.4s ease-out',
+  			'slide-up-delayed': 'slide-up 0.4s ease-out 0.2s',
+  			'glow-pulse': 'glow-pulse 2s ease-in-out infinite',
   			'accordion-down': 'accordion-down 0.2s ease-out',
   			'accordion-up': 'accordion-up 0.2s ease-out'
   		}

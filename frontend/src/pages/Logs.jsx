@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { RefreshCw, Search, FileText, Server, AlertCircle, Download, Copy, Play, Pause } from "lucide-react";
+import { RefreshCw, Search, FileText, Server, AlertCircle, Download, Copy, Play, Pause, ArrowLeft, SortAsc, SortDesc } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiCall } from "@/lib/api";
 import { getConnectionDisplayHostname } from "@/lib/connection-utils";
@@ -13,6 +13,7 @@ import BackgroundLogo from "@/components/BackgroundLogo";
 
 const Logs = () => {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [accounts, setAccounts] = useState([]);
   const [selectedAccount, setSelectedAccount] = useState(null);
@@ -22,6 +23,7 @@ const Logs = () => {
   const [lastUpdated, setLastUpdated] = useState(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [refreshInterval, setRefreshInterval] = useState(null);
+  const [sortOrder, setSortOrder] = useState('asc');
   const scrollAreaRef = useRef(null);
   const logsEndRef = useRef(null);
   const initialSelectionDone = useRef(false);
@@ -105,14 +107,19 @@ const Logs = () => {
     setAutoRefresh(!autoRefresh);
   };
 
-  const filteredAccounts = accounts.filter(account => 
-    account.connection.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (account.domain && account.domain.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    (account.connection.portal_url && account.connection.portal_url.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  const filteredAccounts = accounts
+    .filter(account =>
+      account.connection.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (account.domain && account.domain.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (account.connection.portal_url && account.connection.portal_url.toLowerCase().includes(searchTerm.toLowerCase()))
+    )
+    .sort((a, b) => {
+      const cmp = a.connection.name.localeCompare(b.connection.name);
+      return sortOrder === 'asc' ? cmp : -cmp;
+    });
 
-  const filteredLogs = selectedAccount ? 
-    selectedAccount.logs.filter(log => 
+  const filteredLogs = selectedAccount ?
+    selectedAccount.logs.filter(log =>
       log.toLowerCase().includes(logSearchTerm.toLowerCase())
     ) : [];
 
@@ -140,7 +147,7 @@ const Logs = () => {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      
+
       toast({
         title: "Downloaded",
         description: "Logs downloaded successfully",
@@ -149,12 +156,9 @@ const Logs = () => {
     }
   };
 
-  const getApplicationTypeColor = (type) => {
-    switch (type) {
-      case 'vos': return 'bg-blue-100 text-blue-800';
-      case 'general': return 'bg-green-100 text-green-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
+  const formatApplicationType = (type) => {
+    const types = { "ise": "ISE", "vos": "VOS", "general": "GENERAL" };
+    return types[type] || type.toUpperCase();
   };
 
   const formatLogLine = (log) => {
@@ -165,7 +169,7 @@ const Logs = () => {
       const message = timestampMatch[2];
       const date = new Date(timestamp);
       const formattedTime = date.toISOString();
-      
+
       return {
         timestamp: formattedTime,
         message: message,
@@ -174,7 +178,7 @@ const Logs = () => {
         isSuccess: message.toLowerCase().includes('success') || message.toLowerCase().includes('completed')
       };
     }
-    
+
     return {
       timestamp: '',
       message: log,
@@ -185,13 +189,13 @@ const Logs = () => {
   };
 
   return (
-    <div className="h-screen bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-slate-900 dark:to-indigo-950 relative overflow-hidden">
+    <div className="h-full bg-background relative overflow-hidden flex flex-col">
       <BackgroundLogo />
-      <div className="pt-8 pb-12 px-4 md:px-8 lg:px-12">        
-        <div className="h-[calc(100vh-8rem)] flex bg-gray-50 dark:bg-gray-900 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700/60 min-w-0">
+      <div className="flex-1 pt-8 pb-12 px-4 md:px-8 lg:px-12 flex flex-col min-h-0">
+        <div className="flex-1 flex bg-card overflow-hidden rounded-lg border border-border min-w-0">
           {/* Left Sidebar - Accounts */}
-          <div className="w-80 min-w-64 max-w-80 flex-shrink bg-white dark:bg-gray-800/80 border-r border-gray-200 dark:border-gray-700/60 flex flex-col">
-        <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+          <div className="w-80 min-w-64 max-w-80 flex-shrink bg-card border-r border-border flex flex-col">
+        <div className="p-4 border-b border-border">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold flex items-center">
               <Server className="w-5 h-5 mr-2" />
@@ -199,10 +203,17 @@ const Logs = () => {
             </h2>
             <div className="flex items-center space-x-2">
               <Button
+                onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+                variant="outline"
+                size="sm"
+              >
+                {sortOrder === 'asc' ? <SortAsc className="w-4 h-4" /> : <SortDesc className="w-4 h-4" />}
+              </Button>
+              <Button
                 onClick={toggleAutoRefresh}
                 variant="outline"
                 size="sm"
-                className={autoRefresh ? 'bg-green-50 border-green-200 text-green-700' : ''}
+                className={autoRefresh ? 'bg-status-valid/10 border-status-valid/30 text-status-valid' : ''}
               >
                 {autoRefresh ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
               </Button>
@@ -216,9 +227,9 @@ const Logs = () => {
               </Button>
             </div>
           </div>
-          
+
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
             <Input
               placeholder="Search accounts..."
               value={searchTerm}
@@ -226,15 +237,15 @@ const Logs = () => {
               className="pl-10"
             />
           </div>
-          
+
           {lastUpdated && (
             <div className="flex items-center justify-between mt-2">
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 Last updated: {new Date(lastUpdated).toLocaleTimeString()}
               </p>
               {autoRefresh && (
-                <div className="flex items-center text-green-600">
-                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse mr-1"></div>
+                <div className="flex items-center text-status-valid">
+                  <div className="w-2 h-2 bg-status-valid rounded-full animate-pulse mr-1"></div>
                   <span className="text-xs">Auto-refresh</span>
                 </div>
               )}
@@ -243,14 +254,14 @@ const Logs = () => {
         </div>
 
         <ScrollArea className="flex-1">
-          <div className="p-2 space-y-2">
+          <div className="p-2 space-y-1">
             {filteredAccounts.map((account) => (
               <Card
                 key={account.connection.id}
-                className={`cursor-pointer transition-all hover:shadow-md backdrop-blur-sm ${
+                className={`cursor-pointer transition-all ${
                   selectedAccount?.connection.id === account.connection.id
-                    ? 'bg-blue-50/85 border-blue-200 dark:bg-blue-950/85 dark:border-blue-800'
-                    : 'bg-card/85 hover:bg-gray-50/85 dark:hover:bg-gray-700/85'
+                    ? 'bg-primary/10 border-primary/30'
+                    : 'hover:bg-muted/50'
                 }`}
                 onClick={() => setSelectedAccount(account)}
               >
@@ -260,22 +271,22 @@ const Logs = () => {
                       <p className="font-medium truncate">
                         {account.connection.name}
                       </p>
-                      <p className="text-sm text-gray-500 truncate">
+                      <p className="text-sm text-muted-foreground font-mono truncate">
                         {getConnectionDisplayHostname(account.connection) || account.domain || 'No domain'}
                       </p>
                     </div>
                     <div className="flex flex-col items-end space-y-1">
-                      <Badge className={`rounded-[4px] ${getApplicationTypeColor(account.connection.application_type)}`}>
-                        {account.connection.application_type}
+                      <Badge variant="outline" className="text-xs px-2 py-1">
+                        {formatApplicationType(account.connection.application_type)}
                       </Badge>
                       <div className="flex items-center">
                         {account.hasLogs ? (
-                          <div className="flex items-center text-green-600">
+                          <div className="flex items-center text-status-valid">
                             <FileText className="w-3 h-3 mr-1" />
-                            <span className="text-xs">{account.logs.length}</span>
+                            <span className="text-xs font-mono">{account.logs.length}</span>
                           </div>
                         ) : (
-                          <div className="flex items-center text-gray-400">
+                          <div className="flex items-center text-muted-foreground">
                             <AlertCircle className="w-3 h-3 mr-1" />
                             <span className="text-xs">No logs</span>
                           </div>
@@ -294,15 +305,25 @@ const Logs = () => {
           <div className="flex-1 flex flex-col min-w-0">
         {selectedAccount ? (
           <>
-            <div className="p-4 bg-white dark:bg-gray-800/80 border-b border-gray-200 dark:border-gray-700/60">
+            <div className="p-4 bg-card border-b border-border">
               <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="text-lg font-semibold">
-                    {selectedAccount.connection.name}
-                  </h3>
-                  <p className="text-sm text-gray-500">
-                    {getConnectionDisplayHostname(selectedAccount.connection) || selectedAccount.domain || 'No domain'} • {selectedAccount.logs.length} log entries
-                  </p>
+                <div className="flex items-center gap-3">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0"
+                    onClick={() => navigate(`/?expand=${selectedAccount.connection.id}`)}
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                  </Button>
+                  <div>
+                    <h3 className="text-lg font-semibold">
+                      {selectedAccount.connection.name}
+                    </h3>
+                    <p className="text-sm text-muted-foreground">
+                      <span className="font-mono">{getConnectionDisplayHostname(selectedAccount.connection) || selectedAccount.domain || 'No domain'}</span> • <span className="font-mono">{selectedAccount.logs.length}</span> log entries
+                    </p>
+                  </div>
                 </div>
                 <div className="flex items-center space-x-2">
                   <Button
@@ -325,9 +346,9 @@ const Logs = () => {
                   </Button>
                 </div>
               </div>
-              
+
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
                 <Input
                   placeholder="Search logs..."
                   value={logSearchTerm}
@@ -337,9 +358,9 @@ const Logs = () => {
               </div>
             </div>
 
-            <div className="flex-1 bg-black text-green-400 font-mono text-sm overflow-hidden">
+            <div className="flex-1 bg-[hsl(222,47%,6%)] text-[hsl(152,69%,45%)] font-mono text-sm overflow-hidden leading-tight">
               <ScrollArea ref={scrollAreaRef} className="h-full w-full overflow-x-hidden">
-                <div className="p-4 pr-6 space-y-1 w-full">
+                <div className="p-4 pr-6 space-y-0.5 w-full">
                   {filteredLogs.length > 0 ? (
                     <>
                       {filteredLogs.map((log, index) => {
@@ -347,14 +368,14 @@ const Logs = () => {
                         return (
                           <div key={index} className="w-full overflow-hidden">
                             <div className="flex w-full min-w-0">
-                              <span className="text-gray-500 w-56 flex-shrink-0 whitespace-nowrap pr-2">
+                              <span className="text-muted-foreground w-56 flex-shrink-0 whitespace-nowrap pr-2">
                                 [{formatted.timestamp}]
                               </span>
                               <div className={`flex-1 min-w-0 break-all ${
-                                formatted.isError ? 'text-red-400' :
-                                formatted.isWarning ? 'text-yellow-400' :
-                                formatted.isSuccess ? 'text-green-400' :
-                                'text-gray-300'
+                                formatted.isError ? 'text-status-expired' :
+                                formatted.isWarning ? 'text-status-warning' :
+                                formatted.isSuccess ? 'text-[hsl(152,69%,45%)]' :
+                                'text-[hsl(210,20%,70%)]'
                               }`}>
                                 {formatted.message}
                               </div>
@@ -365,11 +386,11 @@ const Logs = () => {
                       <div ref={logsEndRef} className="h-1" />
                     </>
                   ) : logSearchTerm ? (
-                    <div className="text-gray-500 text-center py-8">
+                    <div className="text-muted-foreground text-center py-8">
                       No logs match your search term
                     </div>
                   ) : (
-                    <div className="text-gray-500 text-center py-8">
+                    <div className="text-muted-foreground text-center py-8">
                       No logs available for this account
                     </div>
                   )}
@@ -378,13 +399,13 @@ const Logs = () => {
             </div>
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-gray-900/60">
+          <div className="flex-1 flex items-center justify-center bg-muted/30">
             <div className="text-center">
-              <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
+              <FileText className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-medium mb-2">
                 Select an Account
               </h3>
-              <p className="text-gray-500">
+              <p className="text-muted-foreground">
                 Choose an account from the sidebar to view its renewal logs
               </p>
             </div>

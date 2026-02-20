@@ -10,6 +10,7 @@ import Admin from "./pages/Admin";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ModeToggle } from "./components/mode-toggle";
 import { Toaster } from "@/components/ui/toaster";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { WebSocketProvider } from "./contexts/WebSocketContext";
 import { useBackendStatus } from "./components/BackendStatusProvider.jsx";
 import { Menu } from 'lucide-react';
@@ -35,7 +36,7 @@ function AppContent({ overallStatus, setOverallStatus, isSidebarExpanded, setIsS
       {!isSidebarExpanded && (
         <button
           onClick={toggleSidebar}
-          className="fixed bottom-6 left-6 z-50 md:hidden p-3 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg transition-colors"
+          className="fixed bottom-6 left-6 z-50 md:hidden p-3 bg-primary hover:bg-primary/90 text-primary-foreground rounded-full shadow-lg transition-colors"
           aria-label="Open navigation menu"
         >
           <Menu size={24} />
@@ -47,7 +48,7 @@ function AppContent({ overallStatus, setOverallStatus, isSidebarExpanded, setIsS
           <Route path="/" element={<Home onStatusUpdate={setOverallStatus} />} />
           <Route path="/logs" element={<Logs />} />
           <Route path="/help" element={<Help />} />
-          <Route path="/admin" element={<Admin />} />
+          <Route path="/system" element={<Admin />} />
           <Route path="/error" element={<ErrorPage />} />
         </Routes>
       </main>
@@ -96,21 +97,23 @@ function App() {
   }
 
   return (
-    <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme">
-      <WebSocketProvider>
-        <div className="flex flex-col h-screen relative">
-          <Router>
-            <AppContent 
-              overallStatus={overallStatus}
-              setOverallStatus={setOverallStatus}
-              isSidebarExpanded={isSidebarExpanded}
-              setIsSidebarExpanded={setIsSidebarExpanded}
-              toggleSidebar={toggleSidebar}
-              collapseSidebar={collapseSidebar}
-            />
-          </Router>
-        </div>
-      </WebSocketProvider>
+    <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
+      <TooltipProvider delayDuration={300}>
+        <WebSocketProvider>
+          <div className="flex flex-col h-screen relative">
+            <Router>
+              <AppContent
+                overallStatus={overallStatus}
+                setOverallStatus={setOverallStatus}
+                isSidebarExpanded={isSidebarExpanded}
+                setIsSidebarExpanded={setIsSidebarExpanded}
+                toggleSidebar={toggleSidebar}
+                collapseSidebar={collapseSidebar}
+              />
+            </Router>
+          </div>
+        </WebSocketProvider>
+      </TooltipProvider>
     </ThemeProvider>
   );
 }

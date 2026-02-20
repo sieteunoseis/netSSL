@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Clock, ChevronDown, ChevronRight } from "lucide-react";
+import LoadingState from "@/components/LoadingState";
 import { apiCall } from "@/lib/api";
+import { formatShortDateTime } from "@/lib/date-utils";
 
 interface AutoRenewalStatus {
   total_auto_renew_connections: number;
@@ -18,19 +20,6 @@ interface AutoRenewalStatus {
     auto_renew_last_attempt: string;
   }>;
 }
-
-const formatDateTime = (isoString: string): string => {
-  const date = new Date(isoString);
-  return date.toLocaleString('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true
-  });
-};
-
 
 export const NextAutoRenewalInfo: React.FC = () => {
   const [status, setStatus] = useState<AutoRenewalStatus | null>(null);
@@ -61,11 +50,7 @@ export const NextAutoRenewalInfo: React.FC = () => {
   }, []);
 
   if (loading) {
-    return (
-      <div className="text-xs text-muted-foreground">
-        Loading next renewal...
-      </div>
-    );
+    return <LoadingState variant="inline" text="Loading next renewal..." />;
   }
 
   if (error || !status) {
@@ -81,7 +66,7 @@ export const NextAutoRenewalInfo: React.FC = () => {
       <CollapsibleTrigger className="flex items-center justify-between w-full text-left p-0 hover:bg-transparent">
         <div className="flex items-center text-sm text-muted-foreground">
           <Clock className="w-4 h-4 mr-2" />
-          <span className="font-medium">Next Auto-Renewal</span>
+          <span className="font-medium">Next Renewal</span>
         </div>
         {isOpen ? (
           <ChevronDown className="w-4 h-4 text-muted-foreground" />
@@ -93,7 +78,7 @@ export const NextAutoRenewalInfo: React.FC = () => {
       <CollapsibleContent className="space-y-3 pt-3">
         <div className="space-y-2">
           <div className="text-sm font-medium">
-            {formatDateTime(status.next_run_time)}
+            {formatShortDateTime(status.next_run_time)}
           </div>
         </div>
         

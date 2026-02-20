@@ -31,7 +31,7 @@ const ErrorPage = () => {
   };
 
   return (
-    <div className="min-h-full w-full py-20 relative bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-slate-900 dark:to-indigo-950">
+    <div className="min-h-full w-full py-20 relative bg-background">
       <BackgroundLogo />
       <div className="max-w-4xl mx-auto px-4">
         <div className="flex flex-col items-center mb-10">
@@ -43,7 +43,7 @@ const ErrorPage = () => {
               <h2 className="mt-4 text-2xl font-semibold tracking-tight">Something went wrong</h2>
               <p className="mt-2 text-sm text-muted-foreground">We encountered an error while processing your request. Please try again later.</p>
               <p className="mt-4 text-sm text-muted-foreground">
-                Reloading in {countdown} second{countdown !== 1 ? 's' : ''}...
+                Reloading in <span className="font-mono">{countdown}</span> second{countdown !== 1 ? 's' : ''}...
               </p>
             </CardContent>
             <CardFooter className="flex justify-center pb-6 gap-4">

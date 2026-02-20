@@ -6,15 +6,12 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Settings, Key, Check, X, Eye, EyeOff, ChevronLeft, ChevronRight, Trash2, ToggleLeft, ToggleRight, Edit } from "lucide-react";
+import { Settings, Key, Check, X, Eye, EyeOff, ChevronLeft, ChevronRight, Loader2, Zap } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiCall } from "@/lib/api";
-import EditConnectionModalTabbed from "@/components/EditConnectionModalTabbed";
 
 interface SettingsModalProps {
   trigger?: React.ReactNode;
-  onConnectionsUpdated?: () => void;
 }
 
 interface Setting {
@@ -38,16 +35,7 @@ interface ProviderConfig {
   keyDefaults?: Record<string, string>;
 }
 
-interface Connection {
-  id: number;
-  name: string;
-  hostname: string;
-  is_enabled: boolean | string | number;
-  auto_renew: boolean;
-  application_type?: string;
-}
-
-const SettingsModal: React.FC<SettingsModalProps> = ({ trigger, onConnectionsUpdated }) => {
+const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
   const { toast } = useToast();
   const [isOpen, setIsOpen] = useState(false);
   const [, setSettings] = useState<Setting[]>([]);
@@ -57,10 +45,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger, onConnectionsUpd
   const [showLeftScroll, setShowLeftScroll] = useState(false);
   const [showRightScroll, setShowRightScroll] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const [connections, setConnections] = useState<Connection[]>([]);
-  const [loadingConnections, setLoadingConnections] = useState(false);
-  const [editingConnection, setEditingConnection] = useState<Connection | null>(null);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [testingProvider, setTestingProvider] = useState<string | null>(null);
 
   const providers: ProviderConfig[] = [
     { 
@@ -177,24 +162,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger, onConnectionsUpd
     }
   };
 
-  const fetchConnections = async () => {
-    try {
-      setLoadingConnections(true);
-      const response = await apiCall('/data');
-      const data = await response.json();
-      setConnections(data);
-    } catch (error) {
-      console.error('Error fetching connections:', error);
-      toast({
-        title: "Error",
-        description: "Failed to fetch connections",
-        variant: "destructive",
-      });
-    } finally {
-      setLoadingConnections(false);
-    }
-  };
-
   const handleSaveSetting = async (providerId: string, keyName: string, value: string) => {
     try {
       const provider = providers.find(p => p.id === providerId);
@@ -277,97 +244,32 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger, onConnectionsUpd
     };
   };
 
+  const handleTestConnection = async (providerId: string) => {
+    setTestingProvider(providerId);
+    try {
+      const response = await apiCall(`/settings/${providerId}/test`, { method: 'POST' });
+      const data = await response.json();
+      toast({
+        title: data.success ? "Connection OK" : "Connection Failed",
+        description: data.message,
+        variant: data.success ? "default" : "destructive",
+      });
+    } catch (error) {
+      toast({
+        title: "Test Failed",
+        description: "Could not reach the server",
+        variant: "destructive",
+      });
+    } finally {
+      setTestingProvider(null);
+    }
+  };
+
   const toggleVisibility = (keyName: string) => {
     setVisibleKeys(prev => ({
       ...prev,
       [keyName]: !prev[keyName]
     }));
-  };
-
-  const handleDeleteConnection = async (connectionId: number) => {
-    if (!confirm('Are you sure you want to delete this connection? This action cannot be undone.')) {
-      return;
-    }
-
-    try {
-      const response = await apiCall(`/data/${connectionId}`, { method: 'DELETE' });
-      
-      if (response.ok) {
-        toast({
-          title: "Success",
-          description: "Connection deleted successfully",
-        });
-        // Refresh the connections list
-        fetchConnections();
-        // Notify parent component
-        onConnectionsUpdated?.();
-      }
-    } catch (error) {
-      console.error('Error deleting connection:', error);
-      toast({
-        title: "Error",
-        description: "Failed to delete connection",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleToggleConnection = async (connection: Connection) => {
-    const isEnabled = connection.is_enabled !== false && 
-                     connection.is_enabled !== "0" && 
-                     connection.is_enabled !== 0;
-    
-    try {
-      // First, fetch the full connection data
-      const getResponse = await apiCall(`/data?id=${connection.id}`);
-      const fullConnection = await getResponse.json();
-      
-      // Update with the toggled is_enabled value
-      const updatedConnection = {
-        ...fullConnection,
-        is_enabled: !isEnabled
-      };
-      
-      const response = await apiCall(`/data/${connection.id}`, {
-        method: 'PUT',
-        body: JSON.stringify(updatedConnection)
-      });
-      
-      if (response.ok) {
-        toast({
-          title: "Success",
-          description: `Connection ${!isEnabled ? 'enabled' : 'disabled'} successfully`,
-        });
-        // Refresh the connections list
-        fetchConnections();
-        // Notify parent component
-        onConnectionsUpdated?.();
-      }
-    } catch (error) {
-      console.error('Error toggling connection:', error);
-      toast({
-        title: "Error",
-        description: "Failed to update connection",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleEditConnection = (connection: Connection) => {
-    setEditingConnection(connection);
-    setIsEditModalOpen(true);
-  };
-
-  const handleEditModalClose = () => {
-    setEditingConnection(null);
-    setIsEditModalOpen(false);
-  };
-
-  const handleConnectionUpdated = () => {
-    fetchConnections();
-    handleEditModalClose();
-    // Notify parent component
-    onConnectionsUpdated?.();
   };
 
   const checkScroll = () => {
@@ -391,8 +293,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger, onConnectionsUpd
   useEffect(() => {
     if (isOpen) {
       fetchSettings();
-      fetchConnections();
-      // Check scroll on open
       setTimeout(checkScroll, 100);
     }
   }, [isOpen]);
@@ -418,71 +318,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger, onConnectionsUpd
             </DialogDescription>
           </DialogHeader>
           
-          <Tabs defaultValue="overview" className="w-full flex flex-col flex-1 min-h-0">
-            <TabsList className="grid w-full grid-cols-3 flex-shrink-0">
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="configure">Configure</TabsTrigger>
-              <TabsTrigger value="connections">Connections</TabsTrigger>
-            </TabsList>
-          
-          <TabsContent value="overview" className="space-y-2 flex-1 overflow-y-auto">
-            <Accordion type="single" collapsible className="w-full">
-              {providers.map(provider => {
-                const status = getProviderStatus(provider.id);
-                return (
-                  <AccordionItem key={provider.id} value={provider.id}>
-                    <AccordionTrigger className="py-2 hover:no-underline">
-                      <div className="flex items-center justify-between w-full pr-2">
-                        <span className="text-sm font-medium">{provider.name}</span>
-                        <Badge variant={status.configured ? "default" : "secondary"} className="ml-2">
-                          {status.configured ? (
-                            <><Check className="w-3 h-3 mr-1" /> Configured</>
-                          ) : (
-                            <><X className="w-3 h-3 mr-1" /> Not Configured</>
-                          )}
-                        </Badge>
-                      </div>
-                    </AccordionTrigger>
-                    <AccordionContent>
-                      <div className="text-sm text-muted-foreground space-y-3">
-                        <p className="text-xs">{provider.description}</p>
-                        
-                        <div>
-                          <p className="font-medium text-foreground mb-2">Required Keys:</p>
-                          <div className="space-y-2">
-                            {provider.keys.map(key => (
-                              <div key={key} className="bg-muted/50 p-2 rounded">
-                                <code className="text-xs font-mono text-foreground">{key}</code>
-                                <p className="text-xs mt-1">{provider.keyInfo[key] || ''}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                        
-                        {status.missing.length > 0 && (() => {
-                          const optionalKeys = provider.optionalKeys || [];
-                          const requiredMissing = status.missing.filter((k: string) => !optionalKeys.includes(k));
-                          const optionalMissing = status.missing.filter((k: string) => optionalKeys.includes(k));
-                          return (
-                            <>
-                              {requiredMissing.length > 0 && (
-                                <p className="text-red-600 font-medium">Missing: {requiredMissing.join(', ')}</p>
-                              )}
-                              {optionalMissing.length > 0 && (
-                                <p className="text-muted-foreground text-sm">Optional: {optionalMissing.join(', ')}</p>
-                              )}
-                            </>
-                          );
-                        })()}
-                      </div>
-                    </AccordionContent>
-                  </AccordionItem>
-                );
-              })}
-            </Accordion>
-          </TabsContent>
-          
-          <TabsContent value="configure" className="space-y-4 flex-1 flex flex-col min-h-0">
+          <div className="w-full flex flex-col flex-1 min-h-0 mt-2">
             <Tabs defaultValue={providers[0].id} orientation="vertical" className="flex flex-col flex-1 min-h-0">
               <div className="relative group">
                 {/* Left scroll button */}
@@ -496,26 +332,30 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger, onConnectionsUpd
                     <ChevronLeft className="h-4 w-4" />
                   </Button>
                 )}
-                
+
                 {/* Scrollable tabs container */}
-                <div 
+                <div
                   ref={scrollContainerRef}
                   onScroll={checkScroll}
                   className="overflow-x-auto scrollbar-hide"
                 >
-                  <TabsList className="inline-flex h-10 items-center justify-start rounded-md bg-muted p-1 text-muted-foreground w-max">
-                    {providers.map(provider => (
-                      <TabsTrigger 
-                        key={provider.id} 
-                        value={provider.id} 
-                        className="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
-                      >
-                        {provider.name}
-                      </TabsTrigger>
-                    ))}
+                  <TabsList className="inline-flex h-10 items-center justify-start gap-2 w-max">
+                    {providers.map(provider => {
+                      const status = getProviderStatus(provider.id);
+                      return (
+                        <TabsTrigger
+                          key={provider.id}
+                          value={provider.id}
+                          className="gap-1.5"
+                        >
+                          <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${status.configured ? 'bg-status-valid' : 'bg-muted-foreground/40'}`} />
+                          {provider.name}
+                        </TabsTrigger>
+                      );
+                    })}
                   </TabsList>
                 </div>
-                
+
                 {/* Right scroll button */}
                 {showRightScroll && (
                   <Button
@@ -527,7 +367,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger, onConnectionsUpd
                     <ChevronRight className="h-4 w-4" />
                   </Button>
                 )}
-                
+
                 {/* Gradient fade indicators */}
                 {showLeftScroll && (
                   <div className="pointer-events-none absolute inset-y-0 left-0 w-12 bg-gradient-to-r from-background via-background/50 to-transparent" />
@@ -536,21 +376,50 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger, onConnectionsUpd
                   <div className="pointer-events-none absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-background via-background/50 to-transparent" />
                 )}
               </div>
-              
-              <div className="flex-1 overflow-y-auto min-h-0">
-              {providers.map(provider => (
+
+              <div className="flex-1 overflow-y-auto min-h-0 pt-4">
+              {providers.map(provider => {
+                const status = getProviderStatus(provider.id);
+                return (
                 <TabsContent key={provider.id} value={provider.id} className="space-y-4 mt-0">
                   <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center space-x-2">
-                        <Key className="w-4 h-4" />
-                        <span>{provider.name} Configuration</span>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <Key className="w-4 h-4" />
+                          <span>{provider.name}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {status.configured && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-6 px-2 text-xs"
+                              disabled={testingProvider === provider.id}
+                              onClick={() => handleTestConnection(provider.id)}
+                            >
+                              {testingProvider === provider.id ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <><Zap className="w-3 h-3 mr-1" />Test</>
+                              )}
+                            </Button>
+                          )}
+                          <Badge variant={status.configured ? "success" : "secondary"} className="text-xs">
+                            {status.configured ? (
+                              <><Check className="w-3 h-3 mr-1" /> Configured</>
+                            ) : (
+                              <><X className="w-3 h-3 mr-1" /> Not Set</>
+                            )}
+                          </Badge>
+                        </div>
                       </CardTitle>
+                      <p className="text-xs text-muted-foreground">{provider.description}</p>
                     </CardHeader>
                     <CardContent className="space-y-4">
                       {provider.keys.map(keyName => (
                         <div key={keyName} className="space-y-2">
-                          <Label htmlFor={keyName}>{keyName}</Label>
+                          <Label htmlFor={keyName} className="font-mono text-xs">{keyName}</Label>
                           {provider.keyInfo?.[keyName] && (
                             <p className="text-xs text-muted-foreground">{provider.keyInfo[keyName] || ''}</p>
                           )}
@@ -606,100 +475,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger, onConnectionsUpd
                     </CardContent>
                   </Card>
                 </TabsContent>
-              ))}
+                );
+              })}
               </div>
             </Tabs>
-          </TabsContent>
-          
-          <TabsContent value="connections" className="space-y-4 flex-1 overflow-hidden flex flex-col">
-            <Card className="flex-1 flex flex-col overflow-hidden">
-              <CardHeader className="flex-shrink-0">
-                <CardTitle>Connection Management</CardTitle>
-              </CardHeader>
-              <CardContent className="flex-1 overflow-y-auto">
-                {loadingConnections ? (
-                  <p className="text-muted-foreground">Loading connections...</p>
-                ) : connections.length === 0 ? (
-                  <p className="text-muted-foreground">No connections found</p>
-                ) : (
-                  <div className="space-y-2 pr-2">
-                    {connections.map((connection) => {
-                      const isEnabled = connection.is_enabled !== false && 
-                                       connection.is_enabled !== "0" && 
-                                       connection.is_enabled !== 0;
-                      
-                      return (
-                        <div 
-                          key={connection.id} 
-                          className="flex items-center justify-between p-3 rounded-lg border bg-card"
-                        >
-                          <div className="flex-1">
-                            <div className="font-medium">{connection.name}</div>
-                            <div className="text-sm text-muted-foreground">
-                              {connection.hostname}
-                              {connection.application_type && (
-                                <span className="ml-2">({connection.application_type})</span>
-                              )}
-                            </div>
-                          </div>
-                          
-                          <div className="flex items-center gap-2">
-                            <Badge variant={isEnabled ? "default" : "secondary"}>
-                              {isEnabled ? 'Enabled' : 'Disabled'}
-                            </Badge>
-                            
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => handleEditConnection(connection)}
-                              title="Edit connection"
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => handleToggleConnection(connection)}
-                              title={isEnabled ? 'Disable connection' : 'Enable connection'}
-                            >
-                              {isEnabled ? (
-                                <ToggleRight className="h-4 w-4" />
-                              ) : (
-                                <ToggleLeft className="h-4 w-4" />
-                              )}
-                            </Button>
-                            
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => handleDeleteConnection(connection.id)}
-                              className="text-destructive hover:text-destructive"
-                              title="Delete connection"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
-      </DialogContent>
-    </Dialog>
-    
-    {editingConnection && (
-      <EditConnectionModalTabbed
-        record={editingConnection}
-        isOpen={isEditModalOpen}
-        onClose={handleEditModalClose}
-        onConnectionUpdated={handleConnectionUpdated}
-      />
-    )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 };

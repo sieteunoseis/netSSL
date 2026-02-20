@@ -2199,7 +2199,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         username: connection.username!,
         password: connection.password!,
         command: 'utils service restart Cisco Tomcat',
-        timeout: 300000, // 5 minutes for service restart
+        timeout: 600000, // 10 minutes for service restart (CUC Tomcat can be very slow)
         onData: async (chunk: string, totalOutput: string) => {
           // Check for [STARTING] pattern and update progress to 97%
           if (chunk.includes('[STARTING]') || totalOutput.includes('Cisco Tomcat[STARTING]')) {
@@ -2249,24 +2249,47 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         
         return { success: true, requiresManualRestart: false };
       } else {
-        const errorMsg = `Failed to restart Cisco Tomcat service for ${fqdn}: ${restartResult.error}`;
-        Logger.error(errorMsg);
-        status.logs.push(`⚠️ ${errorMsg}`);
-        if (connection.id) {
-          await accountManager.saveRenewalLog(connection.id, fqdn, `⚠️ ${errorMsg}`);
+        const isTimeout = restartResult.error?.includes('timeout');
+
+        if (isTimeout) {
+          const timeoutMsg = `Service restart initiated on ${fqdn} but confirmation timed out. The service is likely still restarting.`;
+          Logger.warn(timeoutMsg);
+          status.logs.push(`⏱️ ${timeoutMsg}`);
+          if (connection.id) {
+            await accountManager.saveRenewalLog(connection.id, fqdn, `⏱️ ${timeoutMsg}`);
+          }
+
+          const verifyMsg = `📋 Manual verification recommended: Check that Cisco Tomcat is running on ${fqdn}`;
+          status.logs.push(verifyMsg);
+          if (connection.id) {
+            await accountManager.saveRenewalLog(connection.id, fqdn, verifyMsg);
+          }
+
+          return {
+            success: false,
+            requiresManualRestart: false,
+            message: `Certificate installed successfully - Service restart confirmation timed out on ${fqdn}. Manual verification recommended.`
+          };
+        } else {
+          const errorMsg = `Failed to restart Cisco Tomcat service for ${fqdn}: ${restartResult.error}`;
+          Logger.error(errorMsg);
+          status.logs.push(`⚠️ ${errorMsg}`);
+          if (connection.id) {
+            await accountManager.saveRenewalLog(connection.id, fqdn, `⚠️ ${errorMsg}`);
+          }
+
+          const manualMsg = `📋 Manual action required: Run 'utils service restart Cisco Tomcat' on ${fqdn}`;
+          status.logs.push(manualMsg);
+          if (connection.id) {
+            await accountManager.saveRenewalLog(connection.id, fqdn, manualMsg);
+          }
+
+          return {
+            success: false,
+            requiresManualRestart: true,
+            message: `Service restart failed - Manual restart required on ${fqdn}`
+          };
         }
-        
-        const manualMsg = `📋 Manual action required: Run 'utils service restart Cisco Tomcat' on ${fqdn}`;
-        status.logs.push(manualMsg);
-        if (connection.id) {
-          await accountManager.saveRenewalLog(connection.id, fqdn, manualMsg);
-        }
-        
-        return { 
-          success: false, 
-          requiresManualRestart: true, 
-          message: `Service restart failed - Manual restart required on ${fqdn}` 
-        };
       }
 
     } catch (error: any) {
