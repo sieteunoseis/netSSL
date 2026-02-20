@@ -89,6 +89,7 @@ export default function Help() {
                   netSSL automatically downloads and includes these in certificate bundles.
                   You can also download them manually:
                 </p>
+                <h4 className="text-sm font-semibold text-muted-foreground pt-1">Root Certificates</h4>
                 <div className="grid gap-4 md:grid-cols-2">
                   <Card className="bg-card/85 backdrop-blur-sm">
                     <CardHeader className="pb-3">
@@ -123,6 +124,75 @@ export default function Help() {
                       <Button variant="outline" size="sm" asChild>
                         <a
                           href="https://letsencrypt.org/certs/isrg-root-x2-cross-signed.pem"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2"
+                        >
+                          <Download className="h-4 w-4" />
+                          Download PEM
+                        </a>
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <h4 className="text-sm font-semibold text-muted-foreground pt-2">Intermediate Certificates</h4>
+                <div className="grid gap-4 md:grid-cols-3">
+                  <Card className="bg-card/85 backdrop-blur-sm">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base">R11</CardTitle>
+                      <CardDescription className="text-sm">
+                        RSA intermediate (retired)
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <Button variant="outline" size="sm" asChild>
+                        <a
+                          href="https://letsencrypt.org/certs/2024/r11.pem"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2"
+                        >
+                          <Download className="h-4 w-4" />
+                          Download PEM
+                        </a>
+                      </Button>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="bg-card/85 backdrop-blur-sm">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base">R12</CardTitle>
+                      <CardDescription className="text-sm">
+                        RSA intermediate (active)
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <Button variant="outline" size="sm" asChild>
+                        <a
+                          href="https://letsencrypt.org/certs/2024/r12.pem"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2"
+                        >
+                          <Download className="h-4 w-4" />
+                          Download PEM
+                        </a>
+                      </Button>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="bg-card/85 backdrop-blur-sm">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base">R13</CardTitle>
+                      <CardDescription className="text-sm">
+                        RSA intermediate (active)
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <Button variant="outline" size="sm" asChild>
+                        <a
+                          href="https://letsencrypt.org/certs/2024/r13.pem"
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-2"
