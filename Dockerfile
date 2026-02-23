@@ -39,9 +39,9 @@ RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
 # Create app directories
 WORKDIR /app
-RUN mkdir -p /app/backend /app/frontend/dist /app/backend/db /app/backend/accounts && \
+RUN mkdir -p /app/backend /app/frontend/dist /app/backend/db /app/backend/accounts /app/backend/logs && \
     chown -R appuser:appgroup /app && \
-    chmod 755 /app/backend/db /app/backend/accounts
+    chmod 755 /app/backend/db /app/backend/accounts /app/backend/logs
 
 # Copy built backend
 COPY --from=build --chown=appuser:appgroup /build/backend/dist /app/backend/dist
@@ -167,7 +167,7 @@ EOF
 RUN chmod +x /app/start.sh
 
 # Switch to non-root user for backend files
-RUN chown -R appuser:appgroup /app/backend /app/backend/db /app/backend/accounts
+RUN chown -R appuser:appgroup /app/backend /app/backend/db /app/backend/accounts /app/backend/logs
 
 # Expose port 80 for nginx
 EXPOSE 80

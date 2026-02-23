@@ -1,6 +1,6 @@
 {
   "name": "netssl",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "scripts": {
     "install-all": "npm install && cd backend && npm install && cd ../frontend && npm install",
     "start": "concurrently \"npm run start --prefix frontend\" \"npm run start --prefix backend\"",

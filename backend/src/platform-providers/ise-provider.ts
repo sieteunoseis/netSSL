@@ -522,6 +522,8 @@ export class ISEProvider extends PlatformProvider {
           userMessage = `Access denied - Please verify user has certificate management permissions in ISE`;
         } else if (error.message && error.message.includes('API request failed: 404')) {
           userMessage = `API endpoint not found - Please verify ISE version supports certificate import API`;
+        } else if (error.message && error.message.includes('API request failed: 409')) {
+          userMessage = `Certificate conflict - A certificate with the same public key already exists on ISE. Delete the existing certificate from ISE (Administration > Certificates > System Certificates) and retry, or generate a new certificate with a fresh private key`;
         }
 
         results.push({
