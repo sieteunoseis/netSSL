@@ -120,7 +120,7 @@ The application will be available at:
 
 ### Database Setup
 
-The application uses SQLite with dynamic table creation. Configure your VOS server fields in `frontend/public/dbSetup.json`.
+The application uses SQLite with dynamic table creation. Connection form fields are defined in `frontend/src/lib/connection-fields.ts` with per-type layouts in `frontend/src/lib/type-profiles.ts`.
 
 ### Environment Variables
 

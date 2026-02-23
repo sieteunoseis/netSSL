@@ -42,6 +42,9 @@ interface CertificateInfo {
     certificateProcessing?: number;
     totalTime?: number;
   };
+  // Hostname match detection
+  expectedHostname?: string;
+  hostnameMatch?: boolean;
 }
 
 interface CertificateInfoProps {
@@ -219,6 +222,8 @@ const CertificateInfoComponent: React.FC<CertificateInfoProps> = ({ connectionId
 
     if (certInfo.daysUntilExpiry <= 0) {
       return { status: "expired", variant: "destructive" as const, icon: AlertCircle };
+    } else if (certInfo.hostnameMatch === false) {
+      return { status: "mismatch", variant: "warning" as const, icon: AlertCircle };
     } else if (certInfo.daysUntilExpiry <= certificateSettings.warningDays) {
       return { status: "expiring", variant: "warning" as const, icon: AlertCircle };
     } else {
@@ -273,6 +278,7 @@ const CertificateInfoComponent: React.FC<CertificateInfoProps> = ({ connectionId
             {status.status === "expiring" && "Expiring"}
             {status.status === "expired" && "Expired"}
             {status.status === "invalid" && "Invalid"}
+            {status.status === "mismatch" && "Mismatch"}
             {status.status === "unknown" && "Unknown"}
           </Badge>
         </div>
@@ -447,6 +453,19 @@ const CertificateInfoComponent: React.FC<CertificateInfoProps> = ({ connectionId
         </div>
       )}
       
+      {/* Hostname mismatch warning */}
+      {certInfo.hostnameMatch === false && (
+        <div className="mt-3 p-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-md">
+          <h4 className="font-medium text-orange-800 dark:text-orange-200 mb-1 flex items-center text-sm">
+            <AlertCircle className="w-4 h-4 mr-2" />
+            Certificate Hostname Mismatch
+          </h4>
+          <p className="text-sm text-orange-700 dark:text-orange-300">
+            The installed certificate (CN: <span className="font-mono">{certInfo.subject.CN}</span>) does not match the expected hostname (<span className="font-mono">{certInfo.expectedHostname}</span>). The certificate may need to be renewed and imported for this hostname.
+          </p>
+        </div>
+      )}
+
       {/* Accordion for detailed certificate info */}
       <Accordion type="single" collapsible>
         <AccordionItem value="certificate-info">

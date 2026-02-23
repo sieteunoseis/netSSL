@@ -14,7 +14,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { WebSocketProvider } from "./contexts/WebSocketContext";
 import { useBackendStatus } from "./components/BackendStatusProvider.jsx";
 import { Menu } from 'lucide-react';
-import templateConfig from "../template.config.json";
+
 
 function AppContent({ overallStatus, setOverallStatus, isSidebarExpanded, setIsSidebarExpanded, toggleSidebar, collapseSidebar }) {
   const location = useLocation();

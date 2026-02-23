@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useConfig } from '../config/ConfigContext';
@@ -7,26 +7,17 @@ import { ChevronDown, ChevronUp, Trash2, Eye, EyeOff, Edit, Terminal, Server, Wr
 import EditConnectionModal from './EditConnectionModalTabbed';
 import { useToast } from "@/hooks/use-toast";
 import { isConnectionEnabled, getConnectionDisplayHostname } from '../lib/connection-utils';
+import { fieldRegistry } from '../lib/connection-fields';
+import { getAllFieldsForType, isFieldVisible } from '../lib/type-profiles';
 
 const DataTable = ({ data, onDataChange }) => {
   const config = useConfig();
   const { toast } = useToast();
-  const [jsonData, setData] = useState([]);
   const [expandedRows, setExpandedRows] = useState(new Set());
   const [visiblePasswords, setVisiblePasswords] = useState(new Set());
   const [editingRecord, setEditingRecord] = useState(null);
   const [testingSSH, setTestingSSH] = useState(new Set());
   const [toggling, setToggling] = useState(new Set());
-
-  useEffect(() => {
-    const fetchData = async () => {
-      const response = await fetch("/dbSetup.json");
-      const jsonData = await response.json();
-      setData(jsonData);
-    };
-
-    fetchData();
-  }, []);
 
   const handleDelete = async (id) => {
     try {
@@ -45,7 +36,7 @@ const DataTable = ({ data, onDataChange }) => {
     try {
       // Use the connection utility to get the proper hostname for SSH testing
       const fqdn = getConnectionDisplayHostname(record);
-      
+
       const response = await apiCall('/ssh/test', {
         method: 'POST',
         headers: {
@@ -96,22 +87,12 @@ const DataTable = ({ data, onDataChange }) => {
       // Use utility function to check current state
       const currentEnabledState = isConnectionEnabled(record);
       const newEnabledState = !currentEnabledState;
-      
-      console.log('Toggle Debug:', {
-        recordId: record.id,
-        recordName: record.name,
-        currentIsEnabled: record.is_enabled,
-        currentEnabledState,
-        newEnabledState
-      });
-      
+
       const updateData = {
         ...record,
         is_enabled: newEnabledState
       };
-      
-      console.log('Sending update data:', updateData);
-      
+
       await apiCall(`/data/${record.id}`, {
         method: 'PUT',
         headers: {
@@ -180,29 +161,29 @@ const DataTable = ({ data, onDataChange }) => {
     if (columnName === "password") {
       return value; // Return actual value, we'll handle masking in the render
     }
-    
+
     // Handle ISE hostname display
     if (columnName === "hostname" && record && record.application_type === "ise") {
       // For ISE, hostname can be empty, wildcard, or a name
       return record.hostname || "—";
     }
-    
+
     // Handle boolean fields
     if (columnName === "enable_ssh" || columnName === "auto_restart_service" || columnName === "auto_renew" || columnName === "is_enabled") {
       return value === true || value === 1 || value === "1" ? "Yes" : "No";
     }
-    
+
     // Handle auto-renewal status
     if (columnName === "auto_renew_status") {
       const statusMap = {
         'success': '✅ Success',
-        'failed': '❌ Failed', 
+        'failed': '❌ Failed',
         'in_progress': '🔄 In Progress',
         'timeout': '⏰ Timeout'
       };
       return statusMap[value] || value || "—";
     }
-    
+
     // Handle auto-renewal last attempt timestamp
     if (columnName === "auto_renew_last_attempt") {
       if (!value) return "—";
@@ -213,15 +194,15 @@ const DataTable = ({ data, onDataChange }) => {
         return value;
       }
     }
-    
+
     if (columnName === "ssl_provider") {
       return value === "letsencrypt" ? "Let's Encrypt" : "ZeroSSL";
     }
-    
+
     if (columnName === "dns_provider") {
       const providers = {
         "cloudflare": "Cloudflare",
-        "digitalocean": "DigitalOcean", 
+        "digitalocean": "DigitalOcean",
         "route53": "AWS Route53",
         "azure": "Azure DNS",
         "google": "Google Cloud DNS",
@@ -229,7 +210,7 @@ const DataTable = ({ data, onDataChange }) => {
       };
       return providers[value] || value;
     }
-    
+
     if (columnName === "application_type") {
       const types = {
         "vos": "Cisco VOS",
@@ -238,11 +219,11 @@ const DataTable = ({ data, onDataChange }) => {
       };
       return types[value] || value;
     }
-    
+
     if (columnName === "ise_application_subtype") {
       const subtypes = {
         "guest": "Guest",
-        "portal": "Portal", 
+        "portal": "Portal",
         "admin": "Admin"
       };
       // For ISE connections without a subtype, default to Guest
@@ -251,7 +232,7 @@ const DataTable = ({ data, onDataChange }) => {
       }
       return subtypes[value] || value || "—";
     }
-    
+
     if (columnName === "ise_cert_import_config") {
       if (!value) return "—";
       try {
@@ -267,59 +248,48 @@ const DataTable = ({ data, onDataChange }) => {
         return value;
       }
     }
-    
+
     return value || "—";
   };
 
 
   const getMainDisplayColumns = (record) => {
     const baseColumns = ["application_type", "name"];
-    
+
     // All application types now use hostname and domain
     return [...baseColumns, "hostname", "domain"];
   };
 
   const getDetailColumns = (record) => {
-    // Get all columns except main display columns and application type info fields
-    const excludedFields = [...getMainDisplayColumns(record), 'application_type_info', 'application_type_info_ise', 'application_type_info_general'];
-    
-    const allColumns = jsonData.filter(col => !excludedFields.includes(col.name));
-    
-    // Filter columns based on conditional logic
-    const filteredColumns = allColumns.filter(col => {
-      // If no conditional logic, always show
-      if (!col.conditional && !col.conditionalMultiple) return true;
-      
-      // Check single conditional
-      if (col.conditional) {
-        return record[col.conditional.field] === col.conditional.value;
-      }
-      
-      // Check multiple conditionals (any match)
-      if (col.conditionalMultiple) {
-        return col.conditionalMultiple.some(condition => 
-          condition.values.includes(record[condition.field])
-        );
-      }
-      
+    const mainCols = getMainDisplayColumns(record);
+    const appType = record.application_type || 'general';
+
+    // Get all fields for this type from the profile
+    const allFields = getAllFieldsForType(appType);
+
+    // Filter: skip main columns, INFO fields, and invisible fields
+    const filtered = allFields.filter(field => {
+      if (mainCols.includes(field.name)) return false;
+      if (field.type === 'info') return false;
+      if (!isFieldVisible(field, record)) return false;
       return true;
     });
-    
-    // Define the top fields (3 key fields now that application_type is in main bar)
-    const topFields = ["ssl_provider", "dns_provider", "version"];
-    
-    // Get remaining fields, with enable_ssh always last
-    const remainingFields = filteredColumns.filter(col => !topFields.includes(col.name) && col.name !== "enable_ssh");
-    const enableSSHField = filteredColumns.find(col => col.name === "enable_ssh");
-    
-    // Combine: top fields first, then remaining fields, then enable_ssh last
-    const orderedColumns = [
-      ...topFields.map(name => filteredColumns.find(col => col.name === name)).filter(Boolean),
-      ...remainingFields,
-      ...(enableSSHField ? [enableSSHField] : [])
-    ];
-    
-    return orderedColumns;
+
+    // Deduplicate (hostname appears in profile but also in main cols — already excluded above)
+    const seen = new Set();
+    const deduped = filtered.filter(field => {
+      if (seen.has(field.name)) return false;
+      seen.add(field.name);
+      return true;
+    });
+
+    // Order: ssl_provider + dns_provider first, enable_ssh last
+    const topFields = ["ssl_provider", "dns_provider"];
+    const top = deduped.filter(f => topFields.includes(f.name));
+    const middle = deduped.filter(f => !topFields.includes(f.name) && f.name !== "enable_ssh");
+    const enableSsh = deduped.find(f => f.name === "enable_ssh");
+
+    return [...top, ...middle, ...(enableSsh ? [enableSsh] : [])];
   };
 
   return (
@@ -328,7 +298,7 @@ const DataTable = ({ data, onDataChange }) => {
         data.map((record) => (
           <div key={record.id} className={`bg-white/85 dark:bg-gray-800/85 backdrop-blur-sm border rounded-lg shadow-sm overflow-hidden ${
             !isConnectionEnabled(record)
-              ? 'border-gray-300 dark:border-gray-600 opacity-60' 
+              ? 'border-gray-300 dark:border-gray-600 opacity-60'
               : 'border-gray-200 dark:border-gray-700'
           }`}>
             {/* Main Row */}
@@ -336,9 +306,9 @@ const DataTable = ({ data, onDataChange }) => {
               <div className="flex-1">
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 {getMainDisplayColumns(record).map((colName) => {
-                  const col = jsonData.find(c => c.name === colName);
-                  if (!col) return null;
-                  
+                  // Check field exists in registry
+                  if (!fieldRegistry[colName]) return null;
+
                   return (
                     <div key={colName} className="min-w-0">
                       <div className="text-sm font-medium text-gray-500 dark:text-gray-400">
@@ -352,7 +322,7 @@ const DataTable = ({ data, onDataChange }) => {
                 })}
                 </div>
               </div>
-              
+
               <div className="flex items-center space-x-2 ml-4">
                 {/* Enable/Disable Switch */}
                 <div className="flex items-center space-x-2">
@@ -385,8 +355,8 @@ const DataTable = ({ data, onDataChange }) => {
                 >
                   <Edit className="w-4 h-4" />
                 </Button>
-                
-                
+
+
                 <Button
                   variant="outline"
                   size="sm"
@@ -395,7 +365,7 @@ const DataTable = ({ data, onDataChange }) => {
                 >
                   <Trash2 className="w-4 h-4" />
                 </Button>
-                
+
                 <Button
                   variant="ghost"
                   size="sm"
@@ -411,15 +381,15 @@ const DataTable = ({ data, onDataChange }) => {
                 </Button>
               </div>
             </div>
-            
+
             {/* Expanded Details */}
             {expandedRows.has(record.id) && (
               <div className="border-t border-gray-200 dark:border-gray-700 bg-gray-50/85 dark:bg-gray-900/85 backdrop-blur-sm p-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {getDetailColumns(record).map((col) => {
-                    const columnName = col.name.trim();
+                  {getDetailColumns(record).map((field) => {
+                    const columnName = field.name;
                     const cellValue = record[columnName];
-                    
+
                     return (
                       <div key={columnName} className="min-w-0">
                         <div className="text-sm font-medium text-gray-500 dark:text-gray-400">
@@ -477,7 +447,7 @@ const DataTable = ({ data, onDataChange }) => {
                     );
                   })}
                 </div>
-                
+
                 {/* Tools Section */}
                 <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
                   <div className="flex items-center justify-between mb-4">
@@ -522,7 +492,7 @@ const DataTable = ({ data, onDataChange }) => {
           </div>
         </div>
       )}
-      
+
 
       {/* Edit Modal */}
       <EditConnectionModal

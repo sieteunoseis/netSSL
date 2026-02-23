@@ -224,6 +224,15 @@ const Home = ({ onStatusUpdate }) => {
       };
     }
 
+    if (certInfo.hostnameMatch === false) {
+      return {
+        status: "mismatch",
+        text: "Hostname Mismatch",
+        icon: AlertCircle,
+        days: certInfo.daysUntilExpiry
+      };
+    }
+
     if (certInfo.daysUntilExpiry <= certificateSettings.warningDays) {
       return {
         status: "expiring",
@@ -385,8 +394,9 @@ const Home = ({ onStatusUpdate }) => {
     const status = getCertificateStatus(connection);
     const statusColors = {
       valid: "success",
-      expiring: "warning", 
+      expiring: "warning",
       expired: "destructive",
+      mismatch: "warning",
       unknown: "secondary",
       disabled: "secondary"
     };
@@ -404,7 +414,7 @@ const Home = ({ onStatusUpdate }) => {
     const isEnabled = isConnectionEnabled(connection);
 
     return (
-      <Card key={connection.id} className={`overflow-hidden border-l-2 ${status.status === 'valid' ? 'border-l-status-valid' : status.status === 'expiring' ? 'border-l-status-warning' : status.status === 'expired' ? 'border-l-status-expired' : 'border-l-border'} ${!isEnabled ? 'opacity-40 grayscale border-dashed' : ''}`}>
+      <Card key={connection.id} className={`overflow-hidden border-l-2 ${status.status === 'valid' ? 'border-l-status-valid' : status.status === 'expiring' || status.status === 'mismatch' ? 'border-l-status-warning' : status.status === 'expired' ? 'border-l-status-expired' : 'border-l-border'} ${!isEnabled ? 'opacity-40 grayscale border-dashed' : ''}`}>
         <Collapsible open={isExpanded} onOpenChange={() => toggleCardExpansion(connection.id)}>
           <CollapsibleTrigger className="w-full">
             <CardHeader className="pb-3">

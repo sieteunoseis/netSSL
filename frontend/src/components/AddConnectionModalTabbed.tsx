@@ -1,91 +1,243 @@
-import { useState, useEffect } from "react";
-import { flushSync } from "react-dom";
+import { useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus } from "lucide-react";
-import DataForm from "./DataForm";
-
-interface FieldCondition {
-  field: string;
-  value: string | boolean;
-}
-
-interface FieldConditionMultiple {
-  field: string;
-  values: (string | boolean)[];
-}
-
-interface FormField {
-  name: string;
-  type: string;
-  default?: string | boolean;
-  conditional?: FieldCondition;
-  conditionalMultiple?: FieldConditionMultiple[];
-  conditionalNot?: FieldCondition;
-}
+import { useToast } from "@/hooks/use-toast";
+import validator from "validator";
+import { apiCall } from '../lib/api';
+import CSRGeneratorWizard from './CSRGeneratorWizard';
+import ConnectionFieldRenderer from './ConnectionFieldRenderer';
+import {
+  type FieldDefinition,
+  applicationTypeField,
+} from '@/lib/connection-fields';
+import {
+  getProfile,
+  getDefaultFormData,
+  isFieldVisible,
+  hasVisibleFields,
+} from '@/lib/type-profiles';
 
 interface AddConnectionModalTabbedProps {
   onConnectionAdded: () => void;
   trigger?: React.ReactNode;
 }
 
-// Define the field groups
-const FIELD_GROUPS = {
-  basic: ["name", "application_type", "ise_application_subtype", "application_type_info", "application_type_info_ise", "application_type_info_general"],
-  authentication: ["username", "password"],
-  certificate: ["hostname", "domain", "ssl_provider", "dns_provider", "alt_names", "custom_csr", "general_private_key", "ise_nodes", "ise_certificate", "ise_private_key", "ise_cert_import_config"],
-  advanced: ["enable_ssh", "auto_restart_service", "ssh_cert_path", "ssh_key_path", "ssh_chain_path", "ssh_restart_command", "auto_renew", "is_enabled"]
-};
+type TabName = 'basic' | 'authentication' | 'certificate' | 'advanced';
 
-const AddConnectionModalTabbed: React.FC<AddConnectionModalTabbedProps> = ({ 
-  onConnectionAdded, 
-  trigger 
+const AddConnectionModalTabbed: React.FC<AddConnectionModalTabbedProps> = ({
+  onConnectionAdded,
+  trigger
 }) => {
+  const { toast } = useToast();
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("basic");
-  const [formData, setFormData] = useState<Record<string, string | boolean>>({});
-  const [data, setData] = useState<FormField[]>([]);
+  const [formData, setFormData] = useState<Record<string, string | boolean>>(() => getDefaultFormData('general'));
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCSRWizardOpen, setIsCSRWizardOpen] = useState(false);
 
-  // Fetch configuration data
-  useEffect(() => {
-    const fetchData = async () => {
-      const response = await fetch("/dbSetup.json");
-      const jsonData = await response.json();
-      setData(jsonData);
-      
-      // Initialize form data with default values
-      const initialData = jsonData.reduce((obj: Record<string, string | boolean>, value: FormField) => {
-        obj[value.name] = value.default !== undefined ? value.default : (value.type === "SWITCH" ? false : "");
-        return obj;
-      }, {});
-      setFormData(initialData);
-    };
-    fetchData();
-  }, []);
-
-  // Reset to first tab when opening modal
-  useEffect(() => {
-    if (isOpen) {
+  // Reset form when modal opens
+  const handleOpenChange = (open: boolean) => {
+    setIsOpen(open);
+    if (open) {
+      const appType = String(formData.application_type || 'general');
+      setFormData(getDefaultFormData(appType));
       setActiveTab("basic");
+      setErrors({});
     }
-  }, [isOpen]);
-
-  const handleConnectionAdded = () => {
-    onConnectionAdded();
-    setIsOpen(false);
-    setFormData({});
   };
 
-  // Handle form data changes without focus issues
-  const handleFormDataChange = (newFormData: Record<string, string | boolean>) => {
-    // Use flushSync to ensure atomic updates and prevent focus issues
-    flushSync(() => {
-      setFormData(prevData => ({
-        ...prevData,
-        ...newFormData
-      }));
+  const handleCSRGenerated = (generatedData: { csr: string; privateKey: string; subject: string; commonName: string }) => {
+    const applicationTypeValue = formData.application_type;
+    let updates: Record<string, string> = {};
+
+    if (applicationTypeValue === 'general') {
+      updates = {
+        custom_csr: generatedData.csr,
+        general_private_key: generatedData.privateKey
+      };
+    } else if (applicationTypeValue === 'ise') {
+      updates = {
+        ise_certificate: generatedData.csr,
+        ise_private_key: generatedData.privateKey
+      };
+    }
+
+    setFormData(prev => ({ ...prev, ...updates }));
+    toast({
+      title: "CSR Generated",
+      description: "Certificate Signing Request and private key have been generated and populated.",
+      duration: 3000,
     });
+  };
+
+  // ---------------------------------------------------------------------------
+  // Validation handlers
+  // ---------------------------------------------------------------------------
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>, field: FieldDefinition) => {
+    const { name, value } = e.target;
+    const isOptional = field.optional === true;
+    const newErrors: Record<string, string> = {};
+
+    if (field.validation && (value.trim() !== '' || !isOptional)) {
+      try {
+        const validatorFn = validator[field.validation.name as keyof typeof validator] as any;
+        if (validatorFn && !validatorFn(value, field.validation.options)) {
+          newErrors[name] = "Invalid value";
+        } else {
+          newErrors[name] = "";
+        }
+      } catch (error) {
+        console.warn(`Validation error for field ${name}:`, error);
+        newErrors[name] = "";
+      }
+    } else {
+      newErrors[name] = "";
+    }
+
+    setErrors(prev => ({ ...prev, ...newErrors }));
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleSelectChange = (name: string, value: string, field: FieldDefinition) => {
+    const isOptional = field.optional === true;
+    const newErrors: Record<string, string> = {};
+
+    if (field.validation && (value.trim() !== '' || !isOptional)) {
+      try {
+        const validatorFn = validator[field.validation.name as keyof typeof validator] as any;
+        if (validatorFn && !validatorFn(value, field.validation.options)) {
+          newErrors[name] = "Invalid value";
+        } else {
+          newErrors[name] = "";
+        }
+      } catch (error) {
+        console.warn(`Validation error for field ${name}:`, error);
+        newErrors[name] = "";
+      }
+    } else {
+      newErrors[name] = "";
+    }
+
+    setErrors(prev => ({ ...prev, ...newErrors }));
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>, field: FieldDefinition) => {
+    const { name, value } = e.target;
+    const isOptional = field.optional === true;
+    const newErrors: Record<string, string> = {};
+
+    if (name === 'custom_csr' && value.trim() !== '') {
+      if (!value.includes('-----BEGIN CERTIFICATE REQUEST-----') || !value.includes('-----END CERTIFICATE REQUEST-----')) {
+        newErrors[name] = "Must contain a valid PEM formatted certificate request";
+      } else {
+        newErrors[name] = "";
+      }
+    } else if (name === 'ise_cert_import_config' && value.trim() !== '') {
+      try {
+        JSON.parse(value);
+        newErrors[name] = "";
+      } catch {
+        newErrors[name] = "Must be valid JSON";
+      }
+    } else if (field.validation && (value.trim() !== '' || !isOptional)) {
+      try {
+        const validatorFn = validator[field.validation.name as keyof typeof validator] as any;
+        if (validatorFn && !validatorFn(value, field.validation.options)) {
+          newErrors[name] = "Invalid value";
+        } else {
+          newErrors[name] = "";
+        }
+      } catch (error) {
+        console.warn(`Validation error for field ${name}:`, error);
+        newErrors[name] = "";
+      }
+    } else {
+      newErrors[name] = "";
+    }
+
+    setErrors(prev => ({ ...prev, ...newErrors }));
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleSwitchChange = (name: string, checked: boolean) => {
+    setFormData(prev => ({ ...prev, [name]: checked }));
+    setErrors(prev => {
+      const newErrors = { ...prev };
+      delete newErrors[name];
+      return newErrors;
+    });
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    try {
+      setIsSubmitting(true);
+      await apiCall('/data', {
+        method: "POST",
+        body: JSON.stringify(formData),
+      });
+
+      toast({
+        title: "Success!",
+        description: "Connection added successfully.",
+        duration: 3000,
+      });
+
+      onConnectionAdded();
+      setIsOpen(false);
+
+      // Reset form
+      setFormData(getDefaultFormData('general'));
+      setErrors({});
+    } catch (error) {
+      console.error("Error inserting data:", error);
+
+      const errorMessage = error instanceof Error ? error.message : "Failed to add connection";
+      const errorDetails = (error as any)?.details || "";
+
+      toast({
+        title: "Error",
+        description: errorDetails || errorMessage,
+        variant: "destructive",
+        duration: 5000,
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // ---------------------------------------------------------------------------
+  // Profile-based rendering
+  // ---------------------------------------------------------------------------
+
+  const appType = String(formData.application_type || 'general');
+  const profile = getProfile(appType);
+
+  const getVisibleFields = (tabName: TabName): FieldDefinition[] => {
+    return profile.tabs[tabName].filter(f => isFieldVisible(f, formData));
+  };
+
+  const renderField = (field: FieldDefinition) => {
+    return (
+      <ConnectionFieldRenderer
+        key={field.name}
+        field={field}
+        value={formData[field.name]}
+        error={errors[field.name]}
+        applicationType={appType}
+        onChange={handleSwitchChange}
+        onSelectChange={(name, value) => handleSelectChange(name, value, field)}
+        onTextareaChange={(e) => handleTextareaChange(e, field)}
+        onInputChange={(e) => handleChange(e, field)}
+        onCsrGenerateClick={() => setIsCSRWizardOpen(true)}
+      />
+    );
   };
 
   const defaultTrigger = (
@@ -95,133 +247,78 @@ const AddConnectionModalTabbed: React.FC<AddConnectionModalTabbedProps> = ({
     </Button>
   );
 
-  // Check if a field should be visible based on all its conditions (AND logic)
-  const isFieldVisible = (field: any) => {
-    if (!field.conditional && !field.conditionalMultiple && !field.conditionalNot) return true;
-
-    // All present conditions must pass (AND logic)
-    if (field.conditional) {
-      if (formData[field.conditional.field] !== field.conditional.value) return false;
-    }
-    if (field.conditionalMultiple) {
-      const multiMatch = field.conditionalMultiple.some((condition: FieldConditionMultiple) =>
-        condition.values.includes(formData[condition.field])
-      );
-      if (!multiMatch) return false;
-    }
-    if (field.conditionalNot) {
-      if (formData[field.conditionalNot.field] === field.conditionalNot.value) return false;
-    }
-    return true;
-  };
-
-  // Check if a tab should be shown based on conditional fields
-  const shouldShowTab = (tabName: string) => {
-    const fields = FIELD_GROUPS[tabName as keyof typeof FIELD_GROUPS];
-    return fields.some(fieldName => {
-      const field = data.find(f => f.name === fieldName);
-      if (!field) return false;
-      return isFieldVisible(field);
-    });
-  };
-
-  // Get fields for a specific tab that should be shown
-  const getTabFields = (tabName: string) => {
-    const fieldNames = FIELD_GROUPS[tabName as keyof typeof FIELD_GROUPS];
-    return data.filter(field => {
-      if (!fieldNames.includes(field.name)) return false;
-      return isFieldVisible(field);
-    });
-  };
-
   return (
-    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+    <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         {trigger || defaultTrigger}
       </DialogTrigger>
-      <DialogContent
-        className="max-w-4xl w-[95vw] sm:w-[90vw] max-h-[90vh] h-[90vh] flex flex-col overflow-hidden"
-      >
+      <DialogContent className="max-w-4xl w-[95vw] sm:w-[90vw] max-h-[90vh] h-[90vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>Add New Connection</DialogTitle>
           <DialogDescription>
             Add a new Cisco application connection for certificate management.
           </DialogDescription>
         </DialogHeader>
-        
+
         <Tabs key="modal-tabs" value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
           <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 flex-shrink-0">
             <TabsTrigger value="basic">Basic Info</TabsTrigger>
-            {shouldShowTab("authentication") && (
+            {hasVisibleFields(profile.tabs.authentication, formData) && (
               <TabsTrigger value="authentication">Authentication</TabsTrigger>
             )}
             <TabsTrigger value="certificate">Certificate</TabsTrigger>
-            {shouldShowTab("advanced") && (
+            {hasVisibleFields(profile.tabs.advanced, formData) && (
               <TabsTrigger value="advanced">Advanced</TabsTrigger>
             )}
           </TabsList>
-          
-          <div className="flex-1 overflow-y-auto pl-1 pr-2 mt-4 pb-4 min-h-0 scroll-smooth scrollbar-styled">
-            <TabsContent value="basic" className="mt-0">
-              <DataForm 
-                onDataAdded={handleConnectionAdded}
-                fields={getTabFields("basic")}
-                onFormDataChange={handleFormDataChange}
-                sharedFormData={formData}
-                isPartOfTabbedForm={true}
-              />
-            </TabsContent>
-            
-            {shouldShowTab("authentication") && (
-              <TabsContent value="authentication" className="mt-0">
-                <DataForm 
-                  onDataAdded={handleConnectionAdded}
-                  fields={getTabFields("authentication")}
-                  onFormDataChange={handleFormDataChange}
-                  sharedFormData={formData}
-                  isPartOfTabbedForm={true}
+
+          <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0">
+            <div className="flex-1 overflow-y-auto pl-1 pr-2 mt-4 pb-4 min-h-0 scroll-smooth scrollbar-styled">
+              <TabsContent value="basic" className="mt-0 space-y-4">
+                {/* Application type selector — always first */}
+                <ConnectionFieldRenderer
+                  field={applicationTypeField}
+                  value={formData.application_type}
+                  error={errors.application_type}
+                  onChange={handleSwitchChange}
+                  onSelectChange={(name, value) => handleSelectChange(name, value, applicationTypeField)}
                 />
+                {getVisibleFields('basic').map(renderField)}
               </TabsContent>
-            )}
-            
-            <TabsContent value="certificate" className="mt-0">
-              <DataForm 
-                onDataAdded={handleConnectionAdded}
-                fields={getTabFields("certificate")}
-                onFormDataChange={handleFormDataChange}
-                sharedFormData={formData}
-                isPartOfTabbedForm={true}
-              />
-            </TabsContent>
-            
-            {shouldShowTab("advanced") && (
-              <TabsContent value="advanced" className="mt-0">
-                <DataForm 
-                  onDataAdded={handleConnectionAdded}
-                  fields={getTabFields("advanced")}
-                  onFormDataChange={handleFormDataChange}
-                  sharedFormData={formData}
-                  isPartOfTabbedForm={true}
-                />
+
+              {hasVisibleFields(profile.tabs.authentication, formData) && (
+                <TabsContent value="authentication" className="mt-0 space-y-4">
+                  {getVisibleFields('authentication').map(renderField)}
+                </TabsContent>
+              )}
+
+              <TabsContent value="certificate" className="mt-0 space-y-4">
+                {getVisibleFields('certificate').map(renderField)}
               </TabsContent>
-            )}
-          </div>
-          
-          <div className="flex justify-end pt-4 border-t flex-shrink-0 bg-background">
-            <Button 
-              onClick={() => {
-                // Trigger form submission
-                const form = document.querySelector('form') as HTMLFormElement;
-                if (form) {
-                  form.requestSubmit();
-                }
-              }}
-            >
-              Add Connection
-            </Button>
-          </div>
+
+              {hasVisibleFields(profile.tabs.advanced, formData) && (
+                <TabsContent value="advanced" className="mt-0 space-y-4">
+                  {getVisibleFields('advanced').map(renderField)}
+                </TabsContent>
+              )}
+            </div>
+
+            <div className="flex justify-end pt-4 border-t flex-shrink-0 bg-background">
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? 'Adding...' : 'Add Connection'}
+              </Button>
+            </div>
+          </form>
         </Tabs>
       </DialogContent>
+
+      <CSRGeneratorWizard
+        isOpen={isCSRWizardOpen}
+        onClose={() => setIsCSRWizardOpen(false)}
+        onGenerated={handleCSRGenerated}
+        hostname={String(formData.hostname || "")}
+        domain={String(formData.domain || "")}
+      />
     </Dialog>
   );
 };

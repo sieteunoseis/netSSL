@@ -4,23 +4,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Architecture Overview
 
-This is a full-stack React application template with an Express.js backend and SQLite database, designed for building automation tools. The application features:
+netSSL is a full-stack certificate management dashboard for Cisco UC and network infrastructure. The application features:
 
 - **Frontend**: React 19 with Vite, TypeScript, Tailwind CSS, and Radix UI components
 - **Backend**: Express.js server with TypeScript, SQLite database, and REST API
 - **Security**: Input validation, sanitization, password hashing (bcrypt), and error handling
 - **Testing**: Jest (backend) and Vitest (frontend) with comprehensive test coverage
-- **Database**: SQLite with dynamic table creation based on environment variables
-- **Configuration**: Dynamic form generation using `dbSetup.json` with validator.js validation
+- **Database**: SQLite with dynamic table creation based on `TABLE_COLUMNS` in `backend/src/server.ts`
+- **Configuration**: Typed field definitions in `frontend/src/lib/connection-fields.ts` with per-type form profiles in `frontend/src/lib/type-profiles.ts`
 - **Deployment**: Docker containers with nginx (frontend) and Node.js (backend)
 
 ## Key Architecture Patterns
 
-### Dynamic Form System
-The application uses `frontend/public/dbSetup.json` to dynamically generate forms with validation. This file defines:
-- Field names, types, and validation rules using validator.js
-- Database table structure (synced with `VITE_TABLE_COLUMNS` env var)
-- Sample configurations for Cisco CUCM and CUC are provided
+### Typed Field System
+Connection forms use typed TypeScript modules instead of a JSON configuration file:
+- `frontend/src/lib/connection-fields.ts` — All field definitions with validation rules (validator.js), labels, defaults, and within-type visibility conditions
+- `frontend/src/lib/type-profiles.ts` — Per-application-type profiles (VOS, ISE, General) that declare which fields appear in which tabs
+- `frontend/src/components/ConnectionFieldRenderer.tsx` — Shared field renderer used by both Add and Edit modals
+- Adding a new application type requires only adding field definitions and a new profile — no modal component changes needed
 
 ### Database Schema
 SQLite table structure is dynamically created based on `TABLE_COLUMNS` environment variable in `backend/server.js:31-42`. The backend automatically creates the `connections` table with columns matching the configuration.
@@ -154,7 +155,8 @@ The Let's Encrypt challenge flow in `backend/src/certificate-renewal.ts` dynamic
 - `frontend/src/pages/` - Main application pages (Home, Connections, Error)
 - `frontend/src/components/` - Reusable React components and UI primitives
 - `frontend/src/lib/connection-utils.js` - Connection utility functions including enable/disable logic
-- `frontend/public/dbSetup.json` - Dynamic form configuration with conditional field visibility
+- `frontend/src/lib/connection-fields.ts` - Typed field definitions for all connection form fields
+- `frontend/src/lib/type-profiles.ts` - Per-application-type form layouts (VOS, ISE, General)
 - `backend/src/server.ts` - Express API server with SQLite integration and connection management
 - `backend/src/certificate-renewal.ts` - Let's Encrypt ACME certificate renewal with DNS challenges
 - `backend/src/auto-renewal-cron.ts` - Scheduled certificate renewal service (respects connection enabled state)
@@ -163,7 +165,7 @@ The Let's Encrypt challenge flow in `backend/src/certificate-renewal.ts` dynamic
 
 ## Environment Configuration
 
-Backend requires environment variables matching `dbSetup.json` field names. Set these in:
+Backend requires environment variables for DNS provider API keys. Set these in:
 - `.env` file for local development
 - `docker-compose.yaml` for containerized deployment
 
@@ -203,23 +205,3 @@ Let's Encrypt has several rate limits to prevent abuse:
 - Monitor certificate expiration and renew before 30 days remaining
 - Keep track of renewal frequency to stay within duplicate certificate limits
 - Failed DNS challenges count toward rate limits, so ensure DNS records are correct before attempting renewal
-
-## Template Configuration
-
-This is a configurable template repository. Configure for your project needs:
-
-### Setup Template
-```bash
-npm run setup-template  # Apply template configuration
-```
-
-### Configuration Options
-Edit `template.config.json` to customize:
-- `useBackend`: Enable/disable backend and connections page
-- `databaseType`: Choose "cucm" (with version) or "cuc" (without version)
-
-### Template Synchronization
-Sync upstream changes:
-```bash
-npm run sync-remote  # Pulls from upstream main branch
-```

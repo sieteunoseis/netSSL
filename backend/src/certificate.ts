@@ -41,6 +41,9 @@ export interface CertificateInfo {
     certificateProcessing?: number;
     totalTime?: number;
   };
+  // Hostname match detection
+  expectedHostname?: string;
+  hostnameMatch?: boolean;
 }
 
 export async function getCertificateInfo(hostname: string, port: number = 443): Promise<CertificateInfo | null> {
@@ -573,6 +576,52 @@ function getPortsForConnection(connection?: any): number[] {
   return [443, 8443, 9443];
 }
 
+/**
+ * Check if the expected hostname matches the certificate's CN or SANs
+ * Handles wildcard certificates (e.g., *.automate.builders matches guest1.automate.builders)
+ */
+function checkHostnameMatch(expectedHostname: string, certInfo: CertificateInfo): boolean {
+  const expected = expectedHostname.toLowerCase();
+
+  // Check CN
+  const cn = certInfo.subject?.CN?.toLowerCase();
+  if (cn && hostnameMatchesPattern(expected, cn)) {
+    return true;
+  }
+
+  // Check SANs (format: "DNS:hostname" or just "hostname")
+  if (certInfo.subjectAltNames) {
+    for (const san of certInfo.subjectAltNames) {
+      const sanValue = san.replace(/^DNS:/i, '').trim().toLowerCase();
+      if (hostnameMatchesPattern(expected, sanValue)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Check if a hostname matches a pattern, supporting wildcard certs
+ * e.g., "guest1.automate.builders" matches "*.automate.builders"
+ */
+function hostnameMatchesPattern(hostname: string, pattern: string): boolean {
+  if (hostname === pattern) return true;
+
+  // Wildcard match: *.example.com matches sub.example.com but not sub.sub.example.com
+  if (pattern.startsWith('*.')) {
+    const wildcardBase = pattern.slice(2); // "example.com"
+    const hostParts = hostname.split('.');
+    const baseParts = wildcardBase.split('.');
+    if (hostParts.length === baseParts.length + 1) {
+      return hostname.endsWith('.' + wildcardBase);
+    }
+  }
+
+  return false;
+}
+
 export async function getCertificateInfoWithFallback(hostname: string, connection?: any, database?: any): Promise<CertificateInfo | null> {
   Logger.info(`Getting certificate info for ${hostname}`);
   
@@ -598,6 +647,8 @@ export async function getCertificateInfoWithFallback(hostname: string, connectio
         : await getCertificateInfo(hostname, port);
       if (certInfo) {
         Logger.info(`Retrieved certificate for ${hostname} from live TLS connection on port ${port}`);
+        certInfo.expectedHostname = hostname;
+        certInfo.hostnameMatch = checkHostnameMatch(hostname, certInfo);
         return certInfo;
       }
     } catch (error) {
@@ -612,6 +663,8 @@ export async function getCertificateInfoWithFallback(hostname: string, connectio
   const localCertInfo = await getCertificateInfoFromFile(certPath);
   if (localCertInfo) {
     Logger.info(`Found local certificate for ${hostname} in ${certSubDir} directory`);
+    localCertInfo.expectedHostname = hostname;
+    localCertInfo.hostnameMatch = checkHostnameMatch(hostname, localCertInfo);
     return localCertInfo;
   }
   
@@ -623,6 +676,8 @@ export async function getCertificateInfoWithFallback(hostname: string, connectio
   const alternateCertInfo = await getCertificateInfoFromFile(alternateCertPath);
   if (alternateCertInfo) {
     Logger.info(`Found local certificate for ${hostname} in ${alternateCertSubDir} directory`);
+    alternateCertInfo.expectedHostname = hostname;
+    alternateCertInfo.hostnameMatch = checkHostnameMatch(hostname, alternateCertInfo);
     return alternateCertInfo;
   }
   

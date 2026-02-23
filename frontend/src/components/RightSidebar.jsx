@@ -1,6 +1,6 @@
 import { Link, useLocation } from "react-router-dom";
 import { useConfig } from '@/config/ConfigContext';
-import templateConfig from "../../template.config.json";
+
 import versionInfo from "../version.json";
 import { ChevronLeft, ChevronRight, Home, FileText, HelpCircle, Monitor } from 'lucide-react';
 import { cn } from "@/lib/utils";
@@ -37,9 +37,7 @@ const RightSidebar = ({ isExpanded, onCollapse, onToggle }) => {
     }
   ];
 
-  const filteredItems = navigationItems.filter(item =>
-    item.alwaysShow || templateConfig.useBackend
-  );
+  const filteredItems = navigationItems;
 
   return (
     <>
