@@ -1,5 +1,39 @@
 import { SSHClient } from '../ssh-client';
 import { Logger } from '../logger';
+import { ConnectionRecord } from '../types';
+
+// Re-export RenewalStatus shape (matches certificate-renewal.ts)
+export interface RenewalStatus {
+  id: string;
+  connectionId: number;
+  status: string;
+  message: string;
+  progress: number;
+  startTime: Date;
+  endTime?: Date;
+  error?: string;
+  logs: string[];
+  challenges?: any[];
+  manualDNSEntry?: {
+    recordName: string;
+    recordValue: string;
+    instructions: string;
+  };
+}
+
+export interface RenewalContext {
+  connectionId: number;
+  connection: ConnectionRecord;
+  status: RenewalStatus;
+  updateStatus: (op: string, message: string, progress: number) => Promise<void>;
+  saveLog: (message: string) => Promise<void>;
+}
+
+export interface RestartResult {
+  success: boolean;
+  requiresManualRestart: boolean;
+  message?: string;
+}
 
 export interface PlatformConfig {
   platformType: string;
@@ -104,6 +138,26 @@ export abstract class PlatformProvider {
     username: string,
     password: string
   ): Promise<boolean>;
+
+  // ---------------------------------------------------------------------------
+  // Renewal lifecycle methods — called by the generic renewal flow
+  // ---------------------------------------------------------------------------
+
+  /** Generate or obtain a CSR for this connection type */
+  abstract prepareCSR(ctx: RenewalContext): Promise<string>;
+
+  /** Deploy a certificate to the target (API upload, SSH, or local save) */
+  abstract installCertificate(ctx: RenewalContext, certificate: string): Promise<void>;
+
+  /** Handle post-install service restart. Default: no-op. VOS overrides with SSH Tomcat restart. */
+  async handleServiceRestart(ctx: RenewalContext): Promise<RestartResult> {
+    return { success: true, requiresManualRestart: false };
+  }
+
+  /** Whether this provider supports retrying with a recently generated cert. ISE overrides to true. */
+  get supportsRecentCertRetry(): boolean {
+    return false;
+  }
 
   // Common utility methods
   protected async makeApiRequest(

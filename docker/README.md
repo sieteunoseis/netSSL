@@ -35,7 +35,6 @@ cat > .env << EOF
 # Basic Configuration
 VITE_BRANDING_URL=https://your-domain.com
 VITE_BRANDING_NAME=Your Company Name
-VITE_TABLE_COLUMNS=name,hostname,username,password,version
 PORT=5000
 NODE_ENV=production
 

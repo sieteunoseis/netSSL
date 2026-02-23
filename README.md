@@ -1,6 +1,6 @@
 # netSSL
 
-A comprehensive web-based dashboard for SSL certificate management across enterprise infrastructures. Built to work with both general applications and enterprise systems with API support, including Cisco Voice over Secure (VOS) platforms (CUCM, CUC, CER) and Cisco Identity Services Engine (ISE) through their OpenAPI interfaces. Features automated certificate installation, renewal, and service restart capabilities.
+A comprehensive web-based dashboard for SSL certificate management across enterprise infrastructures. Built to work with both general applications and enterprise systems with API support, including Cisco Voice over Secure (VOS) platforms (CUCM, CUC, CER), Cisco Identity Services Engine (ISE), and Cisco Catalyst Center (formerly DNAC) through their REST APIs. Features automated certificate installation, renewal, and service restart capabilities.
 
 ![Dashboard Overview](screenshots/dashboard-overview.png)
 
@@ -9,6 +9,7 @@ A comprehensive web-based dashboard for SSL certificate management across enterp
 - **Multi-Platform Support**: Manage SSL certificates across multiple platforms from a single interface
   - **VOS Platforms**: Cisco CUCM, CUC, CER with SSH-based service restart
   - **ISE Platforms**: Cisco ISE with OpenAPI integration for automated operations
+  - **Catalyst Center**: Cisco Catalyst Center (formerly DNAC) with token-based REST API
   - **General Applications**: Support for any system requiring certificate management
 - **Certificate Operations**: 
   - Generate Certificate Signing Requests (CSRs)
@@ -18,7 +19,7 @@ A comprehensive web-based dashboard for SSL certificate management across enterp
 - **Automated Operations**: 
   - Let's Encrypt integration with ACME protocol
   - Automatic certificate renewal and installation
-  - Service restart automation (SSH for VOS, API for ISE)
+  - Service restart automation (SSH for VOS, API for ISE, automatic for Catalyst Center)
   - DNS challenge automation with multiple provider support
 - **DNS Provider Support**: Built-in support for Cloudflare, Azure DNS, DigitalOcean, Google Cloud DNS, Route53, and more
 - **Enterprise Features**: 
@@ -199,7 +200,8 @@ For production certificates, set `LETSENCRYPT_STAGING=false`. Account informatio
 
 1. **Add Systems**: Navigate to the dashboard and add your target systems:
    - **VOS Platforms**: CUCM, CUC, CER with SSH credentials
-   - **ISE Platforms**: ISE nodes with OpenAPI credentials  
+   - **ISE Platforms**: ISE nodes with OpenAPI credentials
+   - **Catalyst Center**: Catalyst Center with admin credentials (token-based auth)
    - **General Applications**: Any system requiring certificate management
 2. **Generate CSR**: Select a system and generate Certificate Signing Requests
 3. **Automated Operations**: 

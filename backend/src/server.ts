@@ -73,7 +73,8 @@ const TABLE_COLUMNS = [
   'ssh_cert_path',
   'ssh_key_path',
   'ssh_chain_path',
-  'ssh_restart_command'
+  'ssh_restart_command',
+  'cc_list_of_users'
 ];
 
 console.log('Using hardcoded TABLE_COLUMNS:', TABLE_COLUMNS);

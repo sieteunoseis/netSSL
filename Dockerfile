@@ -154,7 +154,6 @@ cat > /app/frontend/dist/config.js << CONFIGEOF
 window.APP_CONFIG = {
   BRANDING_URL: "${VITE_BRANDING_URL:-https://automate.builders}",
   BRANDING_NAME: "${VITE_BRANDING_NAME:-netSSL Certificate Management}",
-  TABLE_COLUMNS: "${VITE_TABLE_COLUMNS:-name,hostname,username,password,version}",
 };
 CONFIGEOF
 

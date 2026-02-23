@@ -70,7 +70,6 @@ jobs:
         cat > .env << EOF
         VITE_BRANDING_URL=https://automate.builders
         VITE_BRANDING_NAME=Automate Builders
-        VITE_TABLE_COLUMNS=name,hostname,username,password,version
         PORT=5000
         NODE_ENV=production
         EOF

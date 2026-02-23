@@ -1,8 +1,10 @@
 import { PlatformProvider } from './platform-provider';
 import { VOSProvider } from './vos-provider';
 import { ISEProvider } from './ise-provider';
+import { GeneralProvider } from './general-provider';
+import { CatalystCenterProvider } from './catalyst-center-provider';
 
-export type SupportedPlatform = 'vos' | 'ise' | 'general';
+export type SupportedPlatform = 'vos' | 'ise' | 'general' | 'catalyst_center';
 
 export class PlatformFactory {
   private static instances: Map<string, PlatformProvider> = new Map();
@@ -25,9 +27,13 @@ export class PlatformFactory {
         break;
       
       case 'general':
-        // For general applications that don't need platform-specific APIs
-        throw new Error('General platform provider not yet implemented');
-      
+        provider = new GeneralProvider();
+        break;
+
+      case 'catalyst_center':
+        provider = new CatalystCenterProvider();
+        break;
+
       default:
         throw new Error(`Unsupported platform type: ${platformType}`);
     }
@@ -38,7 +44,7 @@ export class PlatformFactory {
   }
 
   static getSupportedPlatforms(): SupportedPlatform[] {
-    return ['vos', 'ise']; // Add 'general' as it becomes available
+    return ['vos', 'ise', 'general', 'catalyst_center'];
   }
 
   static isPlatformSupported(platformType: string): boolean {
@@ -58,6 +64,8 @@ export class PlatformFactory {
         return 'ise';
       case 'general':
         return 'general';
+      case 'catalyst_center':
+        return 'catalyst_center';
       default:
         // Default to VOS for backward compatibility
         return 'vos';

@@ -8,7 +8,7 @@ export interface ConnectionRecord {
   ssl_provider: string;
   dns_provider: string;
   dns_challenge_mode?: string;
-  application_type?: 'vos' | 'ise' | 'general';
+  application_type?: 'vos' | 'ise' | 'general' | 'catalyst_center';
   ise_application_subtype?: 'guest' | 'portal' | 'admin';
   version?: string;
   alt_names?: string;
@@ -27,6 +27,7 @@ export interface ConnectionRecord {
   ssh_key_path?: string;
   ssh_chain_path?: string;
   ssh_restart_command?: string;
+  cc_list_of_users?: string;
   is_enabled?: boolean | number;
   last_cert_issued?: string;
   cert_count_this_week?: number;

@@ -53,7 +53,7 @@ const AddConnectionModalTabbed: React.FC<AddConnectionModalTabbedProps> = ({
     const applicationTypeValue = formData.application_type;
     let updates: Record<string, string> = {};
 
-    if (applicationTypeValue === 'general') {
+    if (applicationTypeValue === 'general' || applicationTypeValue === 'catalyst_center') {
       updates = {
         custom_csr: generatedData.csr,
         general_private_key: generatedData.privateKey

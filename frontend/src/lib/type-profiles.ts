@@ -42,6 +42,10 @@ import {
   applicationTypeInfoGeneralField,
   customCsrField,
   generalPrivateKeyField,
+  // Catalyst Center
+  hostnameCatalystCenterField,
+  applicationTypeInfoCatalystCenterField,
+  ccListOfUsersField,
 } from './connection-fields';
 
 export interface TypeProfile {
@@ -160,6 +164,38 @@ export const generalProfile: TypeProfile = {
 };
 
 // ---------------------------------------------------------------------------
+// Catalyst Center Profile — Cisco Catalyst Center (formerly DNAC)
+// ---------------------------------------------------------------------------
+export const catalystCenterProfile: TypeProfile = {
+  id: 'catalyst_center',
+  label: 'Cisco Catalyst Center',
+  tabs: {
+    basic: [
+      nameField,
+      hostnameCatalystCenterField,
+      applicationTypeInfoCatalystCenterField,
+    ],
+    authentication: [
+      usernameField,
+      passwordField,
+    ],
+    certificate: [
+      domainField,
+      sslProviderField,
+      dnsProviderField,
+      altNamesField,
+      ccListOfUsersField,
+      customCsrField,
+      generalPrivateKeyField,
+    ],
+    advanced: [
+      autoRenewField,
+      isEnabledField,
+    ],
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Profile lookup
 // ---------------------------------------------------------------------------
 
@@ -167,6 +203,7 @@ export const typeProfiles: Record<string, TypeProfile> = {
   vos: vosProfile,
   ise: iseProfile,
   general: generalProfile,
+  catalyst_center: catalystCenterProfile,
 };
 
 export function getProfile(appType: string): TypeProfile {

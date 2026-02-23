@@ -107,7 +107,7 @@ export default function ConnectionFieldRenderer({
   // TEXTAREA type
   if (field.type === 'textarea') {
     const showCsrButton = (field.name === 'custom_csr' || field.name === 'ise_certificate') &&
-      (applicationType === 'general' || applicationType === 'ise');
+      (applicationType === 'general' || applicationType === 'ise' || applicationType === 'catalyst_center');
 
     return (
       <div key={field.name} className="space-y-2">

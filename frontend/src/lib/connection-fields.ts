@@ -37,9 +37,10 @@ export const applicationTypeField: FieldDefinition = {
     { value: 'general', label: 'General Application' },
     { value: 'vos', label: 'Cisco VOS Application' },
     { value: 'ise', label: 'Cisco ISE' },
+    { value: 'catalyst_center', label: 'Cisco Catalyst Center' },
   ],
   defaultValue: 'general',
-  validation: { name: 'isIn', options: ['general', 'vos', 'ise'] },
+  validation: { name: 'isIn', options: ['general', 'vos', 'ise', 'catalyst_center'] },
 };
 
 // ---------------------------------------------------------------------------
@@ -374,6 +375,39 @@ export const generalPrivateKeyField: FieldDefinition = {
 };
 
 // ---------------------------------------------------------------------------
+// Catalyst Center-specific fields
+// ---------------------------------------------------------------------------
+
+export const hostnameCatalystCenterField: FieldDefinition = {
+  name: 'hostname',
+  type: 'text',
+  label: 'Catalyst Center Hostname',
+  placeholder: 'e.g., catalyst-center, dnac01',
+  description: 'Hostname of the Catalyst Center appliance — do not include domain name',
+  validation: { name: 'matches', options: '^[a-zA-Z0-9]([a-zA-Z0-9\\-]{0,61}[a-zA-Z0-9])?$' },
+};
+
+export const applicationTypeInfoCatalystCenterField: FieldDefinition = {
+  name: 'application_type_info_cc',
+  type: 'info',
+  label: '',
+  description: 'Cisco Catalyst Center (formerly DNA Center). Uses token-based REST API to import certificates. CSR is generated locally — no SSH required.',
+};
+
+export const ccListOfUsersField: FieldDefinition = {
+  name: 'cc_list_of_users',
+  type: 'select',
+  label: 'Used For',
+  selectOptions: [
+    { value: 'server', label: 'Controller' },
+    { value: 'ipsec', label: 'DR IPSec' },
+    { value: 'server,ipsec', label: 'Both (Controller + DR IPSec)' },
+  ],
+  defaultValue: 'server',
+  validation: { name: 'isIn', options: ['server', 'ipsec', 'server,ipsec'] },
+};
+
+// ---------------------------------------------------------------------------
 // Field registry — flat lookup by database column name
 // Used by DataTable for column metadata. For fields with per-type variants
 // (hostname), the generic entry is used; profiles provide the specific one.
@@ -404,10 +438,12 @@ export const fieldRegistry: Record<string, FieldDefinition> = {
   ise_cert_import_config: iseCertImportConfigField,
   custom_csr: customCsrField,
   general_private_key: generalPrivateKeyField,
+  cc_list_of_users: ccListOfUsersField,
   // INFO fields (not database columns, but included for completeness)
   application_type_info: applicationTypeInfoVosField,
   application_type_info_ise: applicationTypeInfoIseField,
   application_type_info_general: applicationTypeInfoGeneralField,
+  application_type_info_cc: applicationTypeInfoCatalystCenterField,
   ise_subtype_info_guest: iseSubtypeInfoGuestField,
   ise_subtype_info_portal: iseSubtypeInfoPortalField,
   ise_subtype_info_admin: iseSubtypeInfoAdminField,

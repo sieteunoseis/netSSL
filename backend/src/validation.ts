@@ -24,6 +24,18 @@ export const validateConnectionData = (data: any): { isValid: boolean; errors: s
         errors.push('Hostname must be a valid hostname (letters, numbers, hyphens only)');
       }
     }
+  } else if (data.application_type === 'catalyst_center') {
+    // Catalyst Center requires a valid hostname (strict, same as VOS)
+    if (!data.hostname || typeof data.hostname !== 'string') {
+      errors.push('Hostname is required and must be a string');
+    } else if (!validator.isAscii(data.hostname)) {
+      errors.push('Hostname must contain only ASCII characters');
+    } else {
+      const hostnamePattern = /^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$/;
+      if (!hostnamePattern.test(data.hostname)) {
+        errors.push('Hostname must be a valid hostname (letters, numbers, hyphens only)');
+      }
+    }
   } else if (data.application_type === 'ise' || data.application_type === 'general') {
     // ISE and General applications allow hostname to be empty, wildcard, or a valid hostname
     if (data.hostname !== undefined && typeof data.hostname !== 'string') {
@@ -46,18 +58,18 @@ export const validateConnectionData = (data: any): { isValid: boolean; errors: s
     errors.push('Domain must be a valid FQDN');
   }
 
-  // Username and password are required for VOS applications only
-  const isVosApplication = data.application_type === 'vos' || !data.application_type; // Default to VOS if not specified
-  
-  if (isVosApplication) {
+  // Username and password are required for VOS and Catalyst Center applications
+  const requiresCredentials = data.application_type === 'vos' || data.application_type === 'catalyst_center' || !data.application_type;
+
+  if (requiresCredentials) {
     if (!data.username || typeof data.username !== 'string') {
-      errors.push('Username is required and must be a string for VOS applications');
+      errors.push('Username is required and must be a string');
     } else if (!validator.isAscii(data.username)) {
       errors.push('Username must contain only ASCII characters');
     }
 
     if (!data.password || typeof data.password !== 'string') {
-      errors.push('Password is required and must be a string for VOS applications');
+      errors.push('Password is required and must be a string');
     } else if (!validator.isAscii(data.password)) {
       errors.push('Password must contain only ASCII characters');
     }
@@ -143,8 +155,8 @@ export const validateConnectionData = (data: any): { isValid: boolean; errors: s
 
   // Application type is optional, defaults to 'vos'
   if (data.application_type !== undefined && data.application_type !== null && data.application_type !== '') {
-    if (!validator.isIn(data.application_type, ['vos', 'ise', 'general'])) {
-      errors.push('Application type must be one of "vos", "ise", or "general"');
+    if (!validator.isIn(data.application_type, ['vos', 'ise', 'general', 'catalyst_center'])) {
+      errors.push('Application type must be one of "vos", "ise", "general", or "catalyst_center"');
     }
   }
 
@@ -193,6 +205,13 @@ export const validateConnectionData = (data: any): { isValid: boolean; errors: s
     }
   }
 
+  // Catalyst Center cc_list_of_users is optional
+  if (data.cc_list_of_users !== undefined && data.cc_list_of_users !== null && data.cc_list_of_users !== '') {
+    if (!validator.isIn(data.cc_list_of_users, ['server', 'ipsec', 'server,ipsec'])) {
+      errors.push('Certificate usage must be one of "server", "ipsec", or "server,ipsec"');
+    }
+  }
+
   // Alt names is optional
   if (data.alt_names !== undefined && data.alt_names !== null && data.alt_names !== '') {
     if (typeof data.alt_names !== 'string') {
@@ -223,7 +242,7 @@ export const sanitizeConnectionData = (data: any): Partial<ConnectionRecord> => 
     domain: data.domain ? validator.escape(String(data.domain)) : undefined,
     ssl_provider: validator.escape(String(data.ssl_provider || '')),
     dns_provider: validator.escape(String(data.dns_provider || '')),
-    application_type: (['vos', 'ise', 'general'].includes(data.application_type) ? data.application_type : 'vos') as 'vos' | 'ise' | 'general',
+    application_type: (['vos', 'ise', 'general', 'catalyst_center'].includes(data.application_type) ? data.application_type : 'vos') as 'vos' | 'ise' | 'general' | 'catalyst_center',
     ise_application_subtype: (['guest', 'portal', 'admin'].includes(data.ise_application_subtype) ? data.ise_application_subtype : undefined),
     version: validator.escape(String(data.version || '')),
     alt_names: validator.escape(String(data.alt_names || '')),
@@ -232,7 +251,8 @@ export const sanitizeConnectionData = (data: any): Partial<ConnectionRecord> => 
     ise_nodes: data.ise_nodes ? validator.escape(String(data.ise_nodes)) : undefined,
     ise_certificate: data.ise_certificate ? String(data.ise_certificate) : undefined, // Don't escape certificate content
     ise_private_key: data.ise_private_key ? String(data.ise_private_key) : undefined, // Don't escape private key content
-    ise_cert_import_config: data.ise_cert_import_config ? String(data.ise_cert_import_config) : undefined // Don't escape JSON content
+    ise_cert_import_config: data.ise_cert_import_config ? String(data.ise_cert_import_config) : undefined, // Don't escape JSON content
+    cc_list_of_users: (['server', 'ipsec', 'server,ipsec'].includes(data.cc_list_of_users) ? data.cc_list_of_users : undefined),
   };
 
   // Only include username and password if they are provided (for general applications they are optional)
