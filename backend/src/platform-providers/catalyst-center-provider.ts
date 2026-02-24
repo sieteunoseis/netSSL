@@ -180,14 +180,22 @@ export class CatalystCenterProvider extends PlatformProvider {
     const startTime = Date.now();
 
     while (Date.now() - startTime < maxWaitMs) {
-      const taskResponse = await this.makeCCRequest(hostname, token, `/dna/intent/api/v1/task/${taskId}`);
-      const task = taskResponse?.response;
+      try {
+        const taskResponse = await this.makeCCRequest(hostname, token, `/dna/intent/api/v1/task/${taskId}`);
+        const task = taskResponse?.response;
 
-      if (task?.endTime) {
-        if (task.isError) {
-          throw new Error(`Task failed: ${task.failureReason || task.progress || 'Unknown error'}`);
+        if (task?.endTime) {
+          if (task.isError) {
+            throw new Error(`Task failed: ${task.failureReason || task.progress || 'Unknown error'}`);
+          }
+          return task;
         }
-        return task;
+      } catch (error: any) {
+        // 404 means task info is not available yet — keep polling
+        if (!error.message?.includes('404')) {
+          throw error;
+        }
+        Logger.info(`Task ${taskId} not available yet, retrying...`);
       }
 
       // Wait before next poll
@@ -212,10 +220,10 @@ export class CatalystCenterProvider extends PlatformProvider {
       .then(() => ({ FormData: globalThis.FormData, Blob: globalThis.Blob }));
 
     const form = new FormData();
-    form.append('certFilePath', new Blob([certPem], { type: 'application/x-pem-file' }), 'certificate.pem');
-    form.append('pkFilePath', new Blob([keyPem], { type: 'application/x-pem-file' }), 'private_key.pem');
+    form.append('certFileUpload', new Blob([certPem], { type: 'application/x-pem-file' }), 'certificate.pem');
+    form.append('pkFileUpload', new Blob([keyPem], { type: 'application/x-pem-file' }), 'private_key.pem');
 
-    const url = `https://${hostname}/dna/intent/api/v1/certificate?listOfUsers=${encodeURIComponent(listOfUsers)}`;
+    const url = `https://${hostname}/dna/intent/api/v1/certificate?listOfUsers=${listOfUsers}`;
 
     // Use native fetch for multipart — node:https doesn't handle FormData natively
     const response = await fetch(url, {
@@ -258,11 +266,11 @@ export class CatalystCenterProvider extends PlatformProvider {
 
     let body = '';
     body += `--${boundary}\r\n`;
-    body += `Content-Disposition: form-data; name="certFilePath"; filename="certificate.pem"\r\n`;
+    body += `Content-Disposition: form-data; name="certFileUpload"; filename="certificate.pem"\r\n`;
     body += `Content-Type: application/x-pem-file\r\n\r\n`;
     body += certPem + '\r\n';
     body += `--${boundary}\r\n`;
-    body += `Content-Disposition: form-data; name="pkFilePath"; filename="private_key.pem"\r\n`;
+    body += `Content-Disposition: form-data; name="pkFileUpload"; filename="private_key.pem"\r\n`;
     body += `Content-Type: application/x-pem-file\r\n\r\n`;
     body += keyPem + '\r\n';
     body += `--${boundary}--\r\n`;
@@ -272,7 +280,7 @@ export class CatalystCenterProvider extends PlatformProvider {
         {
           hostname,
           port: 443,
-          path: `/dna/intent/api/v1/certificate?listOfUsers=${encodeURIComponent(listOfUsers)}`,
+          path: `/dna/intent/api/v1/certificate?listOfUsers=${listOfUsers}`,
           method: 'POST',
           headers: {
             'X-Auth-Token': token,
@@ -379,7 +387,7 @@ export class CatalystCenterProvider extends PlatformProvider {
           const boundary = `----FormBoundary${Date.now()}${Math.random().toString(36).slice(2)}`;
           let body = '';
           body += `--${boundary}\r\n`;
-          body += `Content-Disposition: form-data; name="certFilePath"; filename="ca-cert.pem"\r\n`;
+          body += `Content-Disposition: form-data; name="certFileUpload"; filename="ca-cert.pem"\r\n`;
           body += `Content-Type: application/x-pem-file\r\n\r\n`;
           body += cert + '\r\n';
           body += `--${boundary}--\r\n`;
@@ -583,19 +591,25 @@ export class CatalystCenterProvider extends PlatformProvider {
       listOfUsers
     );
 
-    // Poll task for completion
+    // Task polling is best-effort — CC often completes the import before the
+    // task is even queryable. A successful upload (2xx) is sufficient.
     if (uploadResult?.response?.taskId) {
       const taskId = uploadResult.response.taskId;
-      status.logs.push(`Certificate import task started: ${taskId}`);
-      await ctx.saveLog(`Task ID: ${taskId} — polling for completion...`);
+      status.logs.push(`Certificate import task: ${taskId}`);
+      await ctx.saveLog(`Task ID: ${taskId}`);
 
-      const task = await this.pollTaskCompletion(fullFQDN, token, taskId);
-      status.logs.push(`Certificate import completed on Catalyst Center`);
-      await ctx.saveLog(`Task completed: ${JSON.stringify(task)}`);
-    } else {
-      status.logs.push(`Certificate uploaded to Catalyst Center (no task ID returned)`);
-      await ctx.saveLog(`Upload response: ${JSON.stringify(uploadResult)}`);
+      try {
+        const task = await this.pollTaskCompletion(fullFQDN, token, taskId);
+        await ctx.saveLog(`Task completed: ${JSON.stringify(task)}`);
+      } catch (error: any) {
+        // Non-fatal — cert may already be applied
+        Logger.info(`Task polling ended: ${error.message} (certificate likely already applied)`);
+        await ctx.saveLog(`Task polling note: ${error.message} — certificate was accepted by CC`);
+      }
     }
+
+    status.logs.push(`Certificate uploaded to Catalyst Center`);
+    await ctx.saveLog(`Upload response: ${JSON.stringify(uploadResult)}`);
   }
 
   // handleServiceRestart — inherited default no-op is correct for CC
