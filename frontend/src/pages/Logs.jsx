@@ -266,32 +266,28 @@ const Logs = () => {
                 onClick={() => setSelectedAccount(account)}
               >
                 <CardContent className="p-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">
-                        {account.connection.name}
-                      </p>
-                      <p className="text-sm text-muted-foreground font-mono truncate">
-                        {getConnectionDisplayHostname(account.connection) || account.domain || 'No domain'}
-                      </p>
-                    </div>
-                    <div className="flex flex-col items-end space-y-1">
-                      <Badge variant="outline" className="text-xs px-2 py-1">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium truncate">
+                      {account.connection.name}
+                    </p>
+                    <p className="text-sm text-muted-foreground font-mono truncate">
+                      {getConnectionDisplayHostname(account.connection) || account.domain || 'No domain'}
+                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <Badge variant="outline" className="text-xs px-2 py-0.5">
                         {formatApplicationType(account.connection.application_type)}
                       </Badge>
-                      <div className="flex items-center">
-                        {account.hasLogs ? (
-                          <div className="flex items-center text-status-valid">
-                            <FileText className="w-3 h-3 mr-1" />
-                            <span className="text-xs font-mono">{account.logs.length}</span>
-                          </div>
-                        ) : (
-                          <div className="flex items-center text-muted-foreground">
-                            <AlertCircle className="w-3 h-3 mr-1" />
-                            <span className="text-xs">No logs</span>
-                          </div>
-                        )}
-                      </div>
+                      {account.hasLogs ? (
+                        <div className="flex items-center text-status-valid">
+                          <FileText className="w-3 h-3 mr-1" />
+                          <span className="text-xs font-mono">{account.logs.length}</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center text-muted-foreground">
+                          <AlertCircle className="w-3 h-3 mr-1" />
+                          <span className="text-xs">No logs</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </CardContent>

@@ -20,8 +20,8 @@ import { NextAutoRenewalInfo } from "@/components/NextAutoRenewalInfo";
 import { AutoRenewalCountdownBadge } from "@/components/AutoRenewalCountdownBadge";
 import { useCertificateSettings } from "@/hooks/useCertificateSettings";
 import {
-  Server, AlertCircle, CheckCircle, Clock, RefreshCw,
-  RotateCcw, Plus, Search,
+  Server, AlertCircle, CheckCircle, Clock, RefreshCw, Ban,
+  RotateCcw, Plus, Search, Shield, Activity, Lock, Globe,
   SortAsc, SortDesc, LayoutGrid, Table as TableIcon, ChevronDown,
   ChevronRight, X, Edit, FileText, ExternalLink, Trash2, ToggleLeft, ToggleRight
 } from "lucide-react";
@@ -403,6 +403,31 @@ const Home = ({ onStatusUpdate }) => {
     return <Badge variant={statusColors[status.status] || "secondary"}>{status.text}</Badge>;
   };
 
+  const getCertGrade = (certInfo) => {
+    if (!certInfo || certInfo.error) return { grade: '?', color: 'text-muted-foreground', bg: 'bg-muted' };
+    let score = 100;
+    // Penalize weak key sizes
+    if (certInfo.keySize && certInfo.keySize < 2048) score -= 40;
+    else if (certInfo.keySize && certInfo.keySize < 4096) score -= 5;
+    // Penalize SHA-1
+    if (certInfo.signatureAlgorithm?.toLowerCase().includes('sha1')) score -= 30;
+    // Penalize expired
+    if (!certInfo.isValid) score -= 50;
+    // Penalize near-expiry
+    if (certInfo.daysUntilExpiry < 7) score -= 20;
+    else if (certInfo.daysUntilExpiry < 30) score -= 10;
+    // Penalize hostname mismatch
+    if (certInfo.hostnameMatch === false) score -= 20;
+    // Penalize slow TLS
+    if (certInfo.timings?.tlsHandshake > 500) score -= 10;
+
+    if (score >= 90) return { grade: 'A', color: 'text-status-valid', bg: 'bg-status-valid/10' };
+    if (score >= 80) return { grade: 'B', color: 'text-blue-500', bg: 'bg-blue-500/10' };
+    if (score >= 60) return { grade: 'C', color: 'text-status-warning', bg: 'bg-status-warning/10' };
+    if (score >= 40) return { grade: 'D', color: 'text-orange-500', bg: 'bg-orange-500/10' };
+    return { grade: 'F', color: 'text-status-expired', bg: 'bg-status-expired/10' };
+  };
+
   const renderConnectionCard = (connection) => {
     const status = getCertificateStatus(connection);
     const certInfo = certificateStatuses[connection.id];
@@ -502,7 +527,94 @@ const Home = ({ onStatusUpdate }) => {
               </div>
             </CardHeader>
           </CollapsibleTrigger>
-          
+
+          {/* Stats strip */}
+          {certInfo && !certInfo.error && (
+            <div className="px-6 pb-3 flex items-center gap-4 text-xs text-muted-foreground">
+              {(() => {
+                const gradeInfo = getCertGrade(certInfo);
+                return (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className={`flex items-center justify-center w-7 h-7 rounded-md font-bold text-sm ${gradeInfo.bg} ${gradeInfo.color}`}>
+                        {gradeInfo.grade}
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent>Certificate Grade</TooltipContent>
+                  </Tooltip>
+                );
+              })()}
+              <div className="h-4 w-px bg-border" />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-1">
+                    <Lock className="h-3 w-3" />
+                    <span>{certInfo.keyAlgorithm || 'RSA'} {certInfo.keySize || '?'}</span>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>Key Algorithm &amp; Size</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-1">
+                    <Shield className="h-3 w-3" />
+                    <span>{certInfo.issuer?.CN || 'Unknown'}</span>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>Certificate Issuer</TooltipContent>
+              </Tooltip>
+              {certInfo.subjectAltNames && certInfo.subjectAltNames.length > 0 && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="flex items-center gap-1">
+                      <Globe className="h-3 w-3" />
+                      <span>{certInfo.subjectAltNames.length} SAN{certInfo.subjectAltNames.length !== 1 ? 's' : ''}</span>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>{certInfo.subjectAltNames.join(', ')}</TooltipContent>
+                </Tooltip>
+              )}
+              {certInfo.timings && (
+                <>
+                  <div className="h-4 w-px bg-border" />
+                  {certInfo.timings.dnsResolve != null && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="flex items-center gap-1">
+                          <span className="text-muted-foreground/60">DNS</span>
+                          <span>{certInfo.timings.dnsResolve}ms</span>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>DNS Resolution Time</TooltipContent>
+                    </Tooltip>
+                  )}
+                  {certInfo.timings.tcpConnect != null && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="flex items-center gap-1">
+                          <span className="text-muted-foreground/60">TCP</span>
+                          <span>{certInfo.timings.tcpConnect}ms</span>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>TCP Connect Time</TooltipContent>
+                    </Tooltip>
+                  )}
+                  {certInfo.timings.tlsHandshake != null && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="flex items-center gap-1">
+                          <span className="text-muted-foreground/60">TLS</span>
+                          <span>{certInfo.timings.tlsHandshake}ms</span>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>TLS Handshake Time</TooltipContent>
+                    </Tooltip>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
           <CollapsibleContent>
             <CardContent className="pt-0 pb-4">
               <ConnectionDetailsTabs
@@ -814,19 +926,28 @@ const Home = ({ onStatusUpdate }) => {
                             className={`border-b hover:bg-muted/50 cursor-pointer ${!isEnabled ? 'opacity-40 grayscale border-dashed' : ''}`}
                             onClick={() => toggleRowExpansion(connection.id)}
                           >
-                            <td className="p-4 font-medium">{connection.name}</td>
-                            <td className="p-4 font-mono text-sm">{getConnectionDisplayHostname(connection)}</td>
+                            <td className="p-4 font-medium max-w-[160px] truncate">{connection.name}</td>
+                            <td className="p-4 font-mono text-sm max-w-[200px] truncate">{getConnectionDisplayHostname(connection)}</td>
                             <td className="p-4">
                               <Badge variant="outline" className="px-2 py-1 ">{formatApplicationType(connection.application_type)}</Badge>
                             </td>
-                            <td className="p-4">{getStatusBadge(connection)}</td>
                             <td className="p-4">
                               {(() => {
                                 const status = getCertificateStatus(connection);
-                                return status.days !== undefined 
-                                  ? status.days > 0 
-                                    ? `${status.days} days`
-                                    : `${Math.abs(status.days)} days ago`
+                                if (status.status === 'valid') return <CheckCircle className="h-4 w-4 text-status-valid" />;
+                                if (status.status === 'expiring') return <Clock className="h-4 w-4 text-status-warning" />;
+                                if (status.status === 'expired') return <Ban className="h-4 w-4 text-status-expired" />;
+                                if (status.status === 'mismatch') return <AlertCircle className="h-4 w-4 text-status-warning" />;
+                                return <Ban className="h-4 w-4 text-muted-foreground" />;
+                              })()}
+                            </td>
+                            <td className="p-4 whitespace-nowrap">
+                              {(() => {
+                                const status = getCertificateStatus(connection);
+                                return status.days !== undefined
+                                  ? status.days > 0
+                                    ? `${status.days}d`
+                                    : `${Math.abs(status.days)}d ago`
                                   : 'N/A';
                               })()}
                             </td>
