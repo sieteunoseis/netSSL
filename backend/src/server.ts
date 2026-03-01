@@ -63,6 +63,8 @@ const TABLE_COLUMNS = [
   'ise_private_key',
   'ise_cert_import_config',
   'ise_application_subtype',
+  'ise_csr_source',
+  'ise_csr_config',
   'general_private_key',
   'alt_names',
   'enable_ssh',
@@ -249,21 +251,29 @@ app.post('/api/data', asyncHandler(async (req: Request, res: Response) => {
 
   // Sanitize input data
   const sanitizedData = sanitizeConnectionData(req.body);
-  
-  Logger.info('Sanitized data for creation:', { 
+
+  // ISE: auto-derive domain from primary ISE node FQDN
+  if (sanitizedData.application_type === 'ise' && sanitizedData.ise_nodes) {
+    const primaryNode = sanitizedData.ise_nodes.split(',').map((n: string) => n.trim()).filter((n: string) => n)[0];
+    if (primaryNode && primaryNode.includes('.')) {
+      sanitizedData.domain = primaryNode.substring(primaryNode.indexOf('.') + 1);
+    }
+  }
+
+  Logger.info('Sanitized data for creation:', {
     application_type: sanitizedData.application_type,
     name: sanitizedData.name,
-    hostname: sanitizedData.hostname 
+    hostname: sanitizedData.hostname
   });
-  
+
   const connectionId = await database.createConnection(sanitizedData as ConnectionRecord);
-  
+
   // Pre-create Let's Encrypt account if using letsencrypt SSL provider
   if (sanitizedData.ssl_provider === 'letsencrypt') {
     try {
       const { acmeClient } = await import('./acme-client');
-      const domain = `${sanitizedData.hostname}.${sanitizedData.domain}`;
-      
+      const domain = getDomainFromConnection(sanitizedData as ConnectionRecord) || '';
+
       // Check if account already exists
       const existingAccount = await acmeClient.loadAccount(domain, connectionId);
       if (!existingAccount) {
@@ -377,8 +387,16 @@ app.put('/api/data/:id', asyncHandler(async (req: Request, res: Response) => {
 
   // Sanitize input data
   const sanitizedData = sanitizeConnectionData(req.body);
-  
-  Logger.info('Sanitized data for update:', { 
+
+  // ISE: auto-derive domain from primary ISE node FQDN
+  if (sanitizedData.application_type === 'ise' && sanitizedData.ise_nodes) {
+    const primaryNode = sanitizedData.ise_nodes.split(',').map((n: string) => n.trim()).filter((n: string) => n)[0];
+    if (primaryNode && primaryNode.includes('.')) {
+      sanitizedData.domain = primaryNode.substring(primaryNode.indexOf('.') + 1);
+    }
+  }
+
+  Logger.info('Sanitized data for update:', {
     id: id,
     application_type: sanitizedData.application_type,
     ise_application_subtype: sanitizedData.ise_application_subtype,
@@ -389,16 +407,16 @@ app.put('/api/data/:id', asyncHandler(async (req: Request, res: Response) => {
     auto_renew: sanitizedData.auto_renew,
     is_enabled: sanitizedData.is_enabled
   });
-  
+
   // Update connection in database
   await database.updateConnection(id, sanitizedData as ConnectionRecord);
-  
+
   // Pre-create Let's Encrypt account if SSL provider was changed to letsencrypt
   if (sanitizedData.ssl_provider === 'letsencrypt') {
     try {
       const { acmeClient } = await import('./acme-client');
-      const domain = `${sanitizedData.hostname}.${sanitizedData.domain}`;
-      
+      const domain = getDomainFromConnection(sanitizedData as ConnectionRecord) || '';
+
       // Check if account already exists
       const existingAccount = await acmeClient.loadAccount(domain, id);
       if (!existingAccount) {
@@ -581,6 +599,36 @@ app.post('/api/data/:id/import-ise-cert', asyncHandler(async (req: Request, res:
     return res.status(500).json({
       error: 'Failed to import certificate to ISE',
       details: error.message
+    });
+  }
+}));
+
+// Fetch ISE deployment nodes — works for both new and existing connections
+app.post('/api/ise/nodes', asyncHandler(async (req: Request, res: Response) => {
+  const { hostname, username, password } = req.body;
+
+  if (!hostname || !username || !password) {
+    return res.status(400).json({ error: 'Hostname, username, and password are required' });
+  }
+
+  try {
+    const iseProvider = PlatformFactory.createProvider('ise') as ISEProvider;
+    const nodes = await iseProvider.getDeploymentNodes(hostname, username, password);
+
+    return res.json({
+      nodes: nodes.map(n => ({
+        hostname: n.hostname,
+        fqdn: n.fqdn,
+        roles: n.roles,
+        services: n.services,
+        nodeStatus: n.nodeStatus,
+      })),
+    });
+  } catch (error: any) {
+    Logger.error(`Error fetching ISE deployment nodes from ${hostname}:`, error);
+    return res.status(502).json({
+      error: 'Failed to fetch ISE deployment nodes',
+      details: error.message,
     });
   }
 }));
@@ -1289,7 +1337,7 @@ app.get('/api/auto-renewal/status', asyncHandler(async (req: Request, res: Respo
     // Check each auto-renew connection to see if it's actually due for renewal
     for (const connection of autoRenewConnections) {
       try {
-        const hostname = `${connection.hostname}.${connection.domain}`;
+        const hostname = getDomainFromConnection(connection) || '';
         const certInfo = await getCertificateInfoWithFallback(hostname, connection, database);
         
         if (certInfo && certInfo.daysUntilExpiry !== null && certInfo.daysUntilExpiry <= renewalThresholdDays) {
@@ -1297,7 +1345,7 @@ app.get('/api/auto-renewal/status', asyncHandler(async (req: Request, res: Respo
         }
       } catch (error) {
         // If we can't get cert info, we can't determine if it's due for renewal
-        Logger.debug(`Could not check certificate info for ${connection.hostname}.${connection.domain}: ${error}`);
+        Logger.debug(`Could not check certificate info for ${getDomainFromConnection(connection) || 'unknown'}: ${error}`);
       }
     }
     
@@ -1467,9 +1515,7 @@ app.post('/api/data/:id/test-ssh', asyncHandler(async (req: Request, res: Respon
   }
   
   // Construct the FQDN
-  const fqdn = connection.domain ? 
-    `${connection.hostname}.${connection.domain}` : 
-    connection.hostname;
+  const fqdn = getDomainFromConnection(connection) || connection.hostname;
   
   Logger.info(`Testing SSH connection to ${fqdn} for connection ${id}`);
   
@@ -1536,7 +1582,7 @@ app.post('/api/data/:id/restart-service', asyncHandler(async (req: Request, res:
     });
   }
 
-  const fqdn = `${connection.hostname}.${connection.domain}`;
+  const fqdn = getDomainFromConnection(connection) || '';
   Logger.info(`Manual Cisco Tomcat service restart requested for ${fqdn}`);
 
   try {

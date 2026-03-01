@@ -222,13 +222,19 @@ const DataTable = ({ data, onDataChange }) => {
 
     if (columnName === "ise_application_subtype") {
       const subtypes = {
-        "guest": "Guest",
-        "portal": "Portal",
-        "admin": "Admin"
+        "multi_use": "Multi-Use",
+        "admin": "Admin",
+        "eap": "EAP Authentication",
+        "dtls": "DTLS Authentication",
+        "guest": "Portal — Guest",
+        "portal": "Portal — Sponsor",
+        "pxgrid": "pxGrid",
+        "saml": "SAML",
+        "ims": "ISE Messaging"
       };
-      // For ISE connections without a subtype, default to Guest
+      // For ISE connections without a subtype, default to Multi-Use
       if (!value && record?.application_type === "ise") {
-        return "Guest (default)";
+        return "Multi-Use (default)";
       }
       return subtypes[value] || value || "—";
     }

@@ -518,13 +518,32 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     try {
       const { acmeClient } = await import('./acme-client');
       
-      const fullFQDN = `${connection.hostname}.${connection.domain}`;
-      
+      // For ISE, the primary FQDN for the cert is the ISE node (not the optional portal hostname).
+      // For other types, use hostname.domain as before.
+      let fullFQDN: string;
+      if (connection.application_type === 'ise' && connection.ise_nodes) {
+        const primaryNode = connection.ise_nodes.split(',').map(n => n.trim()).filter(n => n)[0];
+        fullFQDN = primaryNode || getDomainFromConnection(connection) || connection.domain;
+      } else {
+        fullFQDN = getDomainFromConnection(connection) || '';
+      }
+
       // Parse altNames from connection
-      const altNames = connection.alt_names 
+      const altNames = connection.alt_names
         ? connection.alt_names.split(',').map(name => name.trim()).filter(name => name.length > 0)
         : [];
-      
+
+      // For ISE: auto-include the SAN/monitoring FQDN if it differs from the node FQDN
+      if (connection.application_type === 'ise' && connection.hostname) {
+        // hostname may be a full FQDN (guest.example.com) or short name (guest)
+        const sanFQDN = connection.hostname.includes('.')
+          ? connection.hostname
+          : (connection.domain ? `${connection.hostname}.${connection.domain}` : '');
+        if (sanFQDN && sanFQDN !== fullFQDN && !altNames.includes(sanFQDN)) {
+          altNames.unshift(sanFQDN);
+        }
+      }
+
       const domains = [fullFQDN, ...altNames];
       
       // Log renewal start
@@ -735,10 +754,8 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
 
           const dnsValue = acmeClient.getDNSRecordValue(keyAuthorization);
 
-          // Extract domain from challenge
-          const challengeDomain = challenge.url.includes('identifier')
-            ? domains.find(d => challenge.url.includes(d)) || domains[0]
-            : domains[0];
+          // Extract domain from challenge (_domain attached by ACMEClient.requestCertificate)
+          const challengeDomain = challenge._domain || domains[0];
 
           await accountManager.saveRenewalLog(connectionId, fullFQDN, `Processing challenge for domain: ${challengeDomain}`);
           await accountManager.saveRenewalLog(connectionId, fullFQDN, `Challenge URL: ${challenge.url}`);
@@ -866,7 +883,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       }
       
     } catch (error) {
-      const fullFQDN = `${connection.hostname}.${connection.domain}`;
+      const fullFQDN = getDomainFromConnection(connection) || '';
       Logger.error('Let\'s Encrypt certificate request failed:', error);
       
       // Log detailed error information
@@ -909,9 +926,9 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       const zeroSSL = await ZeroSSLProvider.create(this.database);
       const mxToolbox = await MXToolboxService.create(this.database);
       
-      const fullFQDN = `${connection.hostname}.${connection.domain}`;
+      const fullFQDN = getDomainFromConnection(connection) || '';
       const domains = [fullFQDN];
-      
+
       // Add alt_names if provided
       if (connection.alt_names) {
         const altNames = connection.alt_names.split(',').map(name => name.trim()).filter(name => name);
@@ -1074,7 +1091,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
   }
 
   private async handleDigitalOceanChallenge(connection: ConnectionRecord, _settings: any[], status: RenewalStatus): Promise<void> {
-    const fullFQDN = `${connection.hostname}.${connection.domain}`;
+    const fullFQDN = getDomainFromConnection(connection) || '';
     
     try {
       const { DigitalOceanDNSProvider } = await import('./dns-providers/digitalocean');
@@ -1129,7 +1146,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
   }
 
   private async handleRoute53Challenge(connection: ConnectionRecord, _settings: any[], status: RenewalStatus): Promise<void> {
-    const fullFQDN = `${connection.hostname}.${connection.domain}`;
+    const fullFQDN = getDomainFromConnection(connection) || '';
     
     try {
       const { Route53DNSProvider } = await import('./dns-providers/route53');
@@ -1184,7 +1201,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
   }
 
   private async handleAzureChallenge(connection: ConnectionRecord, _settings: any[], status: RenewalStatus): Promise<void> {
-    const fullFQDN = `${connection.hostname}.${connection.domain}`;
+    const fullFQDN = getDomainFromConnection(connection) || '';
     
     try {
       const { AzureDNSProvider } = await import('./dns-providers/azure');
@@ -1239,7 +1256,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
   }
 
   private async handleGoogleChallenge(connection: ConnectionRecord, _settings: any[], status: RenewalStatus): Promise<void> {
-    const fullFQDN = `${connection.hostname}.${connection.domain}`;
+    const fullFQDN = getDomainFromConnection(connection) || '';
     
     try {
       const { GoogleDNSProvider } = await import('./dns-providers/google');
@@ -1294,7 +1311,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
   }
 
   private async handleCustomDNSChallenge(connectionId: number, connection: ConnectionRecord, _settings: any[], status: RenewalStatus, operationManager?: OperationStatusManager): Promise<void> {
-    const fullFQDN = `${connection.hostname}.${connection.domain}`;
+    const fullFQDN = getDomainFromConnection(connection) || '';
     
     try {
       // Import the custom DNS provider

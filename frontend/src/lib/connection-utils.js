@@ -30,22 +30,29 @@ export const filterEnabledConnections = (connections) => {
  * @returns {string} - The hostname to display
  */
 export const getConnectionDisplayHostname = (connection) => {
-  if (connection.application_type === 'ise' || connection.application_type === 'general') {
-    // For ISE and General, use hostname and domain with flexible hostname support
+  if (connection.application_type === 'ise') {
+    // ISE: hostname is the PAN FQDN — return directly if it's a full FQDN
+    const hostname = connection.hostname || '';
+    if (hostname.includes('.')) return hostname;
+    // Fallback to ISE node FQDN, then domain
+    if (connection.ise_nodes) {
+      const primaryNode = connection.ise_nodes.split(',').map(n => n.trim()).filter(n => n)[0];
+      if (primaryNode) return primaryNode;
+    }
+    return connection.domain || 'ISE Portal';
+  } else if (connection.application_type === 'general') {
+    // General: use hostname and domain with flexible hostname support
     if (connection.domain) {
       const hostname = connection.hostname || '';
       if (hostname === '*') {
-        // Return wildcard.domain for display
         return `*.${connection.domain}`;
       } else if (hostname) {
         return `${hostname}.${connection.domain}`;
       } else {
-        // Empty hostname, return just domain
         return connection.domain;
       }
     }
-    // Fallback when domain is missing
-    return connection.hostname || (connection.application_type === 'ise' ? 'ISE Portal' : 'General Application');
+    return connection.hostname || 'General Application';
   } else {
     // For VOS applications (strict hostname required)
     if (connection.hostname && connection.domain) {
@@ -74,11 +81,20 @@ export const isWildcardCertificate = (connection) => {
  * @returns {string|null} - The domain to validate certificate against
  */
 export const getCertificateValidationDomain = (connection) => {
-  if (connection.application_type === 'ise' || connection.application_type === 'general') {
+  if (connection.application_type === 'ise') {
+    // ISE: hostname is the PAN FQDN — return directly if it's a full FQDN
+    const hostname = connection.hostname || '';
+    if (hostname.includes('.')) return hostname;
+    // Fallback to ISE node FQDN
+    if (connection.ise_nodes) {
+      const primaryNode = connection.ise_nodes.split(',').map(n => n.trim()).filter(n => n)[0];
+      if (primaryNode) return primaryNode;
+    }
+    return connection.domain || null;
+  } else if (connection.application_type === 'general') {
     if (connection.hostname !== undefined && connection.domain) {
       const hostname = connection.hostname || '';
       if (hostname === '*') {
-        // For wildcard, validate against base domain
         return connection.domain;
       } else if (hostname) {
         return `${hostname}.${connection.domain}`;

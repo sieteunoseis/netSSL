@@ -76,11 +76,14 @@ export interface CSRGenerationParams {
   locality?: string;
   state?: string;
   country?: string;
+  usedFor?: string;
 }
 
 export interface CSRResponse {
   csr: string;
   privateKey?: string;
+  csrId?: string;
+  hostName?: string;
   success: boolean;
   message?: string;
 }
@@ -181,9 +184,15 @@ export abstract class PlatformProvider {
       'Accept': 'application/json'
     };
 
+    // ISE's WAF requires Referer/Origin on mutating requests to pass security checks
+    if (method !== 'GET') {
+      defaultHeaders['Referer'] = `https://${hostname}/admin/`;
+      defaultHeaders['Origin'] = `https://${hostname}`;
+    }
+
     const allHeaders = { ...defaultHeaders, ...headers };
     const body = data ? JSON.stringify(data) : undefined;
-    
+
     if (body) {
       allHeaders['Content-Length'] = Buffer.byteLength(body).toString();
     }
@@ -201,6 +210,8 @@ export abstract class PlatformProvider {
               allHeaders['Cookie'] = csrf.cookie;
             }
             Logger.info(`CSRF token and session cookie obtained for ${hostname}`);
+          } else {
+            Logger.warn(`No CSRF token returned from ${hostname} — proceeding without it`);
           }
         } catch (csrfError: any) {
           Logger.warn(`Could not fetch CSRF token for ${hostname}: ${csrfError.message} - proceeding without it`);
@@ -328,25 +339,32 @@ export abstract class PlatformProvider {
       const req = https.request({
         hostname,
         port: 443,
-        path: '/api/v1/certs/trusted-certificate',
+        path: '/api/v1/deployment/node',
         method: 'GET',
         headers: {
           'Authorization': `Basic ${auth}`,
           'Accept': 'application/json',
-          'X-CSRF-Token': 'fetch'
+          'X-CSRF-Token': 'fetch',
+          'Referer': `https://${hostname}/admin/`,
+          'Origin': `https://${hostname}`
         },
         rejectUnauthorized: false,
         timeout: 10000
       }, (res: any) => {
         res.on('data', () => {});
         res.on('end', () => {
-          const csrfToken = res.headers['x-csrf-token'];
+          // Check multiple header name variants
+          const csrfToken = res.headers['x-csrf-token'] || res.headers['csrf-token'];
           // Extract session cookies (JSESSIONIDSSO, etc.)
           const setCookies = res.headers['set-cookie'] as string[] | undefined;
           const cookieStr = setCookies
             ? setCookies.map((c: string) => c.split(';')[0]).join('; ')
             : '';
-          Logger.info(`CSRF fetch from ${hostname}: status=${res.statusCode}, token=${csrfToken ? 'present' : 'missing'}, cookies=${cookieStr ? 'present' : 'none'}`);
+          // Log all relevant response headers for debugging
+          const headerKeys = Object.keys(res.headers).filter((k: string) =>
+            k.includes('csrf') || k.includes('cookie') || k.includes('token')
+          );
+          Logger.info(`CSRF fetch from ${hostname}: status=${res.statusCode}, token=${csrfToken ? 'present' : 'missing'}, cookies=${cookieStr ? 'present' : 'none'}, relevant-headers=[${headerKeys.join(',')}]`);
           if (csrfToken) {
             resolve({ token: csrfToken, cookie: cookieStr });
           } else {

@@ -180,8 +180,10 @@ export class ACMEClient {
         const dnsChallenge = authorization.challenges.find(
           (challenge: any) => challenge.type === 'dns-01'
         );
-        
+
         if (dnsChallenge) {
+          // Attach the domain so callers know which domain each challenge belongs to
+          dnsChallenge._domain = authorization.identifier.value;
           challenges.push(dnsChallenge);
           Logger.info(`Found DNS-01 challenge for ${authorization.identifier.value}`);
         } else {

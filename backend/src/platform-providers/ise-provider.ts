@@ -90,32 +90,66 @@ export class ISEProvider extends PlatformProvider {
       Logger.info(`Generating CSR for ISE platform: ${hostname}`);
 
       const csrData = {
+        hostnames: [hostname],
         subjectCommonName: params.commonName,
-        subjectOrgName: params.organizationName || 'Default Organization',
+        subjectOrg: params.organizationName || 'Default Organization',
         subjectOrgUnit: params.organizationalUnit || 'IT Department',
-        subjectLocation: params.locality || 'Default City',
+        subjectCity: params.locality || 'Default City',
         subjectState: params.state || 'Default State',
         subjectCountry: params.country || 'US',
         keyType: params.keyType || 'RSA',
-        keyLength: params.keySize || 2048,
-        digestType: 'SHA256',
-        certificateUsage: 'PORTAL',
-        subjectAlternativeNames: params.subjectAltNames || []
+        keyLength: String(params.keySize || 2048),
+        digestType: 'SHA-256',
+        usedFor: params.usedFor || 'MULTI-USE',
+        sanDNS: params.subjectAltNames || []
       };
 
-      const response = await this.makeApiRequest(
-        hostname,
-        username,
-        password,
-        this.config.apiEndpoints.generateCSR,
-        'POST',
-        csrData
-      );
+      let response: any;
+      try {
+        response = await this.makeApiRequest(
+          hostname,
+          username,
+          password,
+          this.config.apiEndpoints.generateCSR,
+          'POST',
+          csrData
+        );
+      } catch (apiError: any) {
+        // Handle 409 — a CSR with the same friendly name already exists
+        if (apiError.message?.includes('409')) {
+          Logger.info(`CSR conflict on ISE (409), deleting existing CSR and retrying...`);
+          await this.deleteConflictingCSR(hostname, username, password);
+          response = await this.makeApiRequest(
+            hostname,
+            username,
+            password,
+            this.config.apiEndpoints.generateCSR,
+            'POST',
+            csrData
+          );
+        } else {
+          throw apiError;
+        }
+      }
 
-      if (response && response.response) {
+      // ISE returns response as an array of CSR records with IDs
+      if (response && response.response && Array.isArray(response.response) && response.response.length > 0) {
+        const csrRecord = response.response[0];
+        const csrId = csrRecord.id;
+
+        if (!csrId) {
+          throw new Error('CSR generation succeeded but no CSR ID was returned');
+        }
+
+        Logger.info(`CSR generated on ISE with ID: ${csrId}, exporting CSR PEM...`);
+
+        // Export the CSR PEM content (ISE doesn't return it inline)
+        const csrPem = await this.exportCSR(hostname, username, password, csrId);
+
         return {
-          csr: response.response.certificateSigningRequest,
-          privateKey: response.response.privateKey,
+          csr: csrPem,
+          csrId: csrId,
+          hostName: hostname,
           success: true,
           message: 'CSR generated successfully'
         };
@@ -128,6 +162,244 @@ export class ISEProvider extends PlatformProvider {
         csr: '',
         success: false,
         message: error.message || 'Failed to generate CSR'
+      };
+    }
+  }
+
+  /**
+   * Delete all pending CSRs on an ISE node to resolve 409 conflicts
+   */
+  private async deleteConflictingCSR(
+    hostname: string,
+    username: string,
+    password: string
+  ): Promise<void> {
+    const pendingCSRs = await this.listPendingCSRs(hostname, username, password);
+    for (const csr of pendingCSRs) {
+      try {
+        Logger.info(`Deleting stale CSR on ISE: ${csr.friendlyName} (ID: ${csr.id}, host: ${csr.hostName})`);
+        await this.makeApiRequest(
+          hostname,
+          username,
+          password,
+          `${this.config.apiEndpoints.generateCSR}/${csr.hostName}/${csr.id}`,
+          'DELETE'
+        );
+        Logger.info(`Deleted CSR ${csr.id} successfully`);
+      } catch (error: any) {
+        Logger.warn(`Failed to delete CSR ${csr.id}: ${error.message}`);
+      }
+    }
+  }
+
+  /**
+   * Export CSR PEM content from ISE by hostname and CSR ID
+   */
+  async exportCSR(
+    hostname: string,
+    username: string,
+    password: string,
+    csrId: string
+  ): Promise<string> {
+    const exportPath = `/api/v1/certs/certificate-signing-request/export/${hostname}/${csrId}`;
+    const response = await this.makeApiRequest(
+      hostname,
+      username,
+      password,
+      exportPath,
+      'GET'
+    );
+
+    // The export endpoint returns the CSR PEM as text
+    if (typeof response === 'string' && response.includes('BEGIN CERTIFICATE REQUEST')) {
+      return response;
+    }
+
+    // If response is JSON with a data field
+    if (response && response.response) {
+      return response.response;
+    }
+
+    throw new Error(`Failed to export CSR PEM from ISE for CSR ID: ${csrId}`);
+  }
+
+  /**
+   * List pending CSRs on ISE node
+   */
+  async listPendingCSRs(
+    hostname: string,
+    username: string,
+    password: string
+  ): Promise<Array<{ id: string; hostName: string; subject: string; friendlyName: string }>> {
+    try {
+      Logger.info(`Listing pending CSRs on ISE: ${hostname}`);
+
+      const response = await this.makeApiRequest(
+        hostname,
+        username,
+        password,
+        this.config.apiEndpoints.generateCSR, // Same endpoint, GET method
+        'GET'
+      );
+
+      if (response && response.response && Array.isArray(response.response)) {
+        return response.response.map((csr: any) => ({
+          id: csr.id,
+          hostName: csr.hostName || hostname,
+          subject: csr.subject || '',
+          friendlyName: csr.friendlyName || ''
+        }));
+      }
+
+      return [];
+    } catch (error: any) {
+      Logger.warn(`Failed to list pending CSRs on ISE ${hostname}: ${error.message}`);
+      return [];
+    }
+  }
+
+  /**
+   * Neutralise trusted certificates that conflict with the cert being bound.
+   * ISE blocks bind if there's a trusted cert with the same subject CN but different serial.
+   * Strategy: first try stripping all trust roles via PUT (makes the cert untrusted so the
+   * bind conflict check may ignore it), then try DELETE.  Either action resolving the
+   * conflict is sufficient — failures are logged but non-fatal.
+   */
+  async neutraliseConflictingTrustedCerts(
+    hostname: string,
+    username: string,
+    password: string,
+    subjectCN: string
+  ): Promise<number> {
+    try {
+      Logger.info(`Checking for conflicting trusted certs with CN=${subjectCN} on ${hostname}`);
+
+      const response = await this.makeApiRequest(
+        hostname,
+        username,
+        password,
+        `${this.config.apiEndpoints.getTrustCerts}?size=100`,
+        'GET'
+      );
+
+      if (!response?.response || !Array.isArray(response.response)) {
+        return 0;
+      }
+
+      let resolvedCount = 0;
+      for (const cert of response.response) {
+        const subject = cert.subject || '';
+        const friendlyName = cert.friendlyName || '';
+        if (subject.includes(`CN=${subjectCN}`) || friendlyName.includes(subjectCN)) {
+          // --- Attempt 1: strip all trust roles via PUT ---
+          try {
+            Logger.info(`Stripping trust roles from conflicting cert: "${friendlyName}" (ID: ${cert.id}, subject: ${subject})`);
+            await this.makeApiRequest(
+              hostname,
+              username,
+              password,
+              `${this.config.apiEndpoints.getTrustCerts}/${cert.id}`,
+              'PUT',
+              {
+                id: cert.id,
+                name: friendlyName,
+                description: cert.description || '',
+                trustForIseAuth: false,
+                trustForClientAuth: false,
+                trustForCiscoServicesAuth: false,
+                trustForCertificateBasedAdminAuth: false,
+                enableServerIdentityCheck: false,
+              }
+            );
+            resolvedCount++;
+            Logger.info(`Successfully stripped trust roles from cert ${cert.id}`);
+            continue; // No need to also try DELETE
+          } catch (putError: any) {
+            Logger.warn(`Failed to strip trust roles from cert ${cert.id}: ${putError.message}`);
+          }
+
+          // --- Attempt 2: delete the cert outright ---
+          try {
+            Logger.info(`Attempting to delete conflicting trusted cert: "${friendlyName}" (ID: ${cert.id})`);
+            await this.makeApiRequest(
+              hostname,
+              username,
+              password,
+              `${this.config.apiEndpoints.getTrustCerts}/${cert.id}`,
+              'DELETE'
+            );
+            resolvedCount++;
+            Logger.info(`Successfully deleted conflicting trusted cert: ${cert.id}`);
+          } catch (deleteError: any) {
+            Logger.warn(`Failed to delete conflicting trusted cert ${cert.id}: ${deleteError.message}`);
+          }
+        }
+      }
+
+      if (resolvedCount > 0) {
+        Logger.info(`Resolved ${resolvedCount} conflicting trusted cert(s) for CN=${subjectCN}`);
+      }
+      return resolvedCount;
+    } catch (error: any) {
+      Logger.warn(`Could not check/resolve conflicting trusted certs: ${error.message}`);
+      return 0;
+    }
+  }
+
+  /**
+   * Bind a signed certificate to a pending CSR on ISE
+   */
+  async bindSignedCertificate(
+    hostname: string,
+    username: string,
+    password: string,
+    csrId: string,
+    signedCertPem: string,
+    roles?: { admin?: boolean; portal?: boolean; eap?: boolean; radius?: boolean; pxgrid?: boolean; ims?: boolean; saml?: boolean }
+  ): Promise<{ success: boolean; message: string }> {
+    try {
+      Logger.info(`Binding signed certificate to CSR ${csrId} on ISE: ${hostname}`);
+
+      const bindData = {
+        hostName: hostname,
+        id: csrId,
+        data: signedCertPem,
+        name: `netSSL-${new Date().toISOString().slice(0, 10)}`,
+        admin: roles?.admin ?? false,
+        eap: roles?.eap ?? false,
+        radius: roles?.radius ?? false,
+        portal: roles?.portal ?? true,
+        pxgrid: roles?.pxgrid ?? false,
+        ims: roles?.ims ?? false,
+        saml: roles?.saml ?? false,
+        allowExtendedValidity: true,
+        allowOutOfDateCert: true,
+        allowReplacementOfCertificates: true,
+        allowReplacementOfPortalGroupTag: true,
+        allowRoleTransferForSameSubject: true,
+        allowPortalTagTransferForSameSubject: true,
+        validateCertificateExtensions: false
+      };
+
+      const response = await this.makeApiRequest(
+        hostname,
+        username,
+        password,
+        '/api/v1/certs/signed-certificate/bind',
+        'POST',
+        bindData
+      );
+
+      Logger.info(`Successfully bound certificate to CSR ${csrId} on ${hostname}`);
+      return {
+        success: true,
+        message: response?.response?.message || 'Certificate was successfully bound'
+      };
+    } catch (error: any) {
+      Logger.error(`Failed to bind certificate to CSR ${csrId} on ${hostname}:`, error);
+      return {
+        success: false,
+        message: error.message || 'Failed to bind certificate'
       };
     }
   }
@@ -441,9 +713,61 @@ export class ISEProvider extends PlatformProvider {
     }
   }
 
+  /**
+   * Fetch all deployment nodes from the ISE cluster.
+   * Calls GET /api/v1/deployment/node and returns an array of node objects
+   * with hostname, fqdn, roles, and services.
+   */
+  async getDeploymentNodes(
+    hostname: string,
+    username: string,
+    password: string
+  ): Promise<Array<{ hostname: string; fqdn: string; roles: string[]; services: string[]; nodeStatus: string }>> {
+    Logger.info(`Fetching deployment nodes from ISE: ${hostname}`);
+
+    const response = await this.makeApiRequest(
+      hostname,
+      username,
+      password,
+      '/api/v1/deployment/node',
+      'GET'
+    );
+
+    if (response && response.response && Array.isArray(response.response)) {
+      return response.response.map((node: any) => ({
+        hostname: node.hostname || '',
+        fqdn: node.fqdn || node.hostname || '',
+        roles: Array.isArray(node.roles) ? node.roles : [],
+        services: Array.isArray(node.services) ? node.services : [],
+        nodeStatus: node.nodeStatus || 'Unknown',
+      }));
+    }
+
+    return [];
+  }
+
   // ---------------------------------------------------------------------------
   // Renewal lifecycle methods (moved from certificate-renewal.ts)
   // ---------------------------------------------------------------------------
+
+  /**
+   * Map ISE certificate usage (ise_application_subtype) to CSR `usedFor` param
+   * and bind/import role flags.
+   */
+  private getCertificateRoles(usage: string | undefined): { usedFor: string; roles: Record<string, boolean> } {
+    const roleMap: Record<string, { usedFor: string; roles: Record<string, boolean> }> = {
+      multi_use: { usedFor: 'MULTI-USE', roles: { admin: true, portal: true, eap: true } },
+      admin:     { usedFor: 'ADMIN',     roles: { admin: true } },
+      eap:       { usedFor: 'EAP-AUTH',  roles: { eap: true } },
+      dtls:      { usedFor: 'DTLS-AUTH', roles: { radius: true } },
+      guest:     { usedFor: 'PORTAL',    roles: { portal: true } },
+      portal:    { usedFor: 'PORTAL',    roles: { portal: true } },
+      pxgrid:    { usedFor: 'PXGRID',    roles: { pxgrid: true } },
+      saml:      { usedFor: 'SAML',      roles: { saml: true } },
+      ims:       { usedFor: 'IMS',       roles: { ims: true } },
+    };
+    return roleMap[usage || 'multi_use'] || roleMap['multi_use'];
+  }
 
   get supportsRecentCertRetry(): boolean {
     return true;
@@ -460,7 +784,18 @@ export class ISEProvider extends PlatformProvider {
       throw new Error('Username and password are required for ISE CSR generation');
     }
 
-    // If a custom CSR is provided, use it directly
+    // Helper to save CSR metadata (ID + hostname) for use during installCertificate
+    const saveCSRMetadata = async (csrId: string, csrHostName: string) => {
+      const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
+      const envDir = isStaging ? 'staging' : 'prod';
+      const metadataDir = path.join(accountManager['accountsDir'], `connection-${connectionId}`, envDir);
+      await fs.promises.mkdir(metadataDir, { recursive: true });
+      const metadataPath = path.join(metadataDir, 'csr_metadata.json');
+      await fs.promises.writeFile(metadataPath, JSON.stringify({ csrId, hostName: csrHostName }));
+      Logger.info(`Saved CSR metadata: id=${csrId}, hostName=${csrHostName}`);
+    };
+
+    // If a custom CSR is provided (pasted from ISE GUI), use it directly
     if (connection.ise_certificate && connection.ise_certificate.trim()) {
       const csrMatch = connection.ise_certificate.match(/-----BEGIN CERTIFICATE REQUEST-----[\s\S]*?-----END CERTIFICATE REQUEST-----/);
       if (!csrMatch) {
@@ -470,6 +805,35 @@ export class ISEProvider extends PlatformProvider {
 
       status.logs.push(`Using provided CSR for ISE application: ${connection.name}`);
       await ctx.saveLog(`Using provided CSR for ISE application: ${connection.name}`);
+
+      // Look up the pending CSR ID on ISE so we can bind later instead of importing
+      if (connection.ise_nodes) {
+        const nodes = connection.ise_nodes.split(',').map(node => node.trim()).filter(node => node);
+        if (nodes.length > 0) {
+          try {
+            const primaryNode = nodes[0];
+            const pendingCSRs = await this.listPendingCSRs(primaryNode, connection.username!, connection.password!);
+
+            // Find the CSR that matches our domain
+            const matchingCSR = pendingCSRs.find(c =>
+              c.subject?.includes(fullFQDN) || c.friendlyName?.includes(fullFQDN)
+            );
+
+            if (matchingCSR) {
+              await saveCSRMetadata(matchingCSR.id, matchingCSR.hostName);
+              status.logs.push(`Found pending CSR on ISE (ID: ${matchingCSR.id}) — will use bind for installation`);
+              await ctx.saveLog(`Found pending CSR on ISE (ID: ${matchingCSR.id}) — will use bind for installation`);
+            } else {
+              status.logs.push(`No matching pending CSR found on ISE — will use import for installation`);
+              await ctx.saveLog(`No matching pending CSR found on ISE — will use import for installation`);
+            }
+          } catch (lookupError: any) {
+            Logger.warn(`Could not look up pending CSRs on ISE: ${lookupError.message}`);
+            status.logs.push(`Could not look up pending CSRs — will use import for installation`);
+          }
+        }
+      }
+
       return csr;
     }
 
@@ -488,16 +852,42 @@ export class ISEProvider extends PlatformProvider {
       status.logs.push(`Generating CSR from ISE node: ${primaryNode}`);
       await ctx.saveLog(`Generating CSR from ISE node: ${primaryNode}`);
 
+      // Parse CSR config from connection (user-configured via wizard)
+      let csrConfig = { country: 'US', state: 'State', locality: 'City',
+                        organization: '', organizationalUnit: '', keySize: '2048' };
+      if (connection.ise_csr_config) {
+        try { csrConfig = { ...csrConfig, ...JSON.parse(connection.ise_csr_config) }; }
+        catch (e) { Logger.warn('Invalid ise_csr_config JSON, using defaults'); }
+      }
+
+      // Derive usedFor from certificate usage selection
+      const { usedFor } = this.getCertificateRoles(connection.ise_application_subtype);
+
+      // Build SAN list: primary node (ISE requires it in SAN, not just CN)
+      // + other ISE nodes + portal/additional SANs from alt_names.
+      // The CSR must include ALL domains that will be in the ACME order
+      // so Let's Encrypt finalization succeeds (CSR identifiers must match order).
+      const csrSANs = [primaryNode, ...nodes.slice(1)];
+      if (connection.alt_names) {
+        const altNames = connection.alt_names.split(',').map((s: string) => s.trim()).filter((s: string) => s);
+        for (const name of altNames) {
+          if (!csrSANs.includes(name)) {
+            csrSANs.push(name);
+          }
+        }
+      }
+
       const csrParams = {
-        commonName: fullFQDN,
-        subjectAltNames: connection.alt_names ? connection.alt_names.split(',').map(name => name.trim()) : [],
-        keySize: 2048,
+        commonName: primaryNode,
+        subjectAltNames: csrSANs,
+        keySize: parseInt(csrConfig.keySize) || 2048,
         keyType: 'RSA',
-        organizationName: 'Organization',
-        organizationalUnit: 'IT Department',
-        locality: 'City',
-        state: 'State',
-        country: 'US',
+        organizationName: csrConfig.organization || undefined,
+        organizationalUnit: csrConfig.organizationalUnit || undefined,
+        locality: csrConfig.locality || undefined,
+        state: csrConfig.state || undefined,
+        country: csrConfig.country || 'US',
+        usedFor,
       };
 
       const csrResponse = await this.generateCSR(
@@ -516,7 +906,14 @@ export class ISEProvider extends PlatformProvider {
 
       await accountManager.saveCSR(connectionId, fullFQDN, csrResponse.csr);
 
-      // Save private key if provided by ISE
+      // Save CSR ID for bind during installation
+      if (csrResponse.csrId) {
+        await saveCSRMetadata(csrResponse.csrId, csrResponse.hostName || primaryNode);
+        status.logs.push(`CSR ID saved (${csrResponse.csrId}) — will use bind for installation`);
+        await ctx.saveLog(`CSR ID saved (${csrResponse.csrId}) — will use bind for installation`);
+      }
+
+      // Save private key if provided by ISE (shouldn't happen with new API, but keep for safety)
       if (csrResponse.privateKey) {
         status.logs.push(`Private key received from ISE and saved`);
         await ctx.saveLog(`Private key received from ISE and saved`);
@@ -555,28 +952,14 @@ export class ISEProvider extends PlatformProvider {
     }
 
     try {
-      // Get private key
-      let privateKey = '';
-      if (connection.ise_private_key && connection.ise_private_key.trim()) {
-        privateKey = connection.ise_private_key;
-        status.logs.push(`Using provided private key for ISE certificate import`);
-      } else {
-        const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
-        const envDir = isStaging ? 'staging' : 'prod';
-        const privateKeyPath = path.join(accountManager['accountsDir'], `connection-${connectionId}`, envDir, 'private_key.pem');
-        try {
-          privateKey = await fs.promises.readFile(privateKeyPath, 'utf8');
-          status.logs.push(`Loaded private key from accounts folder`);
-        } catch {
-          throw new Error('Private key not found. Please ensure private key is provided or CSR was generated via this system.');
-        }
-      }
-
-      // Load certificate files
       const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
       const envDir = isStaging ? 'staging' : 'prod';
       const certDir = path.join(accountManager['accountsDir'], `connection-${connectionId}`, envDir);
 
+      // Parse ISE nodes
+      const nodes = connection.ise_nodes.split(',').map(node => node.trim()).filter(node => node);
+
+      // Load CA certificates for trust store upload
       let caCertificates: string[] = [];
       let filesFound = false;
 
@@ -613,20 +996,7 @@ export class ISEProvider extends PlatformProvider {
         caCertificates = certificates.slice(1);
       }
 
-      // Parse ISE nodes
-      const nodes = connection.ise_nodes.split(',').map(node => node.trim()).filter(node => node);
-
-      // Parse custom configuration
-      let customConfig = {};
-      if (connection.ise_cert_import_config) {
-        try {
-          customConfig = JSON.parse(connection.ise_cert_import_config);
-        } catch {
-          status.logs.push(`Warning: Invalid JSON in ISE import config, using defaults`);
-        }
-      }
-
-      // Upload CA certificates first
+      // Upload CA certificates first (needed for both bind and import flows)
       if (caCertificates.length > 0) {
         status.logs.push(`Uploading ${caCertificates.length} CA certificate(s) to ISE nodes`);
         await ctx.saveLog(`Uploading ${caCertificates.length} CA certificate(s) to ISE nodes`);
@@ -635,14 +1005,14 @@ export class ISEProvider extends PlatformProvider {
           try {
             const caResult = await this.uploadTrustCertificates(node, connection.username, connection.password, caCertificates);
             if (caResult.success) {
-              status.logs.push(`\u2705 CA certificates uploaded to ${node}`);
-              await ctx.saveLog(`\u2705 CA certificates uploaded to ${node}`);
+              status.logs.push(`CA certificates uploaded to ${node}`);
+              await ctx.saveLog(`CA certificates uploaded to ${node}`);
             } else {
-              status.logs.push(`\u26a0\ufe0f CA certificate upload warning for ${node}: ${caResult.message}`);
-              await ctx.saveLog(`\u26a0\ufe0f CA certificate upload warning for ${node}: ${caResult.message}`);
+              status.logs.push(`CA certificate upload warning for ${node}: ${caResult.message}`);
+              await ctx.saveLog(`CA certificate upload warning for ${node}: ${caResult.message}`);
             }
           } catch (error: any) {
-            const errorMsg = `\u26a0\ufe0f CA certificate upload failed for ${node}: ${error.message}`;
+            const errorMsg = `CA certificate upload failed for ${node}: ${error.message}`;
             status.logs.push(errorMsg);
             await ctx.saveLog(errorMsg);
 
@@ -653,7 +1023,7 @@ export class ISEProvider extends PlatformProvider {
         }
       }
 
-      // Load the domain certificate
+      // Load the leaf certificate for bind and import
       let domainCertificate = '';
       try {
         const certPath = path.join(certDir, 'certificate.pem');
@@ -669,6 +1039,127 @@ export class ISEProvider extends PlatformProvider {
           throw new Error('No certificates found in certificate chain');
         }
         domainCertificate = certificates[0];
+      }
+
+      // --- Try BIND approach first (for CSR-generated certs) ---
+      let csrMetadata: { csrId: string; hostName: string } | null = null;
+      try {
+        const metadataPath = path.join(certDir, 'csr_metadata.json');
+        const metadataRaw = await fs.promises.readFile(metadataPath, 'utf8');
+        csrMetadata = JSON.parse(metadataRaw);
+      } catch { /* no CSR metadata — will fall back to import */ }
+
+      if (csrMetadata && csrMetadata.csrId) {
+        status.logs.push(`Using CSR bind approach (CSR ID: ${csrMetadata.csrId})`);
+        await ctx.saveLog(`Using CSR bind approach (CSR ID: ${csrMetadata.csrId})`);
+
+        // Neutralise conflicting trusted certs before bind — ISE blocks bind if a
+        // trusted cert with the same CN but different serial exists (e.g., the
+        // default self-signed server cert or a previously imported cert).
+        // Strategy: strip trust roles first (PUT), then try DELETE as fallback.
+        const primaryNode = nodes[0];
+        try {
+          const resolvedCount = await this.neutraliseConflictingTrustedCerts(
+            primaryNode,
+            connection.username!,
+            connection.password!,
+            fullFQDN
+          );
+          if (resolvedCount > 0) {
+            status.logs.push(`Resolved ${resolvedCount} conflicting trusted cert(s) with CN=${fullFQDN}`);
+            await ctx.saveLog(`Resolved ${resolvedCount} conflicting trusted cert(s) with CN=${fullFQDN}`);
+          }
+        } catch (cleanupError: any) {
+          status.logs.push(`Warning: Could not resolve conflicting trusted certs: ${cleanupError.message}`);
+          await ctx.saveLog(`Warning: Could not resolve conflicting trusted certs: ${cleanupError.message}`);
+        }
+
+        // Derive roles from certificate usage selection, with import config as override
+        const { roles: derivedRoles } = this.getCertificateRoles(connection.ise_application_subtype);
+        let roles: { admin?: boolean; portal?: boolean; eap?: boolean; radius?: boolean; pxgrid?: boolean; ims?: boolean; saml?: boolean } = { ...derivedRoles };
+        if (connection.ise_cert_import_config) {
+          try {
+            const importConfig = JSON.parse(connection.ise_cert_import_config);
+            // Override derived roles with explicit import config values
+            if (importConfig.admin !== undefined) roles.admin = importConfig.admin;
+            if (importConfig.portal !== undefined) roles.portal = importConfig.portal;
+            if (importConfig.eap !== undefined) roles.eap = importConfig.eap;
+            if (importConfig.radius !== undefined) roles.radius = importConfig.radius;
+            if (importConfig.pxgrid !== undefined) roles.pxgrid = importConfig.pxgrid;
+            if (importConfig.ims !== undefined) roles.ims = importConfig.ims;
+            if (importConfig.saml !== undefined) roles.saml = importConfig.saml;
+          } catch {
+            status.logs.push(`Warning: Invalid JSON in ISE import config, using derived roles from certificate usage`);
+          }
+        }
+
+        // Let's Encrypt certs only have serverAuth EKU — pxGrid and IMS require
+        // both clientAuth and serverAuth. Strip these roles to avoid bind rejection.
+        if (connection.ssl_provider === 'letsencrypt' || connection.ssl_provider === 'lets_encrypt') {
+          if (roles.pxgrid || roles.ims) {
+            const stripped: string[] = [];
+            if (roles.pxgrid) { roles.pxgrid = false; stripped.push('pxGrid'); }
+            if (roles.ims) { roles.ims = false; stripped.push('IMS'); }
+            const msg = `Removed ${stripped.join(', ')} role(s) from bind — Let's Encrypt certs lack clientAuth EKU`;
+            status.logs.push(msg);
+            await ctx.saveLog(msg);
+          }
+        }
+
+        // Use leaf cert only for bind — ISE builds the chain from its trust store.
+        // Sending the full chain can trigger ISE's content security filter.
+        const bindResult = await this.bindSignedCertificate(
+          csrMetadata.hostName,
+          connection.username,
+          connection.password,
+          csrMetadata.csrId,
+          domainCertificate,
+          roles
+        );
+
+        if (bindResult.success) {
+          status.logs.push(`Certificate successfully bound to CSR on ${csrMetadata.hostName}`);
+          await ctx.saveLog(`Certificate successfully bound to CSR on ${csrMetadata.hostName}`);
+
+          // Clean up CSR metadata file after successful bind
+          try {
+            await fs.promises.unlink(path.join(certDir, 'csr_metadata.json'));
+          } catch { /* ignore */ }
+
+          return;
+        }
+
+        // Bind failed — log and fall through to import
+        status.logs.push(`CSR bind failed: ${bindResult.message} — falling back to import`);
+        await ctx.saveLog(`CSR bind failed: ${bindResult.message} — falling back to import`);
+      }
+
+      // --- Fallback: IMPORT approach (requires private key) ---
+      status.logs.push(`Using certificate import approach`);
+      await ctx.saveLog(`Using certificate import approach`);
+
+      let privateKey = '';
+      if (connection.ise_private_key && connection.ise_private_key.trim()) {
+        privateKey = connection.ise_private_key;
+        status.logs.push(`Using provided private key for ISE certificate import`);
+      } else {
+        const privateKeyPath = path.join(certDir, 'private_key.pem');
+        try {
+          privateKey = await fs.promises.readFile(privateKeyPath, 'utf8');
+          status.logs.push(`Loaded private key from accounts folder`);
+        } catch {
+          throw new Error('Private key not found and CSR bind not available. Please ensure private key is provided or generate CSR via ISE/netSSL.');
+        }
+      }
+
+      // Parse custom configuration
+      let customConfig = {};
+      if (connection.ise_cert_import_config) {
+        try {
+          customConfig = JSON.parse(connection.ise_cert_import_config);
+        } catch {
+          status.logs.push(`Warning: Invalid JSON in ISE import config, using defaults`);
+        }
       }
 
       // Import identity certificate to all nodes
@@ -692,16 +1183,16 @@ export class ISEProvider extends PlatformProvider {
 
       for (const nodeResult of result.results) {
         if (nodeResult.status === 'success') {
-          const successMsg = `\u2705 ${nodeResult.node}: ${nodeResult.message}`;
+          const successMsg = `${nodeResult.node}: ${nodeResult.message}`;
           status.logs.push(successMsg);
           await ctx.saveLog(successMsg);
         } else {
-          const errorMsg = `\u274c ${nodeResult.node}: ${nodeResult.message}`;
+          const errorMsg = `${nodeResult.node}: ${nodeResult.message}`;
           status.logs.push(errorMsg);
           await ctx.saveLog(errorMsg);
 
           if (nodeResult.message && (nodeResult.message.includes('SSL certificate') || nodeResult.message.includes('expired'))) {
-            const guidanceMsg = `\ud83d\udca1 Suggestion for ${nodeResult.node}: Update the SSL certificate on this ISE node before attempting certificate import`;
+            const guidanceMsg = `Suggestion for ${nodeResult.node}: Update the SSL certificate on this ISE node before attempting certificate import`;
             status.logs.push(guidanceMsg);
             await ctx.saveLog(guidanceMsg);
           }
@@ -720,10 +1211,15 @@ export class ISEProvider extends PlatformProvider {
       }
 
       if (successCount < totalCount) {
-        const warningMsg = `\u26a0\ufe0f Warning: Certificate imported to ${successCount}/${totalCount} nodes. Some nodes may require manual certificate installation.`;
+        const warningMsg = `Warning: Certificate imported to ${successCount}/${totalCount} nodes. Some nodes may require manual certificate installation.`;
         status.logs.push(warningMsg);
         await ctx.saveLog(warningMsg);
       }
+
+      // Clean up CSR metadata if it existed but bind failed and import succeeded
+      try {
+        await fs.promises.unlink(path.join(certDir, 'csr_metadata.json'));
+      } catch { /* ignore */ }
     } catch (error: any) {
       const errorMsg = `Failed to upload certificate to ISE: ${error.message}`;
       Logger.error(errorMsg);

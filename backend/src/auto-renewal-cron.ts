@@ -3,6 +3,7 @@ import { DatabaseManager } from './database';
 import { Logger } from './logger';
 import { certificateRenewalService } from './certificate-renewal';
 import { SSHClient } from './ssh-client';
+import { getDomainFromConnection } from './utils/domain-utils';
 
 export class AutoRenewalCron {
   private database: DatabaseManager;
@@ -74,7 +75,7 @@ export class AutoRenewalCron {
   private async checkCertificateExpiration(connection: any): Promise<boolean> {
     try {
       const { getCertificateInfoWithFallback } = await import('./certificate');
-      const domain = `${connection.hostname}.${connection.domain}`;
+      const domain = getDomainFromConnection(connection) || '';
       
       const certInfo = await getCertificateInfoWithFallback(domain, connection);
       if (!certInfo || !certInfo.isValid || !certInfo.validTo) {
@@ -100,7 +101,7 @@ export class AutoRenewalCron {
    */
   private async renewCertificate(connection: any) {
     try {
-      Logger.info(`Starting auto-renewal for ${connection.hostname}.${connection.domain}`);
+      Logger.info(`Starting auto-renewal for ${getDomainFromConnection(connection) || 'unknown'}`);
 
       // Update status to "in_progress" and notify WebSocket clients
       await this.updateAutoRenewalStatus(connection.id, 'in_progress', new Date().toISOString());
@@ -113,7 +114,7 @@ export class AutoRenewalCron {
           io.emit('auto-renewal-status', {
             connectionId: connection.id,
             status: 'in_progress',
-            message: `Auto-renewal started for ${connection.hostname}.${connection.domain}`,
+            message: `Auto-renewal started for ${getDomainFromConnection(connection) || 'unknown'}`,
             timestamp: new Date().toISOString()
           });
         }
@@ -138,7 +139,7 @@ export class AutoRenewalCron {
         const status = await certificateRenewalService.getRenewalStatus(renewalStatus.id);
         
         if (status && status.status === 'completed') {
-          Logger.info(`Certificate renewal completed for ${connection.hostname}.${connection.domain}`);
+          Logger.info(`Certificate renewal completed for ${getDomainFromConnection(connection) || 'unknown'}`);
           
           // Note: Tomcat service restart is already handled by the certificate renewal service
           // No need to restart again here
@@ -154,7 +155,7 @@ export class AutoRenewalCron {
               io.emit('auto-renewal-status', {
                 connectionId: connection.id,
                 status: 'success',
-                message: `Auto-renewal completed successfully for ${connection.hostname}.${connection.domain}`,
+                message: `Auto-renewal completed successfully for ${getDomainFromConnection(connection) || 'unknown'}`,
                 timestamp: new Date().toISOString()
               });
             }
@@ -163,7 +164,7 @@ export class AutoRenewalCron {
           }
           return;
         } else if (status && status.status === 'failed') {
-          Logger.error(`Certificate renewal failed for ${connection.hostname}.${connection.domain}: ${status.error}`);
+          Logger.error(`Certificate renewal failed for ${getDomainFromConnection(connection) || 'unknown'}: ${status.error}`);
           await this.updateAutoRenewalStatus(connection.id, 'failed', new Date().toISOString());
           return;
         }
@@ -172,7 +173,7 @@ export class AutoRenewalCron {
         await new Promise(resolve => setTimeout(resolve, 10000));
       }
 
-      Logger.error(`Certificate renewal timed out for ${connection.hostname}.${connection.domain}`);
+      Logger.error(`Certificate renewal timed out for ${getDomainFromConnection(connection) || 'unknown'}`);
       await this.updateAutoRenewalStatus(connection.id, 'timeout', new Date().toISOString());
       
     } catch (error: any) {
@@ -219,9 +220,9 @@ export class AutoRenewalCron {
    */
   private async restartTomcatService(connection: any) {
     try {
-      Logger.info(`Restarting Cisco Tomcat service for ${connection.hostname}.${connection.domain}`);
+      Logger.info(`Restarting Cisco Tomcat service for ${getDomainFromConnection(connection) || 'unknown'}`);
 
-      const fqdn = `${connection.hostname}.${connection.domain}`;
+      const fqdn = getDomainFromConnection(connection) || '';
       
       // Test SSH connection first
       const sshTest = await SSHClient.testConnection({

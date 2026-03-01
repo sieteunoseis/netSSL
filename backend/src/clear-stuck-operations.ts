@@ -23,6 +23,8 @@ async function clearStuckOperations() {
     'ise_private_key',
     'ise_cert_import_config',
     'ise_application_subtype',
+    'ise_csr_source',
+    'ise_csr_config',
     'general_private_key',
     'alt_names',
     'enable_ssh',

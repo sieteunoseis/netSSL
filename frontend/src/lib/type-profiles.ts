@@ -6,6 +6,7 @@
 import {
   type FieldDefinition,
   applicationTypeField,
+  ISE_CERT_IMPORT_DEFAULT,
   // Shared
   nameField,
   usernameField,
@@ -26,16 +27,12 @@ import {
   hostnameVosField,
   applicationTypeInfoVosField,
   autoRestartServiceField,
-  // ISE
-  hostnameIseField,
-  iseApplicationSubtypeField,
-  iseSubtypeInfoGuestField,
-  iseSubtypeInfoPortalField,
-  iseSubtypeInfoAdminField,
+  // ISE (wizard-managed fields — not in profile tabs but needed for DataTable/defaults)
   applicationTypeInfoIseField,
+  iseApplicationSubtypeField,
   iseNodesField,
-  iseCertificateField,
-  isePrivateKeyField,
+  hostnameIseField,
+  iseCsrSourceField,
   iseCertImportConfigField,
   // General
   hostnameGeneralField,
@@ -99,27 +96,14 @@ export const iseProfile: TypeProfile = {
   tabs: {
     basic: [
       nameField,
-      iseApplicationSubtypeField,
-      iseSubtypeInfoGuestField,
-      iseSubtypeInfoPortalField,
-      iseSubtypeInfoAdminField,
       applicationTypeInfoIseField,
     ],
     authentication: [
+      hostnameIseField,
       usernameField,
       passwordField,
     ],
-    certificate: [
-      hostnameIseField,
-      domainField,
-      sslProviderField,
-      dnsProviderField,
-      altNamesField,
-      iseNodesField,
-      iseCertificateField,
-      isePrivateKeyField,
-      iseCertImportConfigField,
-    ],
+    certificate: [],  // ISECertificateWizard renders all certificate tab content
     advanced: [
       autoRenewField,
       isEnabledField,
@@ -264,19 +248,49 @@ export function getDefaultFormData(appType: string): Record<string, any> {
     }
   }
 
+  // ISE wizard-managed fields (not in profile tabs, so defaults must be set explicitly)
+  if (appType === 'ise') {
+    if (defaults.ise_application_subtype === undefined) defaults.ise_application_subtype = 'multi_use';
+    if (defaults.ise_cert_import_config === undefined) defaults.ise_cert_import_config = ISE_CERT_IMPORT_DEFAULT;
+    if (defaults.ise_csr_source === undefined) defaults.ise_csr_source = 'api';
+    if (defaults.ise_nodes === undefined) defaults.ise_nodes = '';
+    if (defaults.hostname === undefined) defaults.hostname = '';
+    if (defaults.ssl_provider === undefined) defaults.ssl_provider = '';
+    if (defaults.dns_provider === undefined) defaults.dns_provider = '';
+    if (defaults.ise_csr_config === undefined) defaults.ise_csr_config = '';
+    if (defaults.ise_certificate === undefined) defaults.ise_certificate = '';
+    if (defaults.alt_names === undefined) defaults.alt_names = '';
+  }
+
   return defaults;
 }
 
 /** Get all field definitions for a profile (all tabs flattened), useful for DataTable */
 export function getAllFieldsForType(appType: string): FieldDefinition[] {
   const profile = getProfile(appType);
-  return [
+  const fields = [
     applicationTypeField,
     ...profile.tabs.basic,
     ...profile.tabs.authentication,
     ...profile.tabs.certificate,
     ...profile.tabs.advanced,
   ];
+
+  // ISE wizard renders these fields outside the profile tabs —
+  // include them so DataTable and other consumers can still display them
+  if (appType === 'ise') {
+    fields.push(
+      iseApplicationSubtypeField,
+      iseNodesField,
+      altNamesField,
+      sslProviderField,
+      dnsProviderField,
+      iseCsrSourceField,
+      iseCertImportConfigField,
+    );
+  }
+
+  return fields;
 }
 
 /** Check if a tab has any visible fields */

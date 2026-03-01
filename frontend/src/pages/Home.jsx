@@ -233,18 +233,25 @@ const Home = ({ onStatusUpdate }) => {
       };
     }
 
+    // Build port suffix for multi-port connections (e.g., ISE multi_use)
+    const portChecks = certInfo.portChecks;
+    const portSuffix = (portChecks && portChecks.length > 1)
+      ? ` (${portChecks.filter(p => p.success).length}/${portChecks.length} ports)`
+      : '';
+    const somePortsFailed = portChecks && portChecks.length > 1 && portChecks.some(p => !p.success);
+
     if (certInfo.daysUntilExpiry <= certificateSettings.warningDays) {
       return {
         status: "expiring",
-        text: `Expires in ${certInfo.daysUntilExpiry} days`,
+        text: `Expires in ${certInfo.daysUntilExpiry} days${portSuffix}`,
         icon: Clock,
         days: certInfo.daysUntilExpiry
       };
     } else {
       return {
-        status: "valid",
-        text: `Valid for ${certInfo.daysUntilExpiry} days`,
-        icon: CheckCircle,
+        status: somePortsFailed ? "expiring" : "valid",
+        text: `Valid for ${certInfo.daysUntilExpiry} days${portSuffix}`,
+        icon: somePortsFailed ? Clock : CheckCircle,
         days: certInfo.daysUntilExpiry
       };
     }

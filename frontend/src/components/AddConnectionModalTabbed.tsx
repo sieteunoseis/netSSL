@@ -8,6 +8,7 @@ import validator from "validator";
 import { apiCall } from '../lib/api';
 import CSRGeneratorWizard from './CSRGeneratorWizard';
 import ConnectionFieldRenderer from './ConnectionFieldRenderer';
+import ISECertificateWizard from './ISECertificateWizard';
 import {
   type FieldDefinition,
   applicationTypeField,
@@ -49,7 +50,7 @@ const AddConnectionModalTabbed: React.FC<AddConnectionModalTabbedProps> = ({
     }
   };
 
-  const handleCSRGenerated = (generatedData: { csr: string; privateKey: string; subject: string; commonName: string }) => {
+  const handleCSRGenerated = (generatedData: any) => {
     const applicationTypeValue = formData.application_type;
     let updates: Record<string, string> = {};
 
@@ -59,16 +60,21 @@ const AddConnectionModalTabbed: React.FC<AddConnectionModalTabbedProps> = ({
         general_private_key: generatedData.privateKey
       };
     } else if (applicationTypeValue === 'ise') {
-      updates = {
-        ise_certificate: generatedData.csr,
-        ise_private_key: generatedData.privateKey
-      };
+      if (generatedData.mode === 'configure') {
+        // ISE API mode — save config params
+        updates = { ise_csr_config: generatedData.csrConfig };
+      } else {
+        // Fallback
+        updates = { ise_certificate: generatedData.csr };
+      }
     }
 
     setFormData(prev => ({ ...prev, ...updates }));
     toast({
-      title: "CSR Generated",
-      description: "Certificate Signing Request and private key have been generated and populated.",
+      title: generatedData.mode === 'configure' ? "CSR Configuration Saved" : "CSR Generated",
+      description: generatedData.mode === 'configure'
+        ? "CSR subject details have been configured for ISE API generation."
+        : "Certificate Signing Request and private key have been generated and populated.",
       duration: 3000,
     });
   };
@@ -274,7 +280,7 @@ const AddConnectionModalTabbed: React.FC<AddConnectionModalTabbedProps> = ({
 
           <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0">
             <div className="flex-1 overflow-y-auto pl-1 pr-2 mt-4 pb-4 min-h-0 scroll-smooth scrollbar-styled">
-              <TabsContent value="basic" className="mt-0 space-y-4">
+              <TabsContent value="basic" tabIndex={-1} className="mt-0 space-y-4">
                 {/* Application type selector — always first */}
                 <ConnectionFieldRenderer
                   field={applicationTypeField}
@@ -287,17 +293,27 @@ const AddConnectionModalTabbed: React.FC<AddConnectionModalTabbedProps> = ({
               </TabsContent>
 
               {hasVisibleFields(profile.tabs.authentication, formData) && (
-                <TabsContent value="authentication" className="mt-0 space-y-4">
+                <TabsContent value="authentication" tabIndex={-1} className="mt-0 space-y-4">
                   {getVisibleFields('authentication').map(renderField)}
                 </TabsContent>
               )}
 
-              <TabsContent value="certificate" className="mt-0 space-y-4">
-                {getVisibleFields('certificate').map(renderField)}
+              <TabsContent value="certificate" tabIndex={-1} className="mt-0 space-y-4">
+                {appType === 'ise' ? (
+                  <ISECertificateWizard
+                    formData={formData}
+                    errors={errors}
+                    renderField={renderField}
+                    onFieldChange={(name, value) => setFormData(prev => ({ ...prev, [name]: value }))}
+                    onCsrGenerateClick={() => setIsCSRWizardOpen(true)}
+                  />
+                ) : (
+                  getVisibleFields('certificate').map(renderField)
+                )}
               </TabsContent>
 
               {hasVisibleFields(profile.tabs.advanced, formData) && (
-                <TabsContent value="advanced" className="mt-0 space-y-4">
+                <TabsContent value="advanced" tabIndex={-1} className="mt-0 space-y-4">
                   {getVisibleFields('advanced').map(renderField)}
                 </TabsContent>
               )}
@@ -318,6 +334,7 @@ const AddConnectionModalTabbed: React.FC<AddConnectionModalTabbedProps> = ({
         onGenerated={handleCSRGenerated}
         hostname={String(formData.hostname || "")}
         domain={String(formData.domain || "")}
+        mode={formData.application_type === 'ise' ? 'configure' : 'generate'}
       />
     </Dialog>
   );

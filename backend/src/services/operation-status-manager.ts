@@ -42,18 +42,18 @@ export class OperationStatusManager extends EventEmitter {
         if (['pending', 'in_progress'].includes(op.status)) {
           const operation: Operation = {
             id: op.id,
-            connectionId: op.connection_id,
-            type: op.operation_type as Operation['type'],
+            connectionId: op.connectionId,
+            type: op.type as Operation['type'],
             status: op.status as Operation['status'],
             progress: op.progress || 0,
             message: op.message || '',
             error: op.error,
-            startedAt: new Date(op.started_at),
-            completedAt: op.completed_at ? new Date(op.completed_at) : undefined,
+            startedAt: new Date(op.startedAt),
+            completedAt: op.completedAt ? new Date(op.completedAt) : undefined,
             metadata: op.metadata,
-            createdBy: op.created_by as Operation['createdBy']
+            createdBy: op.createdBy as Operation['createdBy']
           };
-          
+
           this.operations.set(operation.id, operation);
         }
       }
@@ -81,18 +81,18 @@ export class OperationStatusManager extends EventEmitter {
         const dbOp = dbOps[0]; // Get the most recent one
         const operation: Operation = {
           id: dbOp.id,
-          connectionId: dbOp.connection_id,
-          type: dbOp.operation_type as Operation['type'],
+          connectionId: dbOp.connectionId,
+          type: dbOp.type as Operation['type'],
           status: dbOp.status as Operation['status'],
           progress: dbOp.progress || 0,
           message: dbOp.message || '',
           error: dbOp.error,
-          startedAt: new Date(dbOp.started_at),
-          completedAt: dbOp.completed_at ? new Date(dbOp.completed_at) : undefined,
+          startedAt: new Date(dbOp.startedAt),
+          completedAt: dbOp.completedAt ? new Date(dbOp.completedAt) : undefined,
           metadata: dbOp.metadata,
-          createdBy: dbOp.created_by as Operation['createdBy']
+          createdBy: dbOp.createdBy as Operation['createdBy']
         };
-        
+
         this.operations.set(operation.id, operation);
         return operation;
       }
@@ -159,7 +159,7 @@ export class OperationStatusManager extends EventEmitter {
             status: operation.status,
             progress: operation.progress,
             message: operation.message,
-            startedAt: operation.startedAt.toISOString(),
+            startedAt: isNaN(operation.startedAt.getTime()) ? new Date().toISOString() : operation.startedAt.toISOString(),
             createdBy: operation.createdBy,
             metadata: operation.metadata
           });
@@ -273,12 +273,16 @@ export class OperationStatusManager extends EventEmitter {
       return;
     }
 
+    // Safely convert dates (guard against Invalid Date from stale DB records)
+    const startedAtStr = isNaN(operation.startedAt.getTime()) ? new Date().toISOString() : operation.startedAt.toISOString();
+    const completedAtStr = operation.completedAt && !isNaN(operation.completedAt.getTime()) ? operation.completedAt.toISOString() : undefined;
+
     // Emit to specific connection room
     (this.io as any).emitToConnection(operation.connectionId, 'operation:update', {
       operation: {
         ...operation,
-        startedAt: operation.startedAt.toISOString(),
-        completedAt: operation.completedAt?.toISOString()
+        startedAt: startedAtStr,
+        completedAt: completedAtStr
       }
     });
 

@@ -6,30 +6,36 @@ import { ConnectionRecord } from '../types';
  * @returns The domain/hostname or null if not available
  */
 export function getDomainFromConnection(connection: ConnectionRecord): string | null {
-  if (connection.application_type === 'ise' || connection.application_type === 'general') {
-    // For ISE and General, use hostname and domain with flexible hostname support
-    if (connection.hostname !== undefined && connection.domain) {
-      const hostname = connection.hostname || ''; // Can be empty, wildcard, or a name
-      if (hostname === '*') {
-        // Return just the domain for wildcard certificates
-        return connection.domain;
-      } else if (hostname) {
-        // Return hostname.domain
-        return `${hostname}.${connection.domain}`;
-      } else {
-        // Empty hostname, return just domain
-        return connection.domain;
-      }
+  if (connection.application_type === 'ise') {
+    // ISE: hostname may be a full FQDN (portal/service URL), short name, wildcard, or empty
+    const hostname = connection.hostname || '';
+    if (hostname === '*') return connection.domain || null;
+    // Full FQDN in hostname (e.g., guest.automate.builders) — return directly
+    if (hostname && hostname.includes('.')) return hostname;
+    // Short hostname — combine with domain (backward compat)
+    if (hostname && connection.domain) return `${hostname}.${connection.domain}`;
+    // No hostname — return ISE node FQDN if available, else domain
+    if (connection.ise_nodes) {
+      const primaryNode = connection.ise_nodes.split(',').map(n => n.trim()).filter(n => n)[0];
+      if (primaryNode) return primaryNode;
     }
-    
-    return null;
-  } else {
-    // For VOS applications (strict hostname required)
-    if (!connection.hostname || !connection.domain) {
-      return null;
-    }
-    return `${connection.hostname}.${connection.domain}`;
+    return connection.domain || null;
   }
+
+  if (connection.application_type === 'general') {
+    // General: flexible hostname support (unchanged)
+    if (connection.hostname !== undefined && connection.domain) {
+      const hostname = connection.hostname || '';
+      if (hostname === '*') return connection.domain;
+      if (hostname) return `${hostname}.${connection.domain}`;
+      return connection.domain;
+    }
+    return null;
+  }
+
+  // VOS / Catalyst Center (strict hostname required)
+  if (!connection.hostname || !connection.domain) return null;
+  return `${connection.hostname}.${connection.domain}`;
 }
 
 /**

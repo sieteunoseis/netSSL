@@ -9,7 +9,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { ChevronLeft, ChevronRight, Key, FileText, CheckCircle, AlertCircle } from "lucide-react";
 
-const CSRGeneratorWizard = ({ isOpen, onClose, onGenerated, hostname, domain }) => {
+const CSRGeneratorWizard = ({ isOpen, onClose, onGenerated, hostname, domain, mode = 'generate' }) => {
   const dialogContentRef = useRef(null);
   const [currentStep, setCurrentStep] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -217,28 +217,46 @@ const CSRGeneratorWizard = ({ isOpen, onClose, onGenerated, hostname, domain }) 
     try {
       // Build common name
       const commonName = hostname && domain ? `${hostname}.${domain}` : (domain || 'example.com');
-      
-      // Prepare CSR request for backend
-      const csrRequest = {
-        commonName,
-        country: formData.country,
-        state: formData.state,
-        locality: formData.locality,
-        organization: formData.organization || undefined,
-        organizationalUnit: formData.organizationalUnit || undefined,
-        keySize: parseInt(formData.keySize)
-      };
 
-      // Generate CSR using backend API
-      const result = await generateCSRBackend(csrRequest);
+      if (mode === 'configure') {
+        // Configure mode (ISE): return params as JSON config without calling backend
+        const csrConfig = JSON.stringify({
+          country: formData.country,
+          state: formData.state,
+          locality: formData.locality,
+          organization: formData.organization || '',
+          organizationalUnit: formData.organizationalUnit || '',
+          keySize: formData.keySize
+        });
 
-      setGeneratedData({
-        csr: result.csr,
-        privateKey: result.privateKey,
-        subject: result.subject,
-        commonName
-      });
-      setCurrentStep(steps.length); // Move to success step
+        setGeneratedData({
+          csrConfig,
+          mode: 'configure',
+          commonName
+        });
+        setCurrentStep(steps.length); // Move to success step
+      } else {
+        // Generate mode (General/CC): use node-forge via backend API
+        const csrRequest = {
+          commonName,
+          country: formData.country,
+          state: formData.state,
+          locality: formData.locality,
+          organization: formData.organization || undefined,
+          organizationalUnit: formData.organizationalUnit || undefined,
+          keySize: parseInt(formData.keySize)
+        };
+
+        const result = await generateCSRBackend(csrRequest);
+
+        setGeneratedData({
+          csr: result.csr,
+          privateKey: result.privateKey,
+          subject: result.subject,
+          commonName
+        });
+        setCurrentStep(steps.length); // Move to success step
+      }
     } catch (err) {
       setError('Failed to generate CSR and private key: ' + err.message);
     } finally {
@@ -278,10 +296,12 @@ const CSRGeneratorWizard = ({ isOpen, onClose, onGenerated, hostname, domain }) 
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Key className="h-5 w-5" />
-              CSR Generator Wizard
+              {mode === 'configure' ? 'CSR Configuration Wizard' : 'CSR Generator Wizard'}
             </DialogTitle>
             <DialogDescription>
-              Generate a Certificate Signing Request (CSR) and private key for your certificate
+              {mode === 'configure'
+                ? 'Configure the subject details for ISE CSR generation. These details will be sent to ISE when renewing the certificate.'
+                : 'Generate a Certificate Signing Request (CSR) and private key for your certificate'}
             </DialogDescription>
           </DialogHeader>
 
@@ -382,10 +402,12 @@ const CSRGeneratorWizard = ({ isOpen, onClose, onGenerated, hostname, domain }) 
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-green-600">
                 <CheckCircle className="h-5 w-5" />
-                CSR Generated Successfully
+                {mode === 'configure' ? 'CSR Configuration Saved' : 'CSR Generated Successfully'}
               </CardTitle>
               <CardDescription>
-                Your Certificate Signing Request and private key have been generated
+                {mode === 'configure'
+                  ? 'CSR subject details have been configured for ISE API generation'
+                  : 'Your Certificate Signing Request and private key have been generated'}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -394,18 +416,29 @@ const CSRGeneratorWizard = ({ isOpen, onClose, onGenerated, hostname, domain }) 
                   <strong>Common Name:</strong>
                   <div className="font-mono text-xs mt-1">{generatedData.commonName}</div>
                 </div>
-                <div>
-                  <strong>Subject:</strong>
-                  <div className="font-mono text-xs mt-1">{generatedData.subject}</div>
-                </div>
+                {generatedData.subject && (
+                  <div>
+                    <strong>Subject:</strong>
+                    <div className="font-mono text-xs mt-1">{generatedData.subject}</div>
+                  </div>
+                )}
               </div>
-              
+
               <Alert>
                 <AlertCircle className="h-4 w-4" />
                 <AlertDescription>
-                  <strong>Success!</strong> Your Certificate Signing Request and private key have been generated 
-                  using industry-standard cryptographic libraries. The CSR is ready to be submitted to your 
-                  Certificate Authority.
+                  {mode === 'configure' ? (
+                    <>
+                      <strong>Configured!</strong> These subject details will be sent to the ISE API during
+                      certificate renewal. ISE will generate the CSR and hold the private key internally.
+                    </>
+                  ) : (
+                    <>
+                      <strong>Success!</strong> Your Certificate Signing Request and private key have been generated
+                      using industry-standard cryptographic libraries. The CSR is ready to be submitted to your
+                      Certificate Authority.
+                    </>
+                  )}
                 </AlertDescription>
               </Alert>
             </CardContent>
@@ -438,11 +471,11 @@ const CSRGeneratorWizard = ({ isOpen, onClose, onGenerated, hostname, domain }) 
               data-next-button="true"
             >
               {loading ? (
-                'Generating...'
+                mode === 'configure' ? 'Saving...' : 'Generating...'
               ) : isLastStep ? (
                 <>
                   <Key className="h-4 w-4 mr-2" />
-                  Generate CSR
+                  {mode === 'configure' ? 'Save Configuration' : 'Generate CSR'}
                 </>
               ) : (
                 <>
@@ -455,7 +488,7 @@ const CSRGeneratorWizard = ({ isOpen, onClose, onGenerated, hostname, domain }) 
 
           {isSuccessStep && (
             <Button onClick={handleUseGenerated}>
-              Use Generated CSR & Key
+              {mode === 'configure' ? 'Use Configuration' : 'Use Generated CSR & Key'}
             </Button>
           )}
         </div>

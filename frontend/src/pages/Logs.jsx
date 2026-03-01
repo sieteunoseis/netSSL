@@ -38,7 +38,7 @@ const Logs = () => {
         setAccounts(data.accounts);
         setLastUpdated(data.timestamp);
 
-        // Auto-select account: prefer URL param ?connection=id, else first with logs
+        // Auto-select account: prefer URL param ?connection=id, else first alphabetically with logs
         if (!initialSelectionDone.current && data.accounts.length > 0) {
           initialSelectionDone.current = true;
           const connectionId = searchParams.get('connection');
@@ -49,7 +49,8 @@ const Logs = () => {
             }
           }
           if (!connectionId || !data.accounts.find(acc => String(acc.connection.id) === connectionId)) {
-            const firstAccountWithLogs = data.accounts.find(acc => acc.hasLogs);
+            const sorted = [...data.accounts].sort((a, b) => a.connection.name.localeCompare(b.connection.name));
+            const firstAccountWithLogs = sorted.find(acc => acc.hasLogs);
             if (firstAccountWithLogs) {
               setSelectedAccount(firstAccountWithLogs);
             }

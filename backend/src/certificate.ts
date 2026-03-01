@@ -44,6 +44,61 @@ export interface CertificateInfo {
   // Hostname match detection
   expectedHostname?: string;
   hostnameMatch?: boolean;
+  // Multi-port check results (ISE multi_use checks 443, 8443, 8445)
+  portChecks?: { port: number; success: boolean }[];
+}
+
+/**
+ * Translate raw TLS/network error messages into human-readable descriptions.
+ */
+function friendlyTlsError(raw: string): string {
+  const msg = raw.toLowerCase();
+
+  // TLS handshake failures (SSL alert number 40)
+  if (msg.includes('alert number 40') || msg.includes('handshake failure') || msg.includes('sslv3 alert'))
+    return 'TLS handshake rejected by host — the server refused the connection. This is normal for some devices (e.g. ISE) that restrict direct TLS probes.';
+
+  // Self-signed / untrusted cert (alert 48 or SELF_SIGNED)
+  if (msg.includes('self_signed') || msg.includes('self signed') || msg.includes('alert number 48'))
+    return 'Host presented a self-signed or untrusted certificate.';
+
+  // Certificate expired
+  if (msg.includes('cert_has_expired') || msg.includes('certificate has expired'))
+    return 'Host certificate has expired.';
+
+  // Connection refused
+  if (msg.includes('econnrefused'))
+    return 'Connection refused — the host is not accepting connections on this port.';
+
+  // Connection reset
+  if (msg.includes('econnreset'))
+    return 'Connection reset — the host closed the connection unexpectedly.';
+
+  // DNS resolution failure
+  if (msg.includes('enotfound') || msg.includes('getaddrinfo'))
+    return 'DNS lookup failed — hostname could not be resolved.';
+
+  // Timeout
+  if (msg.includes('etimedout') || msg.includes('timeout'))
+    return 'Connection timed out — the host did not respond.';
+
+  // Network unreachable
+  if (msg.includes('enetunreach') || msg.includes('ehostunreach'))
+    return 'Host unreachable — check network connectivity.';
+
+  // Protocol mismatch
+  if (msg.includes('wrong version number') || msg.includes('unsupported protocol'))
+    return 'TLS protocol mismatch — the host may not support TLS on this port.';
+
+  // Fallback: strip OpenSSL hex prefixes and internal paths for a cleaner message
+  const cleaned = raw
+    .replace(/[0-9A-F]{16}:/gi, '')          // hex error IDs like 8030ACF5O1000000:
+    .replace(/error:[0-9A-Fa-f]+:/g, '')      // error:0A000410:
+    .replace(/:\.\.[^\s:]+(:\d+)?/g, '')       // internal file paths like :../deps/openssl/...
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  return cleaned || raw;
 }
 
 export async function getCertificateInfo(hostname: string, port: number = 443): Promise<CertificateInfo | null> {
@@ -278,7 +333,7 @@ export async function getCertificateInfo(hostname: string, port: number = 443): 
           serialNumber: '',
           isValid: false,
           daysUntilExpiry: 0,
-          error: `Connection failed: ${error.message}`,
+          error: friendlyTlsError(error.message),
           timings: {
             dnsResolve: dnsResolveTime,
             totalTime: totalTime
@@ -563,12 +618,19 @@ function getPortsForConnection(connection?: any): number[] {
     switch (connection.ise_application_subtype) {
       case 'guest':
         return [8443]; // Guest portal
-      case 'portal': 
-        return [8445]; // Portal (sponsor portal)
+      case 'portal':
+        return [8445]; // Sponsor portal
+      case 'multi_use':
+        return [443, 8443, 8445]; // Admin + Guest Portal + Sponsor Portal
       case 'admin':
-        return [443];  // Admin interface
+      case 'eap':
+      case 'dtls':
+      case 'pxgrid':
+      case 'saml':
+      case 'ims':
+        return [443];  // Admin interface (shared by admin, EAP, DTLS, pxGrid, SAML, IMS)
       default:
-        return [8443]; // Default to guest
+        return [443]; // Default to admin port for new certificate usage types
     }
   }
 
@@ -637,25 +699,41 @@ export async function getCertificateInfoWithFallback(hostname: string, connectio
   
   // Primary: Try to get certificate from live TLS connection (what's actually deployed)
   const ports = getPortsForConnection(connection);
-  
+  // Only ISE multi_use should check all ports and report results — other
+  // connection types try multiple ports as fallback (return on first success).
+  const multiPort = connection?.application_type === 'ise' && connection?.ise_application_subtype === 'multi_use';
+  const portResults: { port: number; success: boolean }[] = [];
+  let firstCertInfo: CertificateInfo | null = null;
+
   for (const port of ports) {
     try {
       Logger.info(`Attempting to get certificate for ${hostname}:${port}`);
       // Use metrics version if database and connection are available
-      const certInfo = (database && connection?.id) 
+      const certInfo = (database && connection?.id)
         ? await getCertificateInfoWithMetrics(hostname, port, connection.id, database)
         : await getCertificateInfo(hostname, port);
       if (certInfo) {
         Logger.info(`Retrieved certificate for ${hostname} from live TLS connection on port ${port}`);
         certInfo.expectedHostname = hostname;
         certInfo.hostnameMatch = checkHostnameMatch(hostname, certInfo);
-        return certInfo;
+        portResults.push({ port, success: true });
+        if (!firstCertInfo) firstCertInfo = certInfo;
+        if (!multiPort) return certInfo; // Single-port: return immediately
+      } else {
+        portResults.push({ port, success: false });
       }
     } catch (error) {
       Logger.debug(`Failed to connect to ${hostname}:${port}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      portResults.push({ port, success: false });
     }
   }
-  
+
+  // Multi-port: return first successful cert with all port results attached
+  if (firstCertInfo) {
+    firstCertInfo.portChecks = portResults;
+    return firstCertInfo;
+  }
+
   Logger.info(`No live TLS connection available for ${hostname}, falling back to local certificate files`);
   
   // Fallback 1: Try local certificate in primary directory

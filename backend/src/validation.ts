@@ -36,14 +36,20 @@ export const validateConnectionData = (data: any): { isValid: boolean; errors: s
         errors.push('Hostname must be a valid hostname (letters, numbers, hyphens only)');
       }
     }
-  } else if (data.application_type === 'ise' || data.application_type === 'general') {
-    // ISE and General applications allow hostname to be empty, wildcard, or a valid hostname
+  } else if (data.application_type === 'ise') {
+    // ISE: hostname is the PAN FQDN (ISE admin node) — optional but must be a valid FQDN if provided
+    if (data.hostname !== undefined && typeof data.hostname !== 'string') {
+      errors.push('Hostname must be a string');
+    } else if (data.hostname && !validator.isFQDN(data.hostname, { allow_numeric_tld: true })) {
+      errors.push('ISE Admin Node must be a valid FQDN');
+    }
+  } else if (data.application_type === 'general') {
+    // General applications allow hostname to be empty, wildcard, or a valid hostname
     if (data.hostname !== undefined && typeof data.hostname !== 'string') {
       errors.push('Hostname must be a string');
     } else if (data.hostname && !validator.isAscii(data.hostname)) {
       errors.push('Hostname must contain only ASCII characters');
     } else if (data.hostname) {
-      // Use flexible hostname pattern for ISE/General (allows wildcard and empty)
       const flexibleHostnamePattern = /^(\*|[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)?$/;
       if (!flexibleHostnamePattern.test(data.hostname)) {
         errors.push('Hostname must be a valid hostname, wildcard (*), or blank');
@@ -51,11 +57,20 @@ export const validateConnectionData = (data: any): { isValid: boolean; errors: s
     }
   }
 
-  // Domain is now required for all application types
-  if (!data.domain || typeof data.domain !== 'string') {
-    errors.push('Domain is required and must be a string');
-  } else if (!validator.isFQDN(data.domain, { allow_numeric_tld: true })) {
-    errors.push('Domain must be a valid FQDN');
+  // Domain is required for non-ISE types; ISE auto-derives it from ISE node on save
+  if (data.application_type === 'ise') {
+    // Domain is optional — auto-derived from ISE node FQDN. Validate if provided.
+    if (data.domain && typeof data.domain === 'string' && data.domain.trim() !== '') {
+      if (!validator.isFQDN(data.domain, { allow_numeric_tld: true })) {
+        errors.push('Domain must be a valid FQDN');
+      }
+    }
+  } else {
+    if (!data.domain || typeof data.domain !== 'string') {
+      errors.push('Domain is required and must be a string');
+    } else if (!validator.isFQDN(data.domain, { allow_numeric_tld: true })) {
+      errors.push('Domain must be a valid FQDN');
+    }
   }
 
   // Username and password are required for VOS and Catalyst Center applications
@@ -160,10 +175,31 @@ export const validateConnectionData = (data: any): { isValid: boolean; errors: s
     }
   }
 
-  // ISE Application subtype is optional for ISE connections
+  // ISE Application subtype / certificate usage is optional for ISE connections
   if (data.ise_application_subtype !== undefined && data.ise_application_subtype !== null && data.ise_application_subtype !== '') {
-    if (!validator.isIn(data.ise_application_subtype, ['guest', 'portal', 'admin'])) {
-      errors.push('ISE Application subtype must be one of "guest", "portal", or "admin"');
+    if (!validator.isIn(data.ise_application_subtype, ['multi_use', 'admin', 'eap', 'dtls', 'guest', 'portal', 'pxgrid', 'saml', 'ims'])) {
+      errors.push('ISE certificate usage must be one of "multi_use", "admin", "eap", "dtls", "guest", "portal", "pxgrid", "saml", or "ims"');
+    }
+  }
+
+  // ISE CSR source is optional
+  if (data.ise_csr_source !== undefined && data.ise_csr_source !== null && data.ise_csr_source !== '') {
+    if (!validator.isIn(data.ise_csr_source, ['api', 'gui'])) {
+      errors.push('ISE CSR source must be one of "api" or "gui"');
+    }
+  }
+
+  // ISE CSR config is optional JSON
+  if (data.ise_csr_config !== undefined && data.ise_csr_config !== null && data.ise_csr_config !== '') {
+    if (typeof data.ise_csr_config === 'string' && data.ise_csr_config.trim() !== '') {
+      try {
+        const config = JSON.parse(data.ise_csr_config);
+        if (typeof config !== 'object' || Array.isArray(config)) {
+          errors.push('ISE CSR configuration must be a valid JSON object');
+        }
+      } catch (e) {
+        errors.push('ISE CSR configuration must be valid JSON');
+      }
     }
   }
 
@@ -243,7 +279,9 @@ export const sanitizeConnectionData = (data: any): Partial<ConnectionRecord> => 
     ssl_provider: validator.escape(String(data.ssl_provider || '')),
     dns_provider: validator.escape(String(data.dns_provider || '')),
     application_type: (['vos', 'ise', 'general', 'catalyst_center'].includes(data.application_type) ? data.application_type : 'vos') as 'vos' | 'ise' | 'general' | 'catalyst_center',
-    ise_application_subtype: (['guest', 'portal', 'admin'].includes(data.ise_application_subtype) ? data.ise_application_subtype : undefined),
+    ise_application_subtype: (['multi_use', 'admin', 'eap', 'dtls', 'guest', 'portal', 'pxgrid', 'saml', 'ims'].includes(data.ise_application_subtype) ? data.ise_application_subtype : undefined),
+    ise_csr_source: (['api', 'gui'].includes(data.ise_csr_source) ? data.ise_csr_source : undefined),
+    ise_csr_config: data.ise_csr_config ? String(data.ise_csr_config) : undefined, // Don't escape JSON content
     version: validator.escape(String(data.version || '')),
     alt_names: validator.escape(String(data.alt_names || '')),
     custom_csr: data.custom_csr ? String(data.custom_csr) : undefined, // Don't escape CSR content

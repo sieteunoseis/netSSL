@@ -81,6 +81,9 @@ export default function ConnectionFieldRenderer({
     return (
       <div key={field.name} className="space-y-2">
         <Label>{label}</Label>
+        {field.description && (
+          <p className="text-xs text-muted-foreground">{field.description}</p>
+        )}
         <Select
           key={`${field.name}-${selectValue}`}
           value={selectValue}
@@ -106,14 +109,18 @@ export default function ConnectionFieldRenderer({
 
   // TEXTAREA type
   if (field.type === 'textarea') {
-    const showCsrButton = (field.name === 'custom_csr' || field.name === 'ise_certificate') &&
-      (applicationType === 'general' || applicationType === 'ise' || applicationType === 'catalyst_center');
+    // Show "Generate CSR" for General/CC custom_csr fields (node-forge flow)
+    const showGenerateCsrButton = field.name === 'custom_csr' &&
+      (applicationType === 'general' || applicationType === 'catalyst_center');
+
+    // Show "Configure CSR Details" for ISE CSR config field (configure mode)
+    const showConfigureCsrButton = field.name === 'ise_csr_config' && applicationType === 'ise';
 
     return (
       <div key={field.name} className="space-y-2">
         <div className="flex items-center justify-between">
           <Label>{label}</Label>
-          {showCsrButton && onCsrGenerateClick && (
+          {showGenerateCsrButton && onCsrGenerateClick && (
             <Button
               type="button"
               variant="outline"
@@ -123,7 +130,20 @@ export default function ConnectionFieldRenderer({
               Generate CSR
             </Button>
           )}
+          {showConfigureCsrButton && onCsrGenerateClick && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onCsrGenerateClick}
+            >
+              Configure CSR Details
+            </Button>
+          )}
         </div>
+        {field.description && (
+          <p className="text-xs text-muted-foreground">{field.description}</p>
+        )}
         <Textarea
           required={!isOptional}
           name={field.name}
@@ -150,6 +170,9 @@ export default function ConnectionFieldRenderer({
   return (
     <div key={field.name} className="space-y-2">
       <Label>{label}</Label>
+      {field.description && (
+        <p className="text-xs text-muted-foreground">{field.description}</p>
+      )}
       <Input
         required={!isOptional}
         type={inputType}

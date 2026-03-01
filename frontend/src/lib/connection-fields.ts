@@ -226,30 +226,94 @@ export const autoRestartServiceField: FieldDefinition = {
 export const hostnameIseField: FieldDefinition = {
   name: 'hostname',
   type: 'text',
-  label: 'Portal Hostname',
-  placeholder: 'e.g., sponsor, guest1, * (wildcard), or leave blank',
-  description: 'Portal hostname - can be a name, wildcard (*), or blank for domain-only certificates',
-  validation: { name: 'matches', options: '^(\\*|[a-zA-Z0-9]([a-zA-Z0-9\\-]{0,61}[a-zA-Z0-9])?)?$' },
+  label: 'ISE Admin Node (PAN)',
+  placeholder: 'e.g., ise-pan.example.com',
+  description: 'FQDN of the ISE Primary Admin Node. Used for all API operations and node discovery.',
+  validation: { name: 'isFQDN', options: { allow_numeric_tld: true } },
+};
+
+export const iseCertOverviewInfoField: FieldDefinition = {
+  name: 'ise_cert_overview_info',
+  type: 'info',
+  label: '',
+  description:
+    'The first ISE node FQDN becomes the certificate CN. ' +
+    'If an additional SAN is provided, it is included in the certificate and used for monitoring. ' +
+    'Otherwise, the ISE node is monitored directly.',
+};
+
+export const domainIseField: FieldDefinition = {
+  name: 'domain',
+  type: 'text',
+  label: 'Domain Name (DNS Zone)',
+  placeholder: 'e.g., example.com',
+  description: 'DNS zone for ACME challenge records. Also combined with the monitoring hostname to form the FQDN that netSSL checks.',
+  validation: { name: 'isFQDN', options: { allow_numeric_tld: true } },
+};
+
+export const altNamesIseField: FieldDefinition = {
+  name: 'alt_names',
+  type: 'text',
+  label: 'Additional SANs (Portal/Guest Hostnames)',
+  placeholder: 'e.g., guest.public.com, portal.other.com',
+  description: 'Additional FQDNs to include as SANs. Use this for portal or guest hostnames that users browse to. Each SAN domain requires a DNS challenge.',
+  optional: true,
+  validation: { name: 'isAscii', options: '' },
 };
 
 export const iseApplicationSubtypeField: FieldDefinition = {
   name: 'ise_application_subtype',
   type: 'select',
-  label: 'ISE Application Subtype',
+  label: 'ISE Certificate Usage',
   selectOptions: [
-    { value: 'guest', label: 'Guest' },
-    { value: 'portal', label: 'Portal' },
+    { value: 'multi_use', label: 'Multi-Use — Admin, EAP, Portal (Recommended)' },
     { value: 'admin', label: 'Admin' },
+    { value: 'eap', label: 'EAP Authentication' },
+    { value: 'guest', label: 'Portal — Guest (port 8443)' },
+    { value: 'portal', label: 'Portal — Sponsor (port 8445)' },
+    { value: 'saml', label: 'SAML' },
   ],
-  defaultValue: 'guest',
-  validation: { name: 'isIn', options: ['guest', 'portal', 'admin'] },
+  defaultValue: 'multi_use',
+  validation: { name: 'isIn', options: ['multi_use', 'admin', 'eap', 'guest', 'portal', 'saml'] },
+};
+
+export const iseUsageInfoMultiUseField: FieldDefinition = {
+  name: 'ise_usage_info_multi_use',
+  type: 'info',
+  label: '',
+  description: 'Multi-Use certificate covers Admin, EAP, and Portal roles. Monitors the Admin interface on port 443.',
+  visibleWhen: { field: 'ise_application_subtype', is: 'multi_use' },
+};
+
+export const iseUsageInfoAdminField: FieldDefinition = {
+  name: 'ise_usage_info_admin',
+  type: 'info',
+  label: '',
+  description: 'Admin certificate for Server and DataConnect Authentication. Monitors port 443.',
+  visibleWhen: { field: 'ise_application_subtype', is: 'admin' },
+};
+
+export const iseUsageInfoEapField: FieldDefinition = {
+  name: 'ise_usage_info_eap',
+  type: 'info',
+  label: '',
+  description: 'EAP Authentication certificate for Server Authentication. Monitors port 443.',
+  visibleWhen: { field: 'ise_application_subtype', is: 'eap' },
+};
+
+export const iseUsageInfoDtlsField: FieldDefinition = {
+  name: 'ise_usage_info_dtls',
+  type: 'info',
+  label: '',
+  description: 'DTLS Authentication certificate for RADIUS DTLS Server Authentication. Monitors port 443.',
+  visibleWhen: { field: 'ise_application_subtype', is: 'dtls' },
 };
 
 export const iseSubtypeInfoGuestField: FieldDefinition = {
   name: 'ise_subtype_info_guest',
   type: 'info',
   label: '',
-  description: 'Checks the Guest Portal certificate on port 8443. Certificate roles (portal, eap, radius, etc.) are controlled via the Certificate Import Configuration JSON below.',
+  description: 'Guest Portal certificate on port 8443. Used for Portal Server Authentication.',
   visibleWhen: { field: 'ise_application_subtype', is: 'guest' },
 };
 
@@ -257,30 +321,71 @@ export const iseSubtypeInfoPortalField: FieldDefinition = {
   name: 'ise_subtype_info_portal',
   type: 'info',
   label: '',
-  description: 'Checks the Sponsor Portal certificate on port 8445. Certificate roles are controlled via the Certificate Import Configuration JSON below.',
+  description: 'Sponsor Portal certificate on port 8445. Used for Portal Server Authentication.',
   visibleWhen: { field: 'ise_application_subtype', is: 'portal' },
 };
 
-export const iseSubtypeInfoAdminField: FieldDefinition = {
-  name: 'ise_subtype_info_admin',
+export const iseUsageInfoPxgridField: FieldDefinition = {
+  name: 'ise_usage_info_pxgrid',
   type: 'info',
   label: '',
-  description: 'Checks the Admin interface certificate on port 443. This covers Admin, EAP Authentication, RADIUS DTLS, SAML, and pxGrid \u2014 roles that share the admin certificate. Certificate roles are controlled via the Certificate Import Configuration JSON below.',
-  visibleWhen: { field: 'ise_application_subtype', is: 'admin' },
+  description: 'pxGrid certificate for Client and Server Authentication. Monitors port 443.',
+  visibleWhen: { field: 'ise_application_subtype', is: 'pxgrid' },
+};
+
+export const iseUsageInfoSamlField: FieldDefinition = {
+  name: 'ise_usage_info_saml',
+  type: 'info',
+  label: '',
+  description: 'SAML Signing Certificate. Monitors port 443.',
+  visibleWhen: { field: 'ise_application_subtype', is: 'saml' },
+};
+
+export const iseUsageInfoImsField: FieldDefinition = {
+  name: 'ise_usage_info_ims',
+  type: 'info',
+  label: '',
+  description: 'ISE Messaging Service certificate. Monitors port 443.',
+  visibleWhen: { field: 'ise_application_subtype', is: 'ims' },
 };
 
 export const applicationTypeInfoIseField: FieldDefinition = {
   name: 'application_type_info_ise',
   type: 'info',
   label: '',
-  description: 'Includes: Cisco Identity Services Engine for Guest and Sponsor portals. Requires manual CSR generation and certificate installation through ISE admin interface.',
+  description: 'Cisco Identity Services Engine. Certificate generated via ISE API or pasted from ISE GUI. ISE holds the private key internally.',
+};
+
+export const iseCsrSourceField: FieldDefinition = {
+  name: 'ise_csr_source',
+  type: 'select',
+  label: 'CSR Source',
+  selectOptions: [
+    { value: 'api', label: 'Generate via ISE API (Recommended)' },
+    { value: 'gui', label: 'Paste from ISE GUI' },
+  ],
+  defaultValue: 'api',
+  validation: { name: 'isIn', options: ['api', 'gui'] },
+};
+
+export const iseCsrConfigField: FieldDefinition = {
+  name: 'ise_csr_config',
+  type: 'textarea',
+  label: 'CSR Subject Configuration',
+  placeholder: '{"country":"US","state":"Oregon","locality":"Portland","organization":"","organizationalUnit":"","keySize":"2048"}',
+  description: 'Subject details for ISE CSR generation. Use the "Configure CSR Details" button to set these values.',
+  optional: true,
+  validation: { name: 'isJSON', options: '' },
+  rows: 3,
+  visibleWhen: { field: 'ise_csr_source', is: 'api' },
 };
 
 export const iseNodesField: FieldDefinition = {
   name: 'ise_nodes',
   type: 'text',
-  label: 'ISE Nodes (for certificate installation)',
-  placeholder: 'e.g., ise01.automate.builder, ise02.automate.builder (comma-separated)',
+  label: 'ISE Node FQDNs',
+  placeholder: 'e.g., ise01.example.com, ise02.example.com (comma-separated)',
+  description: 'The first node becomes the certificate CN and generates the CSR. All listed nodes receive the signed certificate.',
   validation: { name: 'isAscii', options: '' },
 };
 
@@ -291,6 +396,7 @@ export const iseCertificateField: FieldDefinition = {
   placeholder: '-----BEGIN CERTIFICATE REQUEST-----\nPaste your Certificate Signing Request here\n-----END CERTIFICATE REQUEST-----',
   validation: { name: 'isAscii', options: '' },
   rows: 6,
+  visibleWhen: { field: 'ise_csr_source', is: 'gui' },
 };
 
 export const isePrivateKeyField: FieldDefinition = {
@@ -302,7 +408,7 @@ export const isePrivateKeyField: FieldDefinition = {
   rows: 6,
 };
 
-const ISE_CERT_IMPORT_DEFAULT = `{
+export const ISE_CERT_IMPORT_DEFAULT = `{
   "admin": false,
   "allowExtendedValidity": true,
   "allowOutOfDateCert": true,
@@ -432,6 +538,8 @@ export const fieldRegistry: Record<string, FieldDefinition> = {
   auto_renew: autoRenewField,
   is_enabled: isEnabledField,
   ise_application_subtype: iseApplicationSubtypeField,
+  ise_csr_source: iseCsrSourceField,
+  ise_csr_config: iseCsrConfigField,
   ise_nodes: iseNodesField,
   ise_certificate: iseCertificateField,
   ise_private_key: isePrivateKeyField,
@@ -444,7 +552,14 @@ export const fieldRegistry: Record<string, FieldDefinition> = {
   application_type_info_ise: applicationTypeInfoIseField,
   application_type_info_general: applicationTypeInfoGeneralField,
   application_type_info_cc: applicationTypeInfoCatalystCenterField,
+  ise_usage_info_multi_use: iseUsageInfoMultiUseField,
+  ise_usage_info_admin: iseUsageInfoAdminField,
+  ise_usage_info_eap: iseUsageInfoEapField,
+  ise_usage_info_dtls: iseUsageInfoDtlsField,
   ise_subtype_info_guest: iseSubtypeInfoGuestField,
   ise_subtype_info_portal: iseSubtypeInfoPortalField,
-  ise_subtype_info_admin: iseSubtypeInfoAdminField,
+  ise_usage_info_pxgrid: iseUsageInfoPxgridField,
+  ise_usage_info_saml: iseUsageInfoSamlField,
+  ise_usage_info_ims: iseUsageInfoImsField,
+  ise_cert_overview_info: iseCertOverviewInfoField,
 };
