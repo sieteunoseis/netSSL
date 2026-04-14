@@ -1,20 +1,47 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useEffect, useState, useCallback, useRef } from "react";
 import {
-  Loader2, XCircle, RefreshCw, Shield, AlertTriangle,
-  Wifi, WifiOff, FolderCheck, Settings, Activity, Clock,
-  CheckCircle2, XOctagon, HardDrive, Cpu
-} from 'lucide-react';
-import { useWebSocket } from '@/contexts/WebSocketContext';
-import { useToast } from '@/hooks/use-toast';
-import BackgroundLogo from '@/components/BackgroundLogo';
-import LoadingState from '@/components/LoadingState';
-import { apiCall } from '@/lib/api';
-import { formatDateTime, calculateDuration } from '@/lib/date-utils';
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Loader2,
+  XCircle,
+  RefreshCw,
+  Shield,
+  AlertTriangle,
+  Wifi,
+  WifiOff,
+  FolderCheck,
+  Settings,
+  Activity,
+  Clock,
+  CheckCircle2,
+  XOctagon,
+  HardDrive,
+  Cpu,
+} from "lucide-react";
+import { useWebSocket } from "@/contexts/WebSocketContext";
+import { useToast } from "@/hooks/use-toast";
+import BackgroundLogo from "@/components/BackgroundLogo";
+import LoadingState from "@/components/LoadingState";
+import { apiCall } from "@/lib/api";
+import { formatDateTime, calculateDuration } from "@/lib/date-utils";
 
 interface ActiveRenewal {
   id: string;
@@ -34,12 +61,15 @@ interface DiagnosticsData {
   websocket: {
     clientCount: number;
   };
-  permissions: Record<string, {
-    readable: boolean;
-    writable: boolean;
-    exists: boolean;
-    error?: string;
-  }>;
+  permissions: Record<
+    string,
+    {
+      readable: boolean;
+      writable: boolean;
+      exists: boolean;
+      error?: string;
+    }
+  >;
   process: {
     uid: number | null;
     gid: number | null;
@@ -77,7 +107,8 @@ export default function Admin() {
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [diagnostics, setDiagnostics] = useState<DiagnosticsData | null>(null);
-  const [autoRenewalStatus, setAutoRenewalStatus] = useState<AutoRenewalStatus | null>(null);
+  const [autoRenewalStatus, setAutoRenewalStatus] =
+    useState<AutoRenewalStatus | null>(null);
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
   const [wsLatency, setWsLatency] = useState<number | null>(null);
   const [wsTesting, setWsTesting] = useState(false);
@@ -85,18 +116,98 @@ export default function Admin() {
   const { socket, connected } = useWebSocket();
   const { toast } = useToast();
 
+  // Venafi settings state
+  const [venafiPlatform, setVenafiPlatform] = useState("cloud");
+  const [venafiApiUrl, setVenafiApiUrl] = useState("");
+  const [venafiApiKey, setVenafiApiKey] = useState("");
+  const [venafiZone, setVenafiZone] = useState("");
+  const [venafiUsername, setVenafiUsername] = useState("");
+  const [venafiPassword, setVenafiPassword] = useState("");
+  const [venafiSaving, setVenafiSaving] = useState(false);
+
+  const fetchVenafiSettings = useCallback(async () => {
+    try {
+      const response = await apiCall("/settings/venafi");
+      const data = await response.json();
+      const settingsMap: Record<string, string> = {};
+      data.forEach((item: { key_name: string; key_value: string }) => {
+        settingsMap[item.key_name] = item.key_value;
+      });
+      if (settingsMap["VENAFI_PLATFORM"])
+        setVenafiPlatform(settingsMap["VENAFI_PLATFORM"]);
+      if (settingsMap["VENAFI_API_URL"])
+        setVenafiApiUrl(settingsMap["VENAFI_API_URL"]);
+      if (settingsMap["VENAFI_API_KEY"])
+        setVenafiApiKey(settingsMap["VENAFI_API_KEY"]);
+      if (settingsMap["VENAFI_ZONE"]) setVenafiZone(settingsMap["VENAFI_ZONE"]);
+      if (settingsMap["VENAFI_USERNAME"])
+        setVenafiUsername(settingsMap["VENAFI_USERNAME"]);
+      if (settingsMap["VENAFI_PASSWORD"])
+        setVenafiPassword(settingsMap["VENAFI_PASSWORD"]);
+    } catch (error) {
+      console.error("Error fetching Venafi settings:", error);
+    }
+  }, []);
+
+  const handleSaveVenafiSetting = async (keyName: string, value: string) => {
+    try {
+      await apiCall("/settings", {
+        method: "POST",
+        body: JSON.stringify({
+          key_name: keyName,
+          key_value: value,
+          provider: "venafi",
+          description: "Venafi configuration",
+        }),
+      });
+      toast({
+        title: "Success",
+        description: `${keyName} saved successfully`,
+      });
+    } catch (error) {
+      console.error("Error saving Venafi setting:", error);
+      toast({
+        title: "Error",
+        description: `Failed to save ${keyName}`,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleSaveAllVenafi = async () => {
+    setVenafiSaving(true);
+    try {
+      const settings: Array<{ key: string; value: string }> = [
+        { key: "VENAFI_PLATFORM", value: venafiPlatform },
+        { key: "VENAFI_API_URL", value: venafiApiUrl },
+        { key: "VENAFI_ZONE", value: venafiZone },
+      ];
+      if (venafiPlatform === "cloud") {
+        settings.push({ key: "VENAFI_API_KEY", value: venafiApiKey });
+      } else {
+        settings.push({ key: "VENAFI_USERNAME", value: venafiUsername });
+        settings.push({ key: "VENAFI_PASSWORD", value: venafiPassword });
+      }
+      await Promise.all(
+        settings.map(({ key, value }) => handleSaveVenafiSetting(key, value)),
+      );
+    } finally {
+      setVenafiSaving(false);
+    }
+  };
+
   const fetchActiveRenewals = async () => {
     try {
       setLoading(true);
-      const response = await apiCall('/admin/active-renewals');
+      const response = await apiCall("/admin/active-renewals");
       const data = await response.json();
       setActiveRenewals(data);
     } catch (error) {
-      console.error('Error fetching active renewals:', error);
+      console.error("Error fetching active renewals:", error);
       toast({
-        title: 'Error',
-        description: 'Failed to load active renewals',
-        variant: 'destructive'
+        title: "Error",
+        description: "Failed to load active renewals",
+        variant: "destructive",
       });
     } finally {
       setLoading(false);
@@ -107,19 +218,19 @@ export default function Admin() {
     setDiagnosticsLoading(true);
     try {
       const [diagResponse, renewalResponse] = await Promise.all([
-        apiCall('/admin/diagnostics'),
-        apiCall('/auto-renewal/status')
+        apiCall("/admin/diagnostics"),
+        apiCall("/auto-renewal/status"),
       ]);
       const diagData = await diagResponse.json();
       const renewalData = await renewalResponse.json();
       setDiagnostics(diagData);
       setAutoRenewalStatus(renewalData);
     } catch (error) {
-      console.error('Error fetching diagnostics:', error);
+      console.error("Error fetching diagnostics:", error);
       toast({
-        title: 'Error',
-        description: 'Failed to load diagnostics data',
-        variant: 'destructive'
+        title: "Error",
+        description: "Failed to load diagnostics data",
+        variant: "destructive",
       });
     } finally {
       setDiagnosticsLoading(false);
@@ -129,9 +240,9 @@ export default function Admin() {
   const testWebSocket = useCallback(() => {
     if (!socket || !connected) {
       toast({
-        title: 'Error',
-        description: 'WebSocket is not connected',
-        variant: 'destructive'
+        title: "Error",
+        description: "WebSocket is not connected",
+        variant: "destructive",
       });
       return;
     }
@@ -145,92 +256,111 @@ export default function Admin() {
       setWsLatency(latency);
       setWsTesting(false);
       wsTestingRef.current = false;
-      socket.off('pong', onPong);
+      socket.off("pong", onPong);
     };
 
-    socket.on('pong', onPong);
-    socket.emit('ping');
+    socket.on("pong", onPong);
+    socket.emit("ping");
 
     setTimeout(() => {
-      socket.off('pong', onPong);
+      socket.off("pong", onPong);
       if (wsTestingRef.current) {
         setWsTesting(false);
         wsTestingRef.current = false;
         setWsLatency(null);
         toast({
-          title: 'Timeout',
-          description: 'WebSocket ping test timed out after 5s',
-          variant: 'destructive'
+          title: "Timeout",
+          description: "WebSocket ping test timed out after 5s",
+          variant: "destructive",
         });
       }
     }, 5000);
   }, [socket, connected, toast]);
 
   useEffect(() => {
+    fetchVenafiSettings();
+  }, [fetchVenafiSettings]);
+
+  useEffect(() => {
     fetchActiveRenewals();
 
     if (socket && connected) {
-      socket.emit('subscribe:admin');
+      socket.emit("subscribe:admin");
 
-      socket.on('admin:renewal:started', (renewal: ActiveRenewal) => {
-        setActiveRenewals(prev => [...prev, renewal]);
+      socket.on("admin:renewal:started", (renewal: ActiveRenewal) => {
+        setActiveRenewals((prev) => [...prev, renewal]);
       });
 
-      socket.on('admin:renewal:updated', (update: { id: string; status: string; progress: number; message: string }) => {
-        setActiveRenewals(prev => prev.map(r =>
-          r.id === update.id
-            ? { ...r, status: update.status, progress: update.progress, message: update.message }
-            : r
-        ));
-      });
+      socket.on(
+        "admin:renewal:updated",
+        (update: {
+          id: string;
+          status: string;
+          progress: number;
+          message: string;
+        }) => {
+          setActiveRenewals((prev) =>
+            prev.map((r) =>
+              r.id === update.id
+                ? {
+                    ...r,
+                    status: update.status,
+                    progress: update.progress,
+                    message: update.message,
+                  }
+                : r,
+            ),
+          );
+        },
+      );
 
-      socket.on('admin:renewal:completed', (id: string) => {
-        setActiveRenewals(prev => prev.filter(r => r.id !== id));
+      socket.on("admin:renewal:completed", (id: string) => {
+        setActiveRenewals((prev) => prev.filter((r) => r.id !== id));
         toast({
-          title: 'Success',
-          description: 'Renewal completed'
+          title: "Success",
+          description: "Renewal completed",
         });
       });
 
-      socket.on('admin:renewal:cancelled', (id: string) => {
-        setActiveRenewals(prev => prev.filter(r => r.id !== id));
+      socket.on("admin:renewal:cancelled", (id: string) => {
+        setActiveRenewals((prev) => prev.filter((r) => r.id !== id));
         toast({
-          title: 'Info',
-          description: 'Renewal cancelled'
+          title: "Info",
+          description: "Renewal cancelled",
         });
       });
 
       return () => {
-        socket.emit('unsubscribe:admin');
-        socket.off('admin:renewal:started');
-        socket.off('admin:renewal:updated');
-        socket.off('admin:renewal:completed');
-        socket.off('admin:renewal:cancelled');
+        socket.emit("unsubscribe:admin");
+        socket.off("admin:renewal:started");
+        socket.off("admin:renewal:updated");
+        socket.off("admin:renewal:completed");
+        socket.off("admin:renewal:cancelled");
       };
     }
   }, [socket, connected]);
 
   const cancelRenewal = async (renewalId: string) => {
-    if (!confirm('Are you sure you want to cancel this renewal?')) {
+    if (!confirm("Are you sure you want to cancel this renewal?")) {
       return;
     }
 
     setCancelling(renewalId);
     try {
       await apiCall(`/admin/cancel-renewal/${renewalId}`, {
-        method: 'POST'
+        method: "POST",
       });
 
       toast({
-        title: 'Success',
-        description: 'Renewal cancellation requested'
+        title: "Success",
+        description: "Renewal cancellation requested",
       });
     } catch (error) {
-      console.error('Error cancelling renewal:', error);
+      console.error("Error cancelling renewal:", error);
       toast({
-        title: 'Error',
-        description: 'Failed to cancel renewal',
-        variant: 'destructive'
+        title: "Error",
+        description: "Failed to cancel renewal",
+        variant: "destructive",
       });
     } finally {
       setCancelling(null);
@@ -239,27 +369,27 @@ export default function Admin() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'pending':
-        return 'bg-status-warning';
-      case 'in_progress':
-      case 'generating_csr':
-      case 'creating_account':
-      case 'requesting_certificate':
-      case 'creating_dns_challenge':
-      case 'dns_validation':
-      case 'waiting_dns_propagation':
-      case 'completing_validation':
-      case 'downloading_certificate':
-      case 'uploading_certificate':
-        return 'bg-primary';
-      case 'waiting_manual_dns':
-        return 'bg-status-warning';
-      case 'completed':
-        return 'bg-status-valid';
-      case 'failed':
-        return 'bg-status-expired';
+      case "pending":
+        return "bg-status-warning";
+      case "in_progress":
+      case "generating_csr":
+      case "creating_account":
+      case "requesting_certificate":
+      case "creating_dns_challenge":
+      case "dns_validation":
+      case "waiting_dns_propagation":
+      case "completing_validation":
+      case "downloading_certificate":
+      case "uploading_certificate":
+        return "bg-primary";
+      case "waiting_manual_dns":
+        return "bg-status-warning";
+      case "completed":
+        return "bg-status-valid";
+      case "failed":
+        return "bg-status-expired";
       default:
-        return 'bg-muted-foreground';
+        return "bg-muted-foreground";
     }
   };
 
@@ -275,9 +405,9 @@ export default function Admin() {
   };
 
   const formatBytes = (bytes: number): string => {
-    if (bytes === 0) return '0 B';
+    if (bytes === 0) return "0 B";
     const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const sizes = ["B", "KB", "MB", "GB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
   };
@@ -296,7 +426,9 @@ export default function Admin() {
               <Shield className="h-8 w-8 text-primary" />
               <div>
                 <h1 className="text-3xl font-bold">System Info</h1>
-                <p className="text-muted-foreground">Certificate renewals, system health, and diagnostics</p>
+                <p className="text-muted-foreground">
+                  Certificate renewals, system health, and diagnostics
+                </p>
               </div>
             </div>
           </div>
@@ -306,7 +438,8 @@ export default function Admin() {
           <Alert className="mb-4">
             <AlertTriangle className="h-4 w-4" />
             <AlertDescription>
-              WebSocket disconnected. Real-time updates are unavailable. Data shown may be outdated.
+              WebSocket disconnected. Real-time updates are unavailable. Data
+              shown may be outdated.
             </AlertDescription>
           </Alert>
         )}
@@ -314,9 +447,15 @@ export default function Admin() {
         <Tabs defaultValue="renewals" className="space-y-4">
           <TabsList>
             <TabsTrigger value="renewals">Active Renewals</TabsTrigger>
-            <TabsTrigger value="diagnostics" onClick={() => { if (!diagnostics) fetchDiagnostics(); }}>
+            <TabsTrigger
+              value="diagnostics"
+              onClick={() => {
+                if (!diagnostics) fetchDiagnostics();
+              }}
+            >
               Diagnostics
             </TabsTrigger>
+            <TabsTrigger value="settings">Settings</TabsTrigger>
           </TabsList>
 
           {/* Active Renewals Tab */}
@@ -326,10 +465,15 @@ export default function Admin() {
                 <div>
                   <CardTitle>Active Certificate Renewals</CardTitle>
                   <CardDescription>
-                    {activeRenewals.length} active renewal{activeRenewals.length !== 1 ? 's' : ''} in progress
+                    {activeRenewals.length} active renewal
+                    {activeRenewals.length !== 1 ? "s" : ""} in progress
                   </CardDescription>
                 </div>
-                <Button onClick={fetchActiveRenewals} variant="outline" size="sm">
+                <Button
+                  onClick={fetchActiveRenewals}
+                  variant="outline"
+                  size="sm"
+                >
                   <RefreshCw className="h-4 w-4 mr-2" />
                   Refresh
                 </Button>
@@ -342,26 +486,36 @@ export default function Admin() {
                 ) : (
                   <div className="space-y-4">
                     {activeRenewals.map((renewal) => (
-                      <div key={renewal.id} className="border rounded-lg p-4 space-y-3">
+                      <div
+                        key={renewal.id}
+                        className="border rounded-lg p-4 space-y-3"
+                      >
                         <div className="flex items-start justify-between">
                           <div className="space-y-1">
                             <div className="flex items-center space-x-2">
                               <h3 className="font-semibold">
-                                {renewal.connectionName !== 'Unknown'
+                                {renewal.connectionName !== "Unknown"
                                   ? renewal.connectionName
                                   : `Connection ${renewal.connectionId}`}
                               </h3>
-                              <Badge className={getStatusColor(renewal.status)} variant="secondary">
-                                {renewal.status.replace(/_/g, ' ')}
+                              <Badge
+                                className={getStatusColor(renewal.status)}
+                                variant="secondary"
+                              >
+                                {renewal.status.replace(/_/g, " ")}
                               </Badge>
                               <Badge variant="outline">
-                                {renewal.createdBy || 'system'}
+                                {renewal.createdBy || "system"}
                               </Badge>
                             </div>
                             <p className="text-sm text-muted-foreground">
-                              {renewal.hostname !== 'Unknown' ? renewal.hostname : 'No hostname available'}
+                              {renewal.hostname !== "Unknown"
+                                ? renewal.hostname
+                                : "No hostname available"}
                             </p>
-                            <p className="text-sm text-muted-foreground">ID: {renewal.id}</p>
+                            <p className="text-sm text-muted-foreground">
+                              ID: {renewal.id}
+                            </p>
                           </div>
                           <Button
                             variant="destructive"
@@ -380,7 +534,9 @@ export default function Admin() {
 
                         <div className="space-y-2">
                           <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">Progress</span>
+                            <span className="text-muted-foreground">
+                              Progress
+                            </span>
                             <span>{renewal.progress}%</span>
                           </div>
                           <div className="w-full bg-muted rounded-full h-2">
@@ -392,9 +548,15 @@ export default function Admin() {
                         </div>
 
                         <div className="space-y-1 text-sm">
-                          <p className="text-muted-foreground">Status: {renewal.message}</p>
-                          <p className="text-muted-foreground">Started: {formatDateTime(renewal.startedAt)}</p>
-                          <p className="text-muted-foreground">Duration: {calculateDuration(renewal.startedAt)}</p>
+                          <p className="text-muted-foreground">
+                            Status: {renewal.message}
+                          </p>
+                          <p className="text-muted-foreground">
+                            Started: {formatDateTime(renewal.startedAt)}
+                          </p>
+                          <p className="text-muted-foreground">
+                            Duration: {calculateDuration(renewal.startedAt)}
+                          </p>
                         </div>
 
                         {renewal.metadata && (
@@ -442,7 +604,11 @@ export default function Admin() {
                           </Badge>
                         )}
                         <span className="text-sm text-muted-foreground">
-                          {diagnostics.websocket.clientCount} client{diagnostics.websocket.clientCount !== 1 ? 's' : ''} connected to server
+                          {diagnostics.websocket.clientCount} client
+                          {diagnostics.websocket.clientCount !== 1
+                            ? "s"
+                            : ""}{" "}
+                          connected to server
                         </span>
                       </div>
                       <div className="flex items-center gap-3">
@@ -451,8 +617,17 @@ export default function Admin() {
                             {wsLatency}ms
                           </Badge>
                         )}
-                        <Button onClick={testWebSocket} variant="outline" size="sm" disabled={wsTesting || !connected}>
-                          {wsTesting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Activity className="h-4 w-4 mr-2" />}
+                        <Button
+                          onClick={testWebSocket}
+                          variant="outline"
+                          size="sm"
+                          disabled={wsTesting || !connected}
+                        >
+                          {wsTesting ? (
+                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          ) : (
+                            <Activity className="h-4 w-4 mr-2" />
+                          )}
                           Test WebSocket
                         </Button>
                       </div>
@@ -467,44 +642,70 @@ export default function Admin() {
                       <FolderCheck className="h-5 w-5" />
                       Permission Validation
                     </CardTitle>
-                    <Button onClick={fetchDiagnostics} variant="outline" size="sm">
+                    <Button
+                      onClick={fetchDiagnostics}
+                      variant="outline"
+                      size="sm"
+                    >
                       <RefreshCw className="h-4 w-4 mr-2" />
                       Re-check
                     </Button>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      {Object.entries(diagnostics.permissions).map(([dirName, perms]) => (
-                        <div key={dirName} className="border rounded-lg p-4 space-y-2">
-                          <div className="flex items-center gap-2 font-semibold">
-                            <HardDrive className="h-4 w-4" />
-                            {dirName}/
+                      {Object.entries(diagnostics.permissions).map(
+                        ([dirName, perms]) => (
+                          <div
+                            key={dirName}
+                            className="border rounded-lg p-4 space-y-2"
+                          >
+                            <div className="flex items-center gap-2 font-semibold">
+                              <HardDrive className="h-4 w-4" />
+                              {dirName}/
+                            </div>
+                            <div className="space-y-1 text-sm">
+                              <div className="flex items-center gap-2">
+                                {perms.exists ? (
+                                  <CheckCircle2 className="h-4 w-4 text-status-valid" />
+                                ) : (
+                                  <XOctagon className="h-4 w-4 text-status-expired" />
+                                )}
+                                Exists
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {perms.readable ? (
+                                  <CheckCircle2 className="h-4 w-4 text-status-valid" />
+                                ) : (
+                                  <XOctagon className="h-4 w-4 text-status-expired" />
+                                )}
+                                Readable
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {perms.writable ? (
+                                  <CheckCircle2 className="h-4 w-4 text-status-valid" />
+                                ) : (
+                                  <XOctagon className="h-4 w-4 text-status-expired" />
+                                )}
+                                Writable
+                              </div>
+                            </div>
+                            {perms.error && (
+                              <p className="text-xs text-destructive">
+                                {perms.error}
+                              </p>
+                            )}
                           </div>
-                          <div className="space-y-1 text-sm">
-                            <div className="flex items-center gap-2">
-                              {perms.exists ? <CheckCircle2 className="h-4 w-4 text-status-valid" /> : <XOctagon className="h-4 w-4 text-status-expired" />}
-                              Exists
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {perms.readable ? <CheckCircle2 className="h-4 w-4 text-status-valid" /> : <XOctagon className="h-4 w-4 text-status-expired" />}
-                              Readable
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {perms.writable ? <CheckCircle2 className="h-4 w-4 text-status-valid" /> : <XOctagon className="h-4 w-4 text-status-expired" />}
-                              Writable
-                            </div>
-                          </div>
-                          {perms.error && (
-                            <p className="text-xs text-destructive">{perms.error}</p>
-                          )}
-                        </div>
-                      ))}
+                        ),
+                      )}
                     </div>
                     <div className="text-sm text-muted-foreground border-t pt-3">
-                      <span className="font-medium">Process:</span>{' '}
-                      UID={diagnostics.process.uid ?? 'N/A'}, GID={diagnostics.process.gid ?? 'N/A'} |{' '}
-                      Node {diagnostics.process.nodeVersion} | {diagnostics.process.platform}/{diagnostics.process.arch} |{' '}
-                      PID {diagnostics.process.pid} | Uptime: {formatUptime(diagnostics.process.uptime)}
+                      <span className="font-medium">Process:</span> UID=
+                      {diagnostics.process.uid ?? "N/A"}, GID=
+                      {diagnostics.process.gid ?? "N/A"} | Node{" "}
+                      {diagnostics.process.nodeVersion} |{" "}
+                      {diagnostics.process.platform}/{diagnostics.process.arch}{" "}
+                      | PID {diagnostics.process.pid} | Uptime:{" "}
+                      {formatUptime(diagnostics.process.uptime)}
                     </div>
                   </CardContent>
                 </Card>
@@ -520,12 +721,19 @@ export default function Admin() {
                   <CardContent className="space-y-4">
                     {/* Environment Variables */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {Object.entries(diagnostics.environment).map(([key, value]) => (
-                        <div key={key} className="flex justify-between items-center border rounded px-3 py-2">
-                          <span className="text-sm font-mono text-muted-foreground">{key}</span>
-                          <Badge variant="outline">{value}</Badge>
-                        </div>
-                      ))}
+                      {Object.entries(diagnostics.environment).map(
+                        ([key, value]) => (
+                          <div
+                            key={key}
+                            className="flex justify-between items-center border rounded px-3 py-2"
+                          >
+                            <span className="text-sm font-mono text-muted-foreground">
+                              {key}
+                            </span>
+                            <Badge variant="outline">{value}</Badge>
+                          </div>
+                        ),
+                      )}
                     </div>
 
                     {/* Accounts Stats */}
@@ -536,15 +744,21 @@ export default function Admin() {
                       <div className="grid grid-cols-3 gap-4 text-sm">
                         <div>
                           <span className="text-muted-foreground">Path:</span>
-                          <span className="ml-2 font-mono">{diagnostics.accounts.directory}</span>
+                          <span className="ml-2 font-mono">
+                            {diagnostics.accounts.directory}
+                          </span>
                         </div>
                         <div>
                           <span className="text-muted-foreground">Files:</span>
-                          <span className="ml-2">{diagnostics.accounts.totalFiles}</span>
+                          <span className="ml-2">
+                            {diagnostics.accounts.totalFiles}
+                          </span>
                         </div>
                         <div>
                           <span className="text-muted-foreground">Size:</span>
-                          <span className="ml-2">{diagnostics.accounts.totalSize}</span>
+                          <span className="ml-2">
+                            {diagnostics.accounts.totalSize}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -557,20 +771,36 @@ export default function Admin() {
                         </h4>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                           <div>
-                            <span className="text-muted-foreground">Eligible:</span>
-                            <span className="ml-2 font-semibold">{autoRenewalStatus.total_auto_renew_connections}</span>
+                            <span className="text-muted-foreground">
+                              Eligible:
+                            </span>
+                            <span className="ml-2 font-semibold">
+                              {autoRenewalStatus.total_auto_renew_connections}
+                            </span>
                           </div>
                           <div>
                             <span className="text-muted-foreground">Due:</span>
-                            <span className="ml-2 font-semibold">{autoRenewalStatus.connections_due_for_renewal}</span>
+                            <span className="ml-2 font-semibold">
+                              {autoRenewalStatus.connections_due_for_renewal}
+                            </span>
                           </div>
                           <div>
-                            <span className="text-muted-foreground">Schedule:</span>
-                            <span className="ml-2 font-mono">{autoRenewalStatus.cron_schedule}</span>
+                            <span className="text-muted-foreground">
+                              Schedule:
+                            </span>
+                            <span className="ml-2 font-mono">
+                              {autoRenewalStatus.cron_schedule}
+                            </span>
                           </div>
                           <div>
-                            <span className="text-muted-foreground">Next run:</span>
-                            <span className="ml-2">{new Date(autoRenewalStatus.next_run_time).toLocaleString()}</span>
+                            <span className="text-muted-foreground">
+                              Next run:
+                            </span>
+                            <span className="ml-2">
+                              {new Date(
+                                autoRenewalStatus.next_run_time,
+                              ).toLocaleString()}
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -584,15 +814,29 @@ export default function Admin() {
                       <div className="grid grid-cols-3 gap-4 text-sm">
                         <div>
                           <span className="text-muted-foreground">RSS:</span>
-                          <span className="ml-2">{formatBytes(diagnostics.process.memoryUsage.rss)}</span>
+                          <span className="ml-2">
+                            {formatBytes(diagnostics.process.memoryUsage.rss)}
+                          </span>
                         </div>
                         <div>
-                          <span className="text-muted-foreground">Heap Used:</span>
-                          <span className="ml-2">{formatBytes(diagnostics.process.memoryUsage.heapUsed)}</span>
+                          <span className="text-muted-foreground">
+                            Heap Used:
+                          </span>
+                          <span className="ml-2">
+                            {formatBytes(
+                              diagnostics.process.memoryUsage.heapUsed,
+                            )}
+                          </span>
                         </div>
                         <div>
-                          <span className="text-muted-foreground">Heap Total:</span>
-                          <span className="ml-2">{formatBytes(diagnostics.process.memoryUsage.heapTotal)}</span>
+                          <span className="text-muted-foreground">
+                            Heap Total:
+                          </span>
+                          <span className="ml-2">
+                            {formatBytes(
+                              diagnostics.process.memoryUsage.heapTotal,
+                            )}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -604,6 +848,121 @@ export default function Admin() {
                 Click the Diagnostics tab to load system information
               </div>
             )}
+          </TabsContent>
+
+          {/* Settings Tab */}
+          <TabsContent value="settings">
+            <div className="space-y-4">
+              {/* Venafi Settings */}
+              <Card className="bg-card">
+                <CardHeader>
+                  <CardTitle>Venafi SSL Provider</CardTitle>
+                  <CardDescription>
+                    Configure Venafi as Control Plane (cloud) or Trust
+                    Protection Platform (TPP) for certificate issuance
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Platform */}
+                  <div className="space-y-2">
+                    <Label htmlFor="venafi-platform">VENAFI_PLATFORM</Label>
+                    <Select
+                      value={venafiPlatform}
+                      onValueChange={setVenafiPlatform}
+                    >
+                      <SelectTrigger id="venafi-platform">
+                        <SelectValue placeholder="Select platform" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="cloud">cloud</SelectItem>
+                        <SelectItem value="tpp">tpp</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* API URL */}
+                  <div className="space-y-2">
+                    <Label htmlFor="venafi-api-url">VENAFI_API_URL</Label>
+                    <Input
+                      id="venafi-api-url"
+                      type="text"
+                      placeholder={
+                        venafiPlatform === "cloud"
+                          ? "https://api.venafi.cloud"
+                          : "https://tpp.example.com/vedsdk"
+                      }
+                      value={venafiApiUrl}
+                      onChange={(e) => setVenafiApiUrl(e.target.value)}
+                    />
+                  </div>
+
+                  {/* API Key — cloud only */}
+                  {venafiPlatform === "cloud" && (
+                    <div className="space-y-2">
+                      <Label htmlFor="venafi-api-key">VENAFI_API_KEY</Label>
+                      <Input
+                        id="venafi-api-key"
+                        type="password"
+                        placeholder="Enter Venafi Cloud API key"
+                        value={venafiApiKey}
+                        onChange={(e) => setVenafiApiKey(e.target.value)}
+                      />
+                    </div>
+                  )}
+
+                  {/* Zone */}
+                  <div className="space-y-2">
+                    <Label htmlFor="venafi-zone">VENAFI_ZONE</Label>
+                    <Input
+                      id="venafi-zone"
+                      type="text"
+                      placeholder={
+                        venafiPlatform === "cloud"
+                          ? "MyApp\\Default"
+                          : "\\VED\\Policy\\MyApp"
+                      }
+                      value={venafiZone}
+                      onChange={(e) => setVenafiZone(e.target.value)}
+                    />
+                  </div>
+
+                  {/* Username — TPP only */}
+                  {venafiPlatform === "tpp" && (
+                    <div className="space-y-2">
+                      <Label htmlFor="venafi-username">VENAFI_USERNAME</Label>
+                      <Input
+                        id="venafi-username"
+                        type="text"
+                        placeholder="Enter TPP username"
+                        value={venafiUsername}
+                        onChange={(e) => setVenafiUsername(e.target.value)}
+                      />
+                    </div>
+                  )}
+
+                  {/* Password — TPP only */}
+                  {venafiPlatform === "tpp" && (
+                    <div className="space-y-2">
+                      <Label htmlFor="venafi-password">VENAFI_PASSWORD</Label>
+                      <Input
+                        id="venafi-password"
+                        type="password"
+                        placeholder="Enter TPP password"
+                        value={venafiPassword}
+                        onChange={(e) => setVenafiPassword(e.target.value)}
+                      />
+                    </div>
+                  )}
+
+                  <Button onClick={handleSaveAllVenafi} disabled={venafiSaving}>
+                    {venafiSaving ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : null}
+                    Save Venafi Settings
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
         </Tabs>
       </div>

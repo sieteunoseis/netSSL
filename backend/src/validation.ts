@@ -189,25 +189,31 @@ export const validateConnectionData = (
 
   if (!data.ssl_provider || typeof data.ssl_provider !== "string") {
     errors.push("SSL provider is required and must be a string");
-  } else if (!validator.isIn(data.ssl_provider, ["letsencrypt", "zerossl"])) {
-    errors.push('SSL provider must be either "letsencrypt" or "zerossl"');
-  }
-
-  if (!data.dns_provider || typeof data.dns_provider !== "string") {
-    errors.push("DNS provider is required and must be a string");
   } else if (
-    !validator.isIn(data.dns_provider, [
-      "cloudflare",
-      "digitalocean",
-      "route53",
-      "azure",
-      "google",
-      "custom",
-    ])
+    !validator.isIn(data.ssl_provider, ["letsencrypt", "zerossl", "venafi"])
   ) {
     errors.push(
-      "DNS provider must be one of: cloudflare, digitalocean, route53, azure, google, custom",
+      'SSL provider must be either "letsencrypt", "zerossl", or "venafi"',
     );
+  }
+
+  if (data.ssl_provider !== "venafi") {
+    if (!data.dns_provider || typeof data.dns_provider !== "string") {
+      errors.push("DNS provider is required and must be a string");
+    } else if (
+      !validator.isIn(data.dns_provider, [
+        "cloudflare",
+        "digitalocean",
+        "route53",
+        "azure",
+        "google",
+        "custom",
+      ])
+    ) {
+      errors.push(
+        "DNS provider must be one of: cloudflare, digitalocean, route53, azure, google, custom",
+      );
+    }
   }
 
   // Version is optional
