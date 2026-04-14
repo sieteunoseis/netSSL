@@ -362,19 +362,21 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       // Some providers support retrying with a recently generated certificate
       let recentCert = null;
       if (!existingCert && provider.supportsRecentCertRetry) {
+        const reuseHours = parseFloat(process.env.CERT_REUSE_MAX_HOURS || "1");
+        const reuseMaxAgeMs = reuseHours * 3600000;
         recentCert = await this.getRecentCertificate(
           connectionId,
           fullFQDN,
-          3600000,
+          reuseMaxAgeMs,
         );
         if (recentCert) {
           status.logs.push(
-            `Found recently generated certificate for ${connection.name} (generated within last hour)`,
+            `Found recently generated certificate for ${connection.name} (generated within last ${reuseHours}h)`,
           );
           await accountManager.saveRenewalLog(
             connectionId,
             fullFQDN,
-            `Using recently generated certificate (less than 1 hour old)`,
+            `Using recently generated certificate (less than ${reuseHours} hour(s) old)`,
           );
         }
       }
