@@ -712,6 +712,14 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         status,
         operationManager,
       );
+    } else if (sslProvider === "venafi") {
+      return this.requestVenafiCertificate(
+        connection,
+        csr,
+        settings,
+        status,
+        operationManager,
+      );
     } else {
       throw new Error(`Unsupported SSL provider: ${sslProvider}`);
     }
@@ -1637,6 +1645,86 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       Logger.error(
         `ZeroSSL certificate request failed: ${error instanceof Error ? error.message : "Unknown error"}`,
       );
+      throw error;
+    }
+  }
+
+  private async requestVenafiCertificate(
+    connection: ConnectionRecord,
+    csr: string,
+    _settings: any[],
+    status: RenewalStatus,
+    operationManager?: OperationStatusManager,
+  ): Promise<string> {
+    try {
+      const { VenafiProvider } = await import("./ssl-providers/venafi");
+
+      if (!this.database) {
+        throw new Error("Database not initialized");
+      }
+
+      const venafi = await VenafiProvider.create(this.database);
+      const fullFQDN = getDomainFromConnection(connection) || "";
+      const connectionId = (connection as any).id;
+
+      // Build SAN list
+      const sans = [fullFQDN];
+      if (connection.alt_names) {
+        const altNames = connection.alt_names
+          .split(",")
+          .map((name) => name.trim())
+          .filter((name) => name);
+        sans.push(...altNames);
+      }
+
+      await this.updateStatus(
+        status,
+        "requesting_certificate",
+        "Submitting CSR to Venafi",
+        30,
+      );
+
+      // Submit CSR to Venafi
+      const request = await venafi.requestCertificate(csr, fullFQDN, sans);
+      status.logs.push(`Venafi certificate request submitted: ${request.id}`);
+      await accountManager.saveRenewalLog(
+        connectionId,
+        fullFQDN,
+        `Venafi certificate request submitted: ${request.id}`,
+      );
+
+      await this.updateStatus(
+        status,
+        "waiting_dns_propagation",
+        "Waiting for Venafi certificate issuance",
+        50,
+      );
+
+      // Poll for certificate issuance (Venafi handles validation internally)
+      const certResponse = await venafi.waitAndRetrieveCertificate(request.id);
+
+      // Combine certificate + chain
+      const fullChain =
+        certResponse.certificate + "\n" + (certResponse.chain || "");
+
+      status.logs.push("Venafi certificate issued and retrieved");
+      await accountManager.saveRenewalLog(
+        connectionId,
+        fullFQDN,
+        "Venafi certificate issued and retrieved",
+      );
+
+      // Save certificate chain to disk
+      await this.saveCertificateChain(
+        connectionId,
+        fullFQDN,
+        fullChain,
+        status,
+      );
+
+      return fullChain;
+    } catch (error: any) {
+      Logger.error(`Venafi certificate request failed: ${error.message}`);
       throw error;
     }
   }
