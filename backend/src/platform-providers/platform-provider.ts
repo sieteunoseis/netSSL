@@ -81,6 +81,7 @@ export interface CSRGenerationParams {
   state?: string;
   country?: string;
   usedFor?: string;
+  portalGroupTag?: string;
 }
 
 export interface CSRResponse {

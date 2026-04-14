@@ -89,7 +89,7 @@ export class ISEProvider extends PlatformProvider {
     try {
       Logger.info(`Generating CSR for ISE platform: ${hostname}`);
 
-      const csrData = {
+      const csrData: Record<string, any> = {
         hostnames: [hostname],
         subjectCommonName: params.commonName,
         subjectOrg: params.organizationName || "Default Organization",
@@ -103,6 +103,11 @@ export class ISEProvider extends PlatformProvider {
         usedFor: params.usedFor || "MULTI-USE",
         sanDNS: params.subjectAltNames || [],
       };
+
+      // ISE requires portalGroupTag when usedFor includes PORTAL
+      if (params.portalGroupTag) {
+        csrData.portalGroupTag = params.portalGroupTag;
+      }
 
       let response: any;
       try {
@@ -420,17 +425,20 @@ export class ISEProvider extends PlatformProvider {
       saml?: boolean;
     },
     timeoutMs?: number,
+    importConfig?: Record<string, any>,
   ): Promise<{ success: boolean; message: string }> {
     try {
       Logger.info(
         `Binding signed certificate to CSR ${csrId} on ISE: ${hostname}`,
       );
 
-      const bindData = {
+      const bindData: Record<string, any> = {
         hostName: hostname,
         id: csrId,
         data: signedCertPem,
-        name: `netSSL-${new Date().toISOString().slice(0, 10)}`,
+        name:
+          importConfig?.name ||
+          `netSSL-${new Date().toISOString().slice(0, 10)}`,
         admin: roles?.admin ?? false,
         eap: roles?.eap ?? false,
         radius: roles?.radius ?? false,
@@ -438,14 +446,26 @@ export class ISEProvider extends PlatformProvider {
         pxgrid: roles?.pxgrid ?? false,
         ims: roles?.ims ?? false,
         saml: roles?.saml ?? false,
-        allowExtendedValidity: true,
-        allowOutOfDateCert: true,
-        allowReplacementOfCertificates: true,
-        allowReplacementOfPortalGroupTag: true,
-        allowRoleTransferForSameSubject: true,
-        allowPortalTagTransferForSameSubject: true,
-        validateCertificateExtensions: false,
+        allowExtendedValidity: importConfig?.allowExtendedValidity ?? true,
+        allowOutOfDateCert: importConfig?.allowOutOfDateCert ?? true,
+        allowReplacementOfCertificates:
+          importConfig?.allowReplacementOfCertificates ?? true,
+        allowReplacementOfPortalGroupTag:
+          importConfig?.allowReplacementOfPortalGroupTag ?? true,
+        allowRoleTransferForSameSubject:
+          importConfig?.allowRoleTransferForSameSubject ?? true,
+        allowPortalTagTransferForSameSubject:
+          importConfig?.allowPortalTagTransferForSameSubject ?? true,
+        allowWildCardCertificates:
+          importConfig?.allowWildCardCertificates ?? false,
+        validateCertificateExtensions:
+          importConfig?.validateCertificateExtensions ?? false,
       };
+
+      // Include portalGroupTag if portal role is enabled
+      if ((roles?.portal ?? true) && importConfig?.portalGroupTag) {
+        bindData.portalGroupTag = importConfig.portalGroupTag;
+      }
 
       const response = await this.makeApiRequest(
         hostname,
@@ -1066,6 +1086,19 @@ export class ISEProvider extends PlatformProvider {
         }
       }
 
+      // Extract portalGroupTag from import config if portal role is selected
+      let portalGroupTag: string | undefined;
+      if (connection.ise_cert_import_config) {
+        try {
+          const importConfig = JSON.parse(connection.ise_cert_import_config);
+          if (importConfig.portalGroupTag) {
+            portalGroupTag = importConfig.portalGroupTag;
+          }
+        } catch {
+          /* ignore parse errors — handled later */
+        }
+      }
+
       const csrParams = {
         commonName: primaryNode,
         subjectAltNames: csrSANs,
@@ -1077,6 +1110,7 @@ export class ISEProvider extends PlatformProvider {
         state: csrConfig.state || undefined,
         country: csrConfig.country || "US",
         usedFor,
+        portalGroupTag,
       };
 
       const csrResponse = await this.generateCSR(
@@ -1351,21 +1385,25 @@ export class ISEProvider extends PlatformProvider {
           ims?: boolean;
           saml?: boolean;
         } = { ...derivedRoles };
+        let parsedImportConfig: Record<string, any> = {};
         if (connection.ise_cert_import_config) {
           try {
-            const importConfig = JSON.parse(connection.ise_cert_import_config);
+            parsedImportConfig = JSON.parse(connection.ise_cert_import_config);
             // Override derived roles with explicit import config values
-            if (importConfig.admin !== undefined)
-              roles.admin = importConfig.admin;
-            if (importConfig.portal !== undefined)
-              roles.portal = importConfig.portal;
-            if (importConfig.eap !== undefined) roles.eap = importConfig.eap;
-            if (importConfig.radius !== undefined)
-              roles.radius = importConfig.radius;
-            if (importConfig.pxgrid !== undefined)
-              roles.pxgrid = importConfig.pxgrid;
-            if (importConfig.ims !== undefined) roles.ims = importConfig.ims;
-            if (importConfig.saml !== undefined) roles.saml = importConfig.saml;
+            if (parsedImportConfig.admin !== undefined)
+              roles.admin = parsedImportConfig.admin;
+            if (parsedImportConfig.portal !== undefined)
+              roles.portal = parsedImportConfig.portal;
+            if (parsedImportConfig.eap !== undefined)
+              roles.eap = parsedImportConfig.eap;
+            if (parsedImportConfig.radius !== undefined)
+              roles.radius = parsedImportConfig.radius;
+            if (parsedImportConfig.pxgrid !== undefined)
+              roles.pxgrid = parsedImportConfig.pxgrid;
+            if (parsedImportConfig.ims !== undefined)
+              roles.ims = parsedImportConfig.ims;
+            if (parsedImportConfig.saml !== undefined)
+              roles.saml = parsedImportConfig.saml;
           } catch {
             status.logs.push(
               `Warning: Invalid JSON in ISE import config, using derived roles from certificate usage`,
@@ -1410,6 +1448,7 @@ export class ISEProvider extends PlatformProvider {
           domainCertificate,
           roles,
           includesAdmin ? 15000 : 90000, // Admin: short timeout (fire-and-forget), non-admin: 90s
+          parsedImportConfig,
         );
 
         if (bindResult.success) {
