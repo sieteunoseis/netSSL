@@ -325,7 +325,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         throw new Error(`Connection ${connectionId} not found`);
       }
 
-      const fullFQDN = getDomainFromConnection(connection);
+      let fullFQDN = getDomainFromConnection(connection);
       if (!fullFQDN) {
         throw new Error(
           `Invalid connection configuration: missing hostname/domain for connection ${connectionId}`,
@@ -404,6 +404,17 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
       // Generate CSR via provider
       await updateStatusWithOp("generating_csr", "Generating CSR...", 10);
       const csr = await provider.prepareCSR(ctx);
+
+      // If the CSR has a different CN than the connection's FQDN (e.g., custom CSR
+      // with CN=sponsor.example.com on an ISE node ise01.example.com), use the CSR's
+      // domain for the ACME order so the domains match the CSR subject.
+      if ((ctx as any)._csrDomain && (ctx as any)._csrDomain !== fullFQDN) {
+        const csrDomain = (ctx as any)._csrDomain;
+        Logger.info(
+          `Overriding domain from ${fullFQDN} to ${csrDomain} (from CSR CN)`,
+        );
+        fullFQDN = csrDomain;
+      }
 
       // Check cancellation before certificate request
       checkCancellation();
@@ -737,10 +748,47 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     try {
       const { acmeClient } = await import("./acme-client");
 
-      // For ISE, the primary FQDN for the cert is the ISE node (not the optional portal hostname).
-      // For other types, use hostname.domain as before.
+      // Determine the primary FQDN for the certificate order.
+      // For ISE with a custom CSR, extract the CN from the CSR — it may differ
+      // from the ISE node FQDN (e.g., sponsor.example.com vs ise01.example.com).
       let fullFQDN: string;
-      if (connection.application_type === "ise" && connection.ise_nodes) {
+      let csrCNOverride: string | null = null;
+
+      if (
+        connection.application_type === "ise" &&
+        connection.ise_certificate?.trim()
+      ) {
+        // Custom CSR pasted — extract CN from it
+        try {
+          const csrPem = connection.ise_certificate;
+          const der = Buffer.from(
+            csrPem.replace(/-----[^-]+-----/g, "").replace(/\s/g, ""),
+            "base64",
+          );
+          const oidMarker = Buffer.from([0x55, 0x04, 0x03]); // CN OID 2.5.4.3
+          const idx = der.indexOf(oidMarker);
+          if (idx !== -1) {
+            const valueStart = idx + oidMarker.length + 2;
+            const valueLen = der[idx + oidMarker.length + 1];
+            if (valueLen && valueLen < 256) {
+              csrCNOverride = der
+                .subarray(valueStart, valueStart + valueLen)
+                .toString("utf8");
+            }
+          }
+        } catch {
+          Logger.warn(
+            "Could not extract CN from custom CSR for domain override",
+          );
+        }
+      }
+
+      if (csrCNOverride) {
+        fullFQDN = csrCNOverride;
+      } else if (
+        connection.application_type === "ise" &&
+        connection.ise_nodes
+      ) {
         const primaryNode = connection.ise_nodes
           .split(",")
           .map((n) => n.trim())

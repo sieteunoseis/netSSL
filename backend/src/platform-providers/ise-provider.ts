@@ -967,6 +967,47 @@ export class ISEProvider extends PlatformProvider {
       }
       const csr = csrMatch[0];
 
+      // Extract CN from the CSR to use as the domain for cert ordering.
+      // This is critical for custom CSRs where the CN differs from the ISE node FQDN.
+      let csrCN = fullFQDN;
+      try {
+        const crypto = require("crypto");
+        const x509req = new crypto.X509CertificateRequest(csr);
+        const subjectMatch = x509req.subject?.match(/CN=([^,/]+)/);
+        if (subjectMatch) csrCN = subjectMatch[1].trim();
+      } catch {
+        // X509CertificateRequest is Node 21+; fallback: parse base64 for CN
+        try {
+          const der = Buffer.from(
+            csr.replace(/-----[^-]+-----/g, "").replace(/\s/g, ""),
+            "base64",
+          );
+          // CN OID (2.5.4.3) appears as 55 04 03 in DER, followed by type+length+value
+          const oidMarker = Buffer.from([0x55, 0x04, 0x03]);
+          const idx = der.indexOf(oidMarker);
+          if (idx !== -1) {
+            const valueStart = idx + oidMarker.length + 2; // skip type byte + length byte
+            const valueLen = der[idx + oidMarker.length + 1];
+            if (valueLen && valueLen < 256) {
+              csrCN = der
+                .subarray(valueStart, valueStart + valueLen)
+                .toString("utf8");
+            }
+          }
+        } catch {
+          Logger.warn("Could not extract CN from CSR, using connection FQDN");
+        }
+      }
+
+      if (csrCN !== fullFQDN) {
+        status.logs.push(
+          `CSR CN is ${csrCN} (differs from node FQDN ${fullFQDN})`,
+        );
+        await ctx.saveLog(
+          `CSR CN is ${csrCN} (differs from node FQDN ${fullFQDN})`,
+        );
+      }
+
       status.logs.push(
         `Using provided CSR for ISE application: ${connection.name}`,
       );
@@ -989,11 +1030,10 @@ export class ISEProvider extends PlatformProvider {
               connection.password!,
             );
 
-            // Find the CSR that matches our domain
+            // Find the CSR that matches the CSR's CN (not the ISE node FQDN)
             const matchingCSR = pendingCSRs.find(
               (c) =>
-                c.subject?.includes(fullFQDN) ||
-                c.friendlyName?.includes(fullFQDN),
+                c.subject?.includes(csrCN) || c.friendlyName?.includes(csrCN),
             );
 
             if (matchingCSR) {
@@ -1022,6 +1062,10 @@ export class ISEProvider extends PlatformProvider {
           }
         }
       }
+
+      // Store the CSR CN on the context so the renewal flow can use it
+      // instead of the ISE node FQDN for the ACME domain order
+      (ctx as any)._csrDomain = csrCN;
 
       return csr;
     }
