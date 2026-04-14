@@ -1,17 +1,17 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import { useState, useEffect, useCallback } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Collapsible,
   CollapsibleTrigger,
   CollapsibleContent,
-} from '@/components/ui/collapsible';
-import { ChevronDown, Check, Loader2, Download } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { apiCall } from '@/lib/api';
+} from "@/components/ui/collapsible";
+import { ChevronDown, Check, Loader2, Download } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { apiCall } from "@/lib/api";
 import {
   type FieldDefinition,
   iseNodesField,
@@ -21,8 +21,8 @@ import {
   iseCsrSourceField,
   iseCsrConfigField,
   iseCertificateField,
-} from '@/lib/connection-fields';
-import { isFieldVisible } from '@/lib/type-profiles';
+} from "@/lib/connection-fields";
+import { isFieldVisible } from "@/lib/type-profiles";
 
 // ---------------------------------------------------------------------------
 // Purpose definitions — mirrors backend getCertificateRoles + getPortsForConnection
@@ -38,37 +38,37 @@ interface ISEPurpose {
 
 const ISE_PURPOSES: ISEPurpose[] = [
   {
-    value: 'admin',
-    label: 'Admin',
-    description: 'Server authentication',
+    value: "admin",
+    label: "Admin",
+    description: "Server authentication",
     port: 443,
     roles: { admin: true },
   },
   {
-    value: 'guest',
-    label: 'Guest Portal',
-    description: 'Guest self-registration portal',
+    value: "guest",
+    label: "Guest Portal",
+    description: "Guest self-registration portal",
     port: 8443,
     roles: { portal: true },
   },
   {
-    value: 'portal',
-    label: 'Sponsor Portal',
-    description: 'Sponsor approval portal',
+    value: "portal",
+    label: "Sponsor Portal",
+    description: "Sponsor approval portal",
     port: 8445,
     roles: { portal: true },
   },
   {
-    value: 'eap',
-    label: 'EAP Authentication',
-    description: 'RADIUS EAP server auth',
+    value: "eap",
+    label: "EAP Authentication",
+    description: "RADIUS EAP server auth",
     port: 443,
     roles: { eap: true },
   },
   {
-    value: 'saml',
-    label: 'SAML',
-    description: 'SAML signing certificate',
+    value: "saml",
+    label: "SAML",
+    description: "SAML signing certificate",
     port: 443,
     roles: { saml: true },
   },
@@ -91,10 +91,10 @@ function buildImportConfig(selectedPurposes: Set<string>): string {
     allowWildCardCertificates: false,
     eap: false,
     ims: false,
-    name: 'netSSL Imported Certificate',
-    password: '',
+    name: "netSSL Imported Certificate",
+    password: "",
     portal: false,
-    portalGroupTag: 'My Default Portal Certificate Group',
+    portalGroupTag: "My Default Portal Certificate Group",
     pxgrid: false,
     radius: false,
     saml: false,
@@ -110,25 +110,29 @@ function buildImportConfig(selectedPurposes: Set<string>): string {
     }
   }
 
+  // Store the exact selected purposes so we can reconstruct them on re-edit
+  // (guest and sponsor both map to portal:true, so the role flags alone are ambiguous)
+  config._selectedPurposes = Array.from(selectedPurposes).sort();
+
   return JSON.stringify(config, null, 2);
 }
 
 // Derive ise_application_subtype from the set of selected purposes
 function deriveSubtype(selected: Set<string>): string {
-  if (selected.size === 0) return 'admin';
+  if (selected.size === 0) return "admin";
   if (selected.size === 1) return Array.from(selected)[0];
-  return 'multi_use';
+  return "multi_use";
 }
 
 // Derive selected purpose cards from saved data (for edit mode)
 function deriveSelectionsFromConfig(
   configJson: string,
-  subtype: string
+  subtype: string,
 ): Set<string> {
   const selected = new Set<string>();
 
   // Specific single-purpose subtypes
-  if (subtype && subtype !== 'multi_use') {
+  if (subtype && subtype !== "multi_use") {
     selected.add(subtype);
     return selected;
   }
@@ -136,19 +140,28 @@ function deriveSelectionsFromConfig(
   // For multi_use, parse the import config JSON to figure out which roles
   try {
     const config = JSON.parse(configJson);
-    if (config.admin) selected.add('admin');
-    if (config.eap) selected.add('eap');
-    if (config.saml) selected.add('saml');
+
+    // Prefer the explicit selection list (added to disambiguate guest vs sponsor)
+    if (Array.isArray(config._selectedPurposes)) {
+      for (const p of config._selectedPurposes) {
+        selected.add(p);
+      }
+      return selected;
+    }
+
+    // Legacy fallback: derive from role flags (can't distinguish guest vs sponsor)
+    if (config.admin) selected.add("admin");
+    if (config.eap) selected.add("eap");
+    if (config.saml) selected.add("saml");
     if (config.portal) {
-      // portal role is shared by guest and sponsor — select both
-      selected.add('guest');
-      selected.add('portal');
+      selected.add("guest");
+      selected.add("portal");
     }
   } catch {
     // Fallback to the classic multi_use roles
-    selected.add('admin');
-    selected.add('guest');
-    selected.add('eap');
+    selected.add("admin");
+    selected.add("guest");
+    selected.add("eap");
   }
 
   return selected;
@@ -173,38 +186,38 @@ const ISECertificateWizard: React.FC<ISECertificateWizardProps> = ({
   onFieldChange,
 }) => {
   const [isJsonOpen, setIsJsonOpen] = useState(false);
-  const [jsonError, setJsonError] = useState('');
+  const [jsonError, setJsonError] = useState("");
   const [isFetchingNodes, setIsFetchingNodes] = useState(false);
-  const [fetchError, setFetchError] = useState('');
+  const [fetchError, setFetchError] = useState("");
 
   // Track selected purposes (multi-select)
   const [selectedPurposes, setSelectedPurposes] = useState<Set<string>>(() => {
-    const subtype = String(formData.ise_application_subtype || 'multi_use');
-    const configJson = String(formData.ise_cert_import_config || '');
+    const subtype = String(formData.ise_application_subtype || "multi_use");
+    const configJson = String(formData.ise_cert_import_config || "");
     return deriveSelectionsFromConfig(configJson, subtype);
   });
 
   // Separate URL state for guest/sponsor portal inputs
-  const [guestUrl, setGuestUrl] = useState('');
-  const [sponsorUrl, setSponsorUrl] = useState('');
+  const [guestUrl, setGuestUrl] = useState("");
+  const [sponsorUrl, setSponsorUrl] = useState("");
 
   // Initialize portal URLs from alt_names on mount
   useEffect(() => {
-    const altNames = String(formData.alt_names || '');
+    const altNames = String(formData.alt_names || "");
     const parts = altNames
-      .split(',')
+      .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
-    const hasGuest = selectedPurposes.has('guest');
-    const hasSponsor = selectedPurposes.has('portal');
+    const hasGuest = selectedPurposes.has("guest");
+    const hasSponsor = selectedPurposes.has("portal");
 
     if (hasGuest && hasSponsor) {
-      setGuestUrl(parts[0] || '');
-      setSponsorUrl(parts[1] || '');
+      setGuestUrl(parts[0] || "");
+      setSponsorUrl(parts[1] || "");
     } else if (hasGuest) {
-      setGuestUrl(parts[0] || '');
+      setGuestUrl(parts[0] || "");
     } else if (hasSponsor) {
-      setSponsorUrl(parts[0] || '');
+      setSponsorUrl(parts[0] || "");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -213,9 +226,9 @@ const ISECertificateWizard: React.FC<ISECertificateWizardProps> = ({
   const syncAltNames = useCallback(
     (guest: string, sponsor: string) => {
       const parts = [guest, sponsor].filter(Boolean);
-      onFieldChange('alt_names', parts.join(', '));
+      onFieldChange("alt_names", parts.join(", "));
     },
-    [onFieldChange]
+    [onFieldChange],
   );
 
   const handleGuestUrlChange = (value: string) => {
@@ -239,34 +252,34 @@ const ISECertificateWizard: React.FC<ISECertificateWizardProps> = ({
         }
 
         // Update derived fields
-        onFieldChange('ise_application_subtype', deriveSubtype(next));
-        onFieldChange('ise_cert_import_config', buildImportConfig(next));
+        onFieldChange("ise_application_subtype", deriveSubtype(next));
+        onFieldChange("ise_cert_import_config", buildImportConfig(next));
 
         return next;
       });
     },
-    [onFieldChange]
+    [onFieldChange],
   );
 
   // Fetch ISE deployment nodes from the API
   const handleFetchNodes = async () => {
-    const hostname = String(formData.hostname || '');
-    const username = String(formData.username || '');
-    const password = String(formData.password || '');
+    const hostname = String(formData.hostname || "");
+    const username = String(formData.username || "");
+    const password = String(formData.password || "");
 
     if (!hostname || !username || !password) {
       setFetchError(
-        'ISE admin node, username, and password are required. Fill in the Authentication tab first.'
+        "ISE admin node, username, and password are required. Fill in the Authentication tab first.",
       );
       return;
     }
 
     setIsFetchingNodes(true);
-    setFetchError('');
+    setFetchError("");
 
     try {
-      const response = await apiCall('/ise/nodes', {
-        method: 'POST',
+      const response = await apiCall("/ise/nodes", {
+        method: "POST",
         body: JSON.stringify({ hostname, username, password }),
         retries: 0,
       });
@@ -277,13 +290,15 @@ const ISECertificateWizard: React.FC<ISECertificateWizardProps> = ({
         .filter(Boolean);
 
       if (fqdns.length === 0) {
-        setFetchError('No nodes returned from ISE deployment.');
+        setFetchError("No nodes returned from ISE deployment.");
         return;
       }
 
-      onFieldChange('ise_nodes', fqdns.join(', '));
+      onFieldChange("ise_nodes", fqdns.join(", "));
     } catch (error: any) {
-      setFetchError(error.details || error.message || 'Failed to fetch ISE nodes.');
+      setFetchError(
+        error.details || error.message || "Failed to fetch ISE nodes.",
+      );
     } finally {
       setIsFetchingNodes(false);
     }
@@ -291,25 +306,25 @@ const ISECertificateWizard: React.FC<ISECertificateWizardProps> = ({
 
   const handleJsonChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value;
-    onFieldChange('ise_cert_import_config', value);
+    onFieldChange("ise_cert_import_config", value);
 
-    if (value.trim() === '') {
-      setJsonError('');
+    if (value.trim() === "") {
+      setJsonError("");
       return;
     }
 
     try {
       JSON.parse(value);
-      setJsonError('');
+      setJsonError("");
     } catch {
-      setJsonError('Must be valid JSON');
+      setJsonError("Must be valid JSON");
     }
   };
 
   // Build context message based on current selections
   const getContextMessage = (): string | null => {
     if (selectedPurposes.size === 0)
-      return 'Select one or more certificate roles above.';
+      return "Select one or more certificate roles above.";
 
     const parts: string[] = [];
     const ports = new Set<number>();
@@ -325,13 +340,13 @@ const ISECertificateWizard: React.FC<ISECertificateWizardProps> = ({
     const portStr = Array.from(ports)
       .sort((a, b) => a - b)
       .map((p) => `:${p}`)
-      .join(', ');
+      .join(", ");
 
     if (selectedPurposes.size === 1) {
       return `${parts[0]} certificate. Monitored on port ${portStr}.`;
     }
 
-    return `Multi-use certificate: ${parts.join(', ')}. Monitored on port${ports.size > 1 ? 's' : ''} ${portStr}.`;
+    return `Multi-use certificate: ${parts.join(", ")}. Monitored on port${ports.size > 1 ? "s" : ""} ${portStr}.`;
   };
 
   return (
@@ -355,10 +370,10 @@ const ISECertificateWizard: React.FC<ISECertificateWizardProps> = ({
                 type="button"
                 onClick={() => togglePurpose(purpose.value)}
                 className={cn(
-                  'relative flex flex-col p-3 rounded-lg border-2 cursor-pointer transition-colors text-left',
+                  "relative flex flex-col p-3 rounded-lg border-2 cursor-pointer transition-colors text-left",
                   isSelected
-                    ? 'border-primary bg-primary/5'
-                    : 'border-border hover:border-primary/40'
+                    ? "border-primary bg-primary/5"
+                    : "border-border hover:border-primary/40",
                 )}
               >
                 {isSelected && (
@@ -368,10 +383,7 @@ const ISECertificateWizard: React.FC<ISECertificateWizardProps> = ({
                 )}
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-sm font-medium">{purpose.label}</span>
-                  <Badge
-                    variant="outline"
-                    className="text-[10px] px-1.5 py-0"
-                  >
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0">
                     :{purpose.port}
                   </Badge>
                 </div>
@@ -392,7 +404,7 @@ const ISECertificateWizard: React.FC<ISECertificateWizardProps> = ({
       </div>
 
       {/* Conditional portal URL inputs */}
-      {selectedPurposes.has('guest') && (
+      {selectedPurposes.has("guest") && (
         <div className="space-y-1.5">
           <Label htmlFor="ise-guest-url" className="text-sm font-medium">
             Guest Portal URL
@@ -411,7 +423,7 @@ const ISECertificateWizard: React.FC<ISECertificateWizardProps> = ({
         </div>
       )}
 
-      {selectedPurposes.has('portal') && (
+      {selectedPurposes.has("portal") && (
         <div className="space-y-1.5">
           <Label htmlFor="ise-sponsor-url" className="text-sm font-medium">
             Sponsor Portal URL
@@ -446,7 +458,7 @@ const ISECertificateWizard: React.FC<ISECertificateWizardProps> = ({
             ) : (
               <Download className="h-3.5 w-3.5 mr-1.5" />
             )}
-            {isFetchingNodes ? 'Fetching...' : 'Fetch Nodes from ISE'}
+            {isFetchingNodes ? "Fetching..." : "Fetch Nodes from ISE"}
           </Button>
           {fetchError && (
             <span className="text-red-500 text-xs">{fetchError}</span>
@@ -473,8 +485,8 @@ const ISECertificateWizard: React.FC<ISECertificateWizardProps> = ({
         <CollapsibleTrigger className="flex items-center gap-2 w-full py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
           <ChevronDown
             className={cn(
-              'h-4 w-4 transition-transform',
-              isJsonOpen && 'rotate-180'
+              "h-4 w-4 transition-transform",
+              isJsonOpen && "rotate-180",
             )}
           />
           Advanced: Import Configuration JSON
@@ -487,7 +499,7 @@ const ISECertificateWizard: React.FC<ISECertificateWizardProps> = ({
           </p>
           <Textarea
             name="ise_cert_import_config"
-            value={String(formData.ise_cert_import_config || '')}
+            value={String(formData.ise_cert_import_config || "")}
             rows={12}
             className="font-mono text-xs resize-none"
             onChange={handleJsonChange}
