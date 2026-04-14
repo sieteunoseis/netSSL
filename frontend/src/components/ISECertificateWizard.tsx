@@ -18,6 +18,7 @@ import {
   altNamesField,
   sslProviderField,
   dnsProviderField,
+  cfZoneOverrideField,
   iseCsrSourceField,
   iseCsrConfigField,
   iseCertificateField,
@@ -78,6 +79,17 @@ const ISE_PURPOSES: ISEPurpose[] = [
 // Import config JSON generation
 // ---------------------------------------------------------------------------
 
+// Build a descriptive certificate name from the selected purposes.
+// This is important because ISE uses the name as a key — two certs with the
+// same name on the same node will overwrite each other.
+function buildCertName(selectedPurposes: Set<string>): string {
+  if (selectedPurposes.size === 0) return "netSSL Certificate";
+  const labels = Array.from(selectedPurposes)
+    .map((v) => ISE_PURPOSES.find((p) => p.value === v)?.label || v)
+    .sort();
+  return `netSSL ${labels.join(" + ")}`;
+}
+
 function buildImportConfig(selectedPurposes: Set<string>): string {
   const config: Record<string, any> = {
     admin: false,
@@ -91,7 +103,7 @@ function buildImportConfig(selectedPurposes: Set<string>): string {
     allowWildCardCertificates: false,
     eap: false,
     ims: false,
-    name: "netSSL Imported Certificate",
+    name: buildCertName(selectedPurposes),
     password: "",
     portal: false,
     portalGroupTag: "My Default Portal Certificate Group",
@@ -472,6 +484,8 @@ const ISECertificateWizard: React.FC<ISECertificateWizardProps> = ({
       {/* Section 4: Certificate Provider */}
       {renderField(sslProviderField)}
       {renderField(dnsProviderField)}
+      {isFieldVisible(cfZoneOverrideField, formData) &&
+        renderField(cfZoneOverrideField)}
 
       {/* Section 5: CSR Source */}
       {renderField(iseCsrSourceField)}

@@ -1,8 +1,8 @@
-import https from 'https';
-import dns from 'dns';
-import { Logger } from '../logger';
-import { DatabaseManager } from '../database';
-import dnsServers from '../dns-servers.json';
+import https from "https";
+import dns from "dns";
+import { Logger } from "../logger";
+import { DatabaseManager } from "../database";
+import dnsServers from "../dns-servers.json";
 
 export interface CloudflareRecord {
   id: string;
@@ -25,50 +25,63 @@ export interface CloudflareResponse {
 export class CloudflareProvider {
   private apiKey: string;
   private zoneId: string;
-  private baseUrl = 'https://api.cloudflare.com/client/v4';
+  private baseUrl = "https://api.cloudflare.com/client/v4";
 
   constructor(apiKey: string, zoneId: string) {
     this.apiKey = apiKey;
     this.zoneId = zoneId;
   }
 
-  static async create(database: DatabaseManager, domain: string): Promise<CloudflareProvider> {
+  static async create(
+    database: DatabaseManager,
+    domain: string,
+    cfZoneOverride?: string,
+  ): Promise<CloudflareProvider> {
     try {
-      const settings = await database.getSettingsByProvider('cloudflare');
-      const apiKey = settings.find(s => s.key_name === 'CF_KEY')?.key_value;
-      const zoneId = settings.find(s => s.key_name === 'CF_ZONE')?.key_value;
+      const settings = await database.getSettingsByProvider("cloudflare");
+      const apiKey = settings.find((s) => s.key_name === "CF_KEY")?.key_value;
+      const zoneId =
+        cfZoneOverride ||
+        settings.find((s) => s.key_name === "CF_ZONE")?.key_value;
 
       if (!apiKey || !zoneId) {
-        throw new Error('Cloudflare API key or zone ID not configured in settings');
+        throw new Error(
+          "Cloudflare API key or zone ID not configured in settings",
+        );
       }
 
       return new CloudflareProvider(apiKey, zoneId);
     } catch (error) {
-      Logger.error('Failed to create Cloudflare provider:', error);
+      Logger.error("Failed to create Cloudflare provider:", error);
       throw error;
     }
   }
 
-  async createTxtRecord(domain: string, value: string): Promise<CloudflareRecord> {
+  async createTxtRecord(
+    domain: string,
+    value: string,
+  ): Promise<CloudflareRecord> {
     try {
       const recordName = `_acme-challenge.${domain}`;
       Logger.info(`Creating TXT record: ${recordName} = ${value}`);
 
       const postData = JSON.stringify({
-        type: 'TXT',
+        type: "TXT",
         name: recordName,
         content: value,
-        ttl: 120 // 2 minutes for faster propagation
+        ttl: 120, // 2 minutes for faster propagation
       });
 
       const response = await this.makeRequest(
-        'POST',
+        "POST",
         `/zones/${this.zoneId}/dns_records`,
-        postData
+        postData,
       );
 
       if (!response.success) {
-        throw new Error(`Cloudflare API error: ${JSON.stringify(response.errors)}`);
+        throw new Error(
+          `Cloudflare API error: ${JSON.stringify(response.errors)}`,
+        );
       }
 
       const record = response.result as CloudflareRecord;
@@ -80,32 +93,43 @@ export class CloudflareProvider {
     }
   }
 
-  async createDNSRecord(recordName: string, recordValue: string, recordType: string = 'TXT'): Promise<CloudflareRecord> {
+  async createDNSRecord(
+    recordName: string,
+    recordValue: string,
+    recordType: string = "TXT",
+  ): Promise<CloudflareRecord> {
     try {
-      Logger.info(`Creating ${recordType} record: ${recordName} = ${recordValue}`);
+      Logger.info(
+        `Creating ${recordType} record: ${recordName} = ${recordValue}`,
+      );
 
       const postData = JSON.stringify({
         type: recordType,
         name: recordName,
         content: recordValue,
-        ttl: 120 // 2 minutes for faster propagation
+        ttl: 120, // 2 minutes for faster propagation
       });
 
       const response = await this.makeRequest(
-        'POST',
+        "POST",
         `/zones/${this.zoneId}/dns_records`,
-        postData
+        postData,
       );
 
       if (!response.success) {
-        throw new Error(`Cloudflare API error: ${JSON.stringify(response.errors)}`);
+        throw new Error(
+          `Cloudflare API error: ${JSON.stringify(response.errors)}`,
+        );
       }
 
       const record = response.result as CloudflareRecord;
       Logger.info(`Successfully created ${recordType} record: ${record.id}`);
       return record;
     } catch (error) {
-      Logger.error(`Failed to create ${recordType} record for ${recordName}:`, error);
+      Logger.error(
+        `Failed to create ${recordType} record for ${recordName}:`,
+        error,
+      );
       throw error;
     }
   }
@@ -115,12 +139,14 @@ export class CloudflareProvider {
       Logger.info(`Deleting TXT record: ${recordId}`);
 
       const response = await this.makeRequest(
-        'DELETE',
-        `/zones/${this.zoneId}/dns_records/${recordId}`
+        "DELETE",
+        `/zones/${this.zoneId}/dns_records/${recordId}`,
       );
 
       if (!response.success) {
-        throw new Error(`Cloudflare API error: ${JSON.stringify(response.errors)}`);
+        throw new Error(
+          `Cloudflare API error: ${JSON.stringify(response.errors)}`,
+        );
       }
 
       Logger.info(`Successfully deleted TXT record: ${recordId}`);
@@ -136,12 +162,14 @@ export class CloudflareProvider {
       Logger.info(`Looking for TXT record: ${recordName}`);
 
       const response = await this.makeRequest(
-        'GET',
-        `/zones/${this.zoneId}/dns_records?type=TXT&name=${recordName}`
+        "GET",
+        `/zones/${this.zoneId}/dns_records?type=TXT&name=${recordName}`,
       );
 
       if (!response.success) {
-        throw new Error(`Cloudflare API error: ${JSON.stringify(response.errors)}`);
+        throw new Error(
+          `Cloudflare API error: ${JSON.stringify(response.errors)}`,
+        );
       }
 
       const records = response.result as CloudflareRecord[];
@@ -165,12 +193,14 @@ export class CloudflareProvider {
       Logger.info(`Looking for all TXT records: ${recordName}`);
 
       const response = await this.makeRequest(
-        'GET',
-        `/zones/${this.zoneId}/dns_records?type=TXT&name=${recordName}`
+        "GET",
+        `/zones/${this.zoneId}/dns_records?type=TXT&name=${recordName}`,
       );
 
       if (!response.success) {
-        throw new Error(`Cloudflare API error: ${JSON.stringify(response.errors)}`);
+        throw new Error(
+          `Cloudflare API error: ${JSON.stringify(response.errors)}`,
+        );
       }
 
       const records = response.result as CloudflareRecord[];
@@ -190,7 +220,9 @@ export class CloudflareProvider {
         return;
       }
 
-      Logger.info(`Cleaning up ${records.length} existing TXT records for ${domain}`);
+      Logger.info(
+        `Cleaning up ${records.length} existing TXT records for ${domain}`,
+      );
       for (const record of records) {
         await this.deleteTxtRecord(record.id);
       }
@@ -200,7 +232,11 @@ export class CloudflareProvider {
     }
   }
 
-  async verifyTxtRecord(domain: string, expectedValue: string, maxWaitTime: number = 300000): Promise<boolean> {
+  async verifyTxtRecord(
+    domain: string,
+    expectedValue: string,
+    maxWaitTime: number = 300000,
+  ): Promise<boolean> {
     try {
       const recordName = `_acme-challenge.${domain}`;
       Logger.info(`Verifying TXT record propagation for ${recordName}`);
@@ -210,16 +246,23 @@ export class CloudflareProvider {
 
       while (Date.now() - startTime < maxWaitTime) {
         try {
-          const isVerified = await this.checkDNSPropagation(recordName, expectedValue);
+          const isVerified = await this.checkDNSPropagation(
+            recordName,
+            expectedValue,
+          );
           if (isVerified) {
             Logger.info(`TXT record propagation verified for ${recordName}`);
             return true;
           }
         } catch (error) {
-          Logger.debug(`DNS check failed, retrying: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          Logger.debug(
+            `DNS check failed, retrying: ${error instanceof Error ? error.message : "Unknown error"}`,
+          );
         }
 
-        Logger.info(`Waiting for DNS propagation... (${Math.round((Date.now() - startTime) / 1000)}s)`);
+        Logger.info(
+          `Waiting for DNS propagation... (${Math.round((Date.now() - startTime) / 1000)}s)`,
+        );
         await this.sleep(checkInterval);
       }
 
@@ -231,41 +274,58 @@ export class CloudflareProvider {
     }
   }
 
-  private async checkDNSPropagation(recordName: string, expectedValue: string): Promise<boolean> {
+  private async checkDNSPropagation(
+    recordName: string,
+    expectedValue: string,
+  ): Promise<boolean> {
     // Use Cloudflare's DNS servers for faster propagation checking
     const nameservers = dnsServers.cloudflare || dnsServers.default;
-    
+
     // Try each nameserver until we get a successful response
     for (const nameserver of nameservers) {
       try {
-        const result = await this.queryDNSServer(nameserver, recordName, expectedValue);
+        const result = await this.queryDNSServer(
+          nameserver,
+          recordName,
+          expectedValue,
+        );
         if (result) {
-          Logger.info(`DNS propagation verified on ${nameserver}: ${recordName}`);
+          Logger.info(
+            `DNS propagation verified on ${nameserver}: ${recordName}`,
+          );
           return true;
         }
       } catch (error) {
-        Logger.debug(`DNS query failed on ${nameserver}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        Logger.debug(
+          `DNS query failed on ${nameserver}: ${error instanceof Error ? error.message : "Unknown error"}`,
+        );
       }
     }
-    
+
     Logger.debug(`DNS propagation not yet complete for ${recordName}`);
     return false;
   }
 
-  private async queryDNSServer(nameserver: string, recordName: string, expectedValue: string): Promise<boolean> {
+  private async queryDNSServer(
+    nameserver: string,
+    recordName: string,
+    expectedValue: string,
+  ): Promise<boolean> {
     return new Promise((resolve, reject) => {
       const resolver = new dns.Resolver();
       resolver.setServers([nameserver]);
-      
+
       resolver.resolveTxt(recordName, (err: any, addresses: string[][]) => {
         if (err) {
-          reject(new Error(`DNS resolution failed on ${nameserver}: ${err.message}`));
+          reject(
+            new Error(`DNS resolution failed on ${nameserver}: ${err.message}`),
+          );
           return;
         }
 
         // Check if any TXT record contains the expected value
-        const found = addresses.some(txtArray => 
-          txtArray.some(txt => txt === expectedValue)
+        const found = addresses.some((txtArray) =>
+          txtArray.some((txt) => txt === expectedValue),
         );
 
         resolve(found);
@@ -273,44 +333,52 @@ export class CloudflareProvider {
     });
   }
 
-  private async makeRequest(method: string, path: string, data?: string): Promise<CloudflareResponse> {
+  private async makeRequest(
+    method: string,
+    path: string,
+    data?: string,
+  ): Promise<CloudflareResponse> {
     return new Promise((resolve, reject) => {
       const options = {
-        hostname: 'api.cloudflare.com',
+        hostname: "api.cloudflare.com",
         port: 443,
         path: `/client/v4${path}`,
         method: method,
         headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json',
-          'User-Agent': 'CUCM-Certificate-Renewal/1.0'
-        } as any
+          Authorization: `Bearer ${this.apiKey}`,
+          "Content-Type": "application/json",
+          "User-Agent": "CUCM-Certificate-Renewal/1.0",
+        } as any,
       };
 
       if (data) {
-        options.headers['Content-Length'] = Buffer.byteLength(data);
+        options.headers["Content-Length"] = Buffer.byteLength(data);
       }
 
       const req = https.request(options, (res) => {
-        let responseData = '';
-        res.on('data', (chunk) => responseData += chunk);
-        res.on('end', () => {
+        let responseData = "";
+        res.on("data", (chunk) => (responseData += chunk));
+        res.on("end", () => {
           try {
             const response = JSON.parse(responseData);
             resolve(response);
           } catch (error) {
-            reject(new Error(`Failed to parse Cloudflare response: ${error instanceof Error ? error.message : 'Unknown error'}`));
+            reject(
+              new Error(
+                `Failed to parse Cloudflare response: ${error instanceof Error ? error.message : "Unknown error"}`,
+              ),
+            );
           }
         });
       });
 
-      req.on('error', (error) => {
+      req.on("error", (error) => {
         reject(new Error(`Cloudflare API request failed: ${error.message}`));
       });
 
       req.setTimeout(30000, () => {
         req.destroy();
-        reject(new Error('Cloudflare API request timed out'));
+        reject(new Error("Cloudflare API request timed out"));
       });
 
       if (data) {
@@ -321,7 +389,7 @@ export class CloudflareProvider {
   }
 
   private sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
 

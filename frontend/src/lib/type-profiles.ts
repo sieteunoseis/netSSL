@@ -14,6 +14,7 @@ import {
   domainField,
   sslProviderField,
   dnsProviderField,
+  cfZoneOverrideField,
   altNamesField,
   autoRenewField,
   isEnabledField,
@@ -43,7 +44,7 @@ import {
   hostnameCatalystCenterField,
   applicationTypeInfoCatalystCenterField,
   ccListOfUsersField,
-} from './connection-fields';
+} from "./connection-fields";
 
 export interface TypeProfile {
   id: string;
@@ -60,22 +61,16 @@ export interface TypeProfile {
 // VOS Profile — Cisco VOS (CUCM, CUC, IM&P)
 // ---------------------------------------------------------------------------
 export const vosProfile: TypeProfile = {
-  id: 'vos',
-  label: 'Cisco VOS (CUCM, CUC, IM&P)',
+  id: "vos",
+  label: "Cisco VOS (CUCM, CUC, IM&P)",
   tabs: {
-    basic: [
-      nameField,
-      hostnameVosField,
-      applicationTypeInfoVosField,
-    ],
-    authentication: [
-      usernameField,
-      passwordField,
-    ],
+    basic: [nameField, hostnameVosField, applicationTypeInfoVosField],
+    authentication: [usernameField, passwordField],
     certificate: [
       domainField,
       sslProviderField,
       dnsProviderField,
+      cfZoneOverrideField,
       altNamesField,
     ],
     advanced: [
@@ -91,23 +86,13 @@ export const vosProfile: TypeProfile = {
 // ISE Profile — Cisco Identity Services Engine
 // ---------------------------------------------------------------------------
 export const iseProfile: TypeProfile = {
-  id: 'ise',
-  label: 'Cisco ISE',
+  id: "ise",
+  label: "Cisco ISE",
   tabs: {
-    basic: [
-      nameField,
-      applicationTypeInfoIseField,
-    ],
-    authentication: [
-      hostnameIseField,
-      usernameField,
-      passwordField,
-    ],
-    certificate: [],  // ISECertificateWizard renders all certificate tab content
-    advanced: [
-      autoRenewField,
-      isEnabledField,
-    ],
+    basic: [nameField, applicationTypeInfoIseField],
+    authentication: [hostnameIseField, usernameField, passwordField],
+    certificate: [], // ISECertificateWizard renders all certificate tab content
+    advanced: [autoRenewField, isEnabledField],
   },
 };
 
@@ -115,22 +100,16 @@ export const iseProfile: TypeProfile = {
 // General Profile — ESXi, non-Cisco systems
 // ---------------------------------------------------------------------------
 export const generalProfile: TypeProfile = {
-  id: 'general',
-  label: 'General Application',
+  id: "general",
+  label: "General Application",
   tabs: {
-    basic: [
-      nameField,
-      hostnameGeneralField,
-      applicationTypeInfoGeneralField,
-    ],
-    authentication: [
-      usernameField,
-      passwordField,
-    ],
+    basic: [nameField, hostnameGeneralField, applicationTypeInfoGeneralField],
+    authentication: [usernameField, passwordField],
     certificate: [
       domainField,
       sslProviderField,
       dnsProviderField,
+      cfZoneOverrideField,
       altNamesField,
       customCsrField,
       generalPrivateKeyField,
@@ -151,31 +130,26 @@ export const generalProfile: TypeProfile = {
 // Catalyst Center Profile — Cisco Catalyst Center (formerly DNAC)
 // ---------------------------------------------------------------------------
 export const catalystCenterProfile: TypeProfile = {
-  id: 'catalyst_center',
-  label: 'Cisco Catalyst Center',
+  id: "catalyst_center",
+  label: "Cisco Catalyst Center",
   tabs: {
     basic: [
       nameField,
       hostnameCatalystCenterField,
       applicationTypeInfoCatalystCenterField,
     ],
-    authentication: [
-      usernameField,
-      passwordField,
-    ],
+    authentication: [usernameField, passwordField],
     certificate: [
       domainField,
       sslProviderField,
       dnsProviderField,
+      cfZoneOverrideField,
       altNamesField,
       ccListOfUsersField,
       customCsrField,
       generalPrivateKeyField,
     ],
-    advanced: [
-      autoRenewField,
-      isEnabledField,
-    ],
+    advanced: [autoRenewField, isEnabledField],
   },
 };
 
@@ -199,7 +173,10 @@ export function getProfile(appType: string): TypeProfile {
 // ---------------------------------------------------------------------------
 
 /** Check if a field should be visible based on its visibleWhen condition */
-export function isFieldVisible(field: FieldDefinition, formData: Record<string, any>): boolean {
+export function isFieldVisible(
+  field: FieldDefinition,
+  formData: Record<string, any>,
+): boolean {
   if (!field.visibleWhen) return true;
 
   const { field: condField, is, isNot } = field.visibleWhen;
@@ -207,8 +184,9 @@ export function isFieldVisible(field: FieldDefinition, formData: Record<string, 
 
   // Handle boolean comparisons (for SWITCH fields stored as 1/"1"/true)
   const normalize = (v: any): any => {
-    if (v === true || v === 1 || v === '1') return true;
-    if (v === false || v === 0 || v === '0' || v === undefined || v === null) return false;
+    if (v === true || v === 1 || v === "1") return true;
+    if (v === false || v === 0 || v === "0" || v === undefined || v === null)
+      return false;
     return v;
   };
 
@@ -241,25 +219,28 @@ export function getDefaultFormData(appType: string): Record<string, any> {
     if (defaults[field.name] !== undefined) continue; // skip dupes
     if (field.defaultValue !== undefined) {
       defaults[field.name] = field.defaultValue;
-    } else if (field.type === 'switch') {
+    } else if (field.type === "switch") {
       defaults[field.name] = false;
-    } else if (field.type !== 'info') {
-      defaults[field.name] = '';
+    } else if (field.type !== "info") {
+      defaults[field.name] = "";
     }
   }
 
   // ISE wizard-managed fields (not in profile tabs, so defaults must be set explicitly)
-  if (appType === 'ise') {
-    if (defaults.ise_application_subtype === undefined) defaults.ise_application_subtype = 'multi_use';
-    if (defaults.ise_cert_import_config === undefined) defaults.ise_cert_import_config = ISE_CERT_IMPORT_DEFAULT;
-    if (defaults.ise_csr_source === undefined) defaults.ise_csr_source = 'api';
-    if (defaults.ise_nodes === undefined) defaults.ise_nodes = '';
-    if (defaults.hostname === undefined) defaults.hostname = '';
-    if (defaults.ssl_provider === undefined) defaults.ssl_provider = '';
-    if (defaults.dns_provider === undefined) defaults.dns_provider = '';
-    if (defaults.ise_csr_config === undefined) defaults.ise_csr_config = '';
-    if (defaults.ise_certificate === undefined) defaults.ise_certificate = '';
-    if (defaults.alt_names === undefined) defaults.alt_names = '';
+  if (appType === "ise") {
+    if (defaults.ise_application_subtype === undefined)
+      defaults.ise_application_subtype = "multi_use";
+    if (defaults.ise_cert_import_config === undefined)
+      defaults.ise_cert_import_config = ISE_CERT_IMPORT_DEFAULT;
+    if (defaults.ise_csr_source === undefined) defaults.ise_csr_source = "api";
+    if (defaults.ise_nodes === undefined) defaults.ise_nodes = "";
+    if (defaults.hostname === undefined) defaults.hostname = "";
+    if (defaults.ssl_provider === undefined) defaults.ssl_provider = "";
+    if (defaults.dns_provider === undefined) defaults.dns_provider = "";
+    if (defaults.ise_csr_config === undefined) defaults.ise_csr_config = "";
+    if (defaults.ise_certificate === undefined) defaults.ise_certificate = "";
+    if (defaults.alt_names === undefined) defaults.alt_names = "";
+    if (defaults.cf_zone_override === undefined) defaults.cf_zone_override = "";
   }
 
   return defaults;
@@ -278,7 +259,7 @@ export function getAllFieldsForType(appType: string): FieldDefinition[] {
 
   // ISE wizard renders these fields outside the profile tabs —
   // include them so DataTable and other consumers can still display them
-  if (appType === 'ise') {
+  if (appType === "ise") {
     fields.push(
       iseApplicationSubtypeField,
       iseNodesField,
@@ -294,6 +275,9 @@ export function getAllFieldsForType(appType: string): FieldDefinition[] {
 }
 
 /** Check if a tab has any visible fields */
-export function hasVisibleFields(fields: FieldDefinition[], formData: Record<string, any>): boolean {
-  return fields.some(f => isFieldVisible(f, formData));
+export function hasVisibleFields(
+  fields: FieldDefinition[],
+  formData: Record<string, any>,
+): boolean {
+  return fields.some((f) => isFieldVisible(f, formData));
 }

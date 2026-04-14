@@ -493,6 +493,9 @@ export const sanitizeConnectionData = (
     )
       ? data.cc_list_of_users
       : undefined,
+    cf_zone_override: data.cf_zone_override
+      ? validator.escape(String(data.cf_zone_override))
+      : undefined,
   };
 
   // Only include username and password if they are provided (for general applications they are optional)

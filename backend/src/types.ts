@@ -8,9 +8,18 @@ export interface ConnectionRecord {
   ssl_provider: string;
   dns_provider: string;
   dns_challenge_mode?: string;
-  application_type?: 'vos' | 'ise' | 'general' | 'catalyst_center';
-  ise_application_subtype?: 'multi_use' | 'admin' | 'eap' | 'dtls' | 'guest' | 'portal' | 'pxgrid' | 'saml' | 'ims';
-  ise_csr_source?: 'api' | 'gui';
+  application_type?: "vos" | "ise" | "general" | "catalyst_center";
+  ise_application_subtype?:
+    | "multi_use"
+    | "admin"
+    | "eap"
+    | "dtls"
+    | "guest"
+    | "portal"
+    | "pxgrid"
+    | "saml"
+    | "ims";
+  ise_csr_source?: "api" | "gui";
   ise_csr_config?: string;
   version?: string;
   alt_names?: string;
@@ -30,6 +39,7 @@ export interface ConnectionRecord {
   ssh_chain_path?: string;
   ssh_restart_command?: string;
   cc_list_of_users?: string;
+  cf_zone_override?: string;
   is_enabled?: boolean | number;
   last_cert_issued?: string;
   cert_count_this_week?: number;
