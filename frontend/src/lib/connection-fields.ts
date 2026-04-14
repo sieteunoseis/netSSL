@@ -90,9 +90,10 @@ export const sslProviderField: FieldDefinition = {
   selectOptions: [
     { value: "letsencrypt", label: "Let's Encrypt" },
     { value: "zerossl", label: "ZeroSSL" },
+    { value: "venafi", label: "Venafi" },
   ],
   defaultValue: "letsencrypt",
-  validation: { name: "isIn", options: ["letsencrypt", "zerossl"] },
+  validation: { name: "isIn", options: ["letsencrypt", "zerossl", "venafi"] },
 };
 
 export const dnsProviderField: FieldDefinition = {
