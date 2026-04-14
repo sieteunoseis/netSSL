@@ -483,7 +483,8 @@ const ISECertificateWizard: React.FC<ISECertificateWizardProps> = ({
 
       {/* Section 4: Certificate Provider */}
       {renderField(sslProviderField)}
-      {renderField(dnsProviderField)}
+      {isFieldVisible(dnsProviderField, formData) &&
+        renderField(dnsProviderField)}
       {isFieldVisible(cfZoneOverrideField, formData) &&
         renderField(cfZoneOverrideField)}
 

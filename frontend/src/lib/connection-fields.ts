@@ -120,6 +120,7 @@ export const dnsProviderField: FieldDefinition = {
       "custom",
     ],
   },
+  visibleWhen: { field: "ssl_provider", isNot: "venafi" },
 };
 
 export const cfZoneOverrideField: FieldDefinition = {
