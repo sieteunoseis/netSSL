@@ -810,17 +810,31 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
             .filter((name) => name.length > 0)
         : [];
 
-      // For ISE: auto-include the SAN/monitoring FQDN if it differs from the node FQDN
-      if (connection.application_type === "ise" && connection.hostname) {
-        // hostname may be a full FQDN (guest.example.com) or short name (guest)
-        const sanFQDN = connection.hostname.includes(".")
-          ? connection.hostname
-          : connection.domain
-            ? `${connection.hostname}.${connection.domain}`
-            : "";
-        if (sanFQDN && sanFQDN !== fullFQDN && !altNames.includes(sanFQDN)) {
-          altNames.unshift(sanFQDN);
+      // When using a custom CSR with a different CN, the domain list should come
+      // from the CSR only — don't inject the ISE node FQDN or hostname as extra SANs.
+      if (!csrCNOverride) {
+        // For ISE: auto-include the SAN/monitoring FQDN if it differs from the node FQDN
+        if (connection.application_type === "ise" && connection.hostname) {
+          const sanFQDN = connection.hostname.includes(".")
+            ? connection.hostname
+            : connection.domain
+              ? `${connection.hostname}.${connection.domain}`
+              : "";
+          if (sanFQDN && sanFQDN !== fullFQDN && !altNames.includes(sanFQDN)) {
+            altNames.unshift(sanFQDN);
+          }
         }
+      } else {
+        // Custom CSR: only include altNames that match the CSR's domain, not the ISE node
+        const iseNodeFQDNs = (connection.ise_nodes || "")
+          .split(",")
+          .map((n) => n.trim())
+          .filter(Boolean);
+        const filtered = altNames.filter(
+          (name) => !iseNodeFQDNs.includes(name),
+        );
+        altNames.length = 0;
+        altNames.push(...filtered);
       }
 
       const domains = [fullFQDN, ...altNames];
