@@ -325,12 +325,13 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         throw new Error(`Connection ${connectionId} not found`);
       }
 
-      let fullFQDN = getDomainFromConnection(connection);
-      if (!fullFQDN) {
+      const initialFQDN = getDomainFromConnection(connection);
+      if (!initialFQDN) {
         throw new Error(
           `Invalid connection configuration: missing hostname/domain for connection ${connectionId}`,
         );
       }
+      let fullFQDN: string = initialFQDN;
 
       // Log connection identifier header for traceability
       const connLabel = `[conn-${connectionId}]`;
