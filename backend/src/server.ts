@@ -110,6 +110,7 @@ async function checkISECertNameConflicts(
   iseNodes: string | undefined,
   iseCertImportConfig: string | undefined,
   applicationType: string | undefined,
+  iseCsrSource?: string,
 ): Promise<string[]> {
   const warnings: string[] = [];
   if (applicationType !== "ise" || !iseNodes || !iseCertImportConfig)
@@ -158,6 +159,35 @@ async function checkISECertNameConflicts(
             `on node(s) ${overlap.join(", ")}. ISE will overwrite the existing cert. ` +
             `Use a unique name in the Advanced Import Configuration to keep both certificates.`,
         );
+      }
+    }
+    // Check for same-CN conflict: if both connections target the same primary
+    // node and both use API CSR + Bind, the bind matches by subject (CN) and
+    // the second bind will overwrite the first cert regardless of friendly name.
+    for (const conn of allConnections) {
+      if (conn.id === connectionId) continue;
+      if (conn.application_type !== "ise") continue;
+      if (!conn.ise_nodes) continue;
+
+      const otherPrimaryNode = conn.ise_nodes
+        .split(",")
+        .map((n: string) => n.trim())
+        .filter(Boolean)[0];
+      const thisPrimaryNode = nodes[0];
+
+      if (
+        otherPrimaryNode === thisPrimaryNode &&
+        conn.ise_csr_source === "api" &&
+        (iseCsrSource || "api") === "api"
+      ) {
+        // Both connections target the same primary node with API CSR — CN will be the same
+        {
+          warnings.push(
+            `Warning: Connection "${conn.name}" (ID ${conn.id}) also targets ${thisPrimaryNode} using API CSR. ` +
+              `Both will generate certificates with CN=${thisPrimaryNode}. The ISE bind API matches by subject — ` +
+              `the second bind will overwrite the first. Use a local CSR with a different CN for one of the connections.`,
+          );
+        }
       }
     }
   } catch (error) {
@@ -429,6 +459,7 @@ app.post(
       req.body.ise_nodes,
       req.body.ise_cert_import_config,
       req.body.application_type,
+      req.body.ise_csr_source,
     );
 
     return res.status(201).json({
@@ -614,6 +645,7 @@ app.put(
       req.body.ise_nodes,
       req.body.ise_cert_import_config,
       req.body.application_type,
+      req.body.ise_csr_source,
     );
 
     return res.json({
