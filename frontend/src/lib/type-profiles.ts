@@ -190,12 +190,32 @@ export function isFieldVisible(
     return v;
   };
 
+  let primaryResult = true;
   if (is !== undefined) {
-    return normalize(currentValue) === normalize(is);
+    primaryResult = normalize(currentValue) === normalize(is);
+  } else if (isNot !== undefined) {
+    primaryResult = normalize(currentValue) !== normalize(isNot);
   }
-  if (isNot !== undefined) {
-    return normalize(currentValue) !== normalize(isNot);
+
+  if (!primaryResult) return false;
+
+  // Check compound 'and' condition if present
+  if (field.visibleWhen.and) {
+    const {
+      field: andField,
+      is: andIs,
+      isNot: andIsNot,
+    } = field.visibleWhen.and;
+    const andValue = formData[andField];
+    if (andIs !== undefined) {
+      return normalize(andValue) === normalize(andIs);
+    }
+    if (andIsNot !== undefined) {
+      return normalize(andValue) !== normalize(andIsNot);
+    }
   }
+
+  return primaryResult;
 
   return true;
 }

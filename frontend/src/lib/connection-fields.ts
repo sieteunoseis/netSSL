@@ -22,6 +22,12 @@ export interface FieldDefinition {
     field: string;
     is?: string | boolean;
     isNot?: string | boolean;
+    /** Optional second condition — both must be true for the field to show */
+    and?: {
+      field: string;
+      is?: string | boolean;
+      isNot?: string | boolean;
+    };
   };
 }
 
@@ -131,7 +137,11 @@ export const cfZoneOverrideField: FieldDefinition = {
   description:
     "Override the global CF_ZONE setting for this connection. Use when SANs span multiple Cloudflare zones (e.g., different domains). Leave blank to use the default zone.",
   optional: true,
-  visibleWhen: { field: "dns_provider", is: "cloudflare" },
+  visibleWhen: {
+    field: "dns_provider",
+    is: "cloudflare",
+    and: { field: "ssl_provider", isNot: "venafi" },
+  },
 };
 
 export const altNamesField: FieldDefinition = {
