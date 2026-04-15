@@ -14,7 +14,6 @@ import {
   domainField,
   sslProviderField,
   dnsProviderField,
-  cfZoneOverrideField,
   altNamesField,
   autoRenewField,
   isEnabledField,
@@ -70,7 +69,6 @@ export const vosProfile: TypeProfile = {
       domainField,
       sslProviderField,
       dnsProviderField,
-      cfZoneOverrideField,
       altNamesField,
     ],
     advanced: [
@@ -109,7 +107,6 @@ export const generalProfile: TypeProfile = {
       domainField,
       sslProviderField,
       dnsProviderField,
-      cfZoneOverrideField,
       altNamesField,
       customCsrField,
       generalPrivateKeyField,
@@ -143,7 +140,6 @@ export const catalystCenterProfile: TypeProfile = {
       domainField,
       sslProviderField,
       dnsProviderField,
-      cfZoneOverrideField,
       altNamesField,
       ccListOfUsersField,
       customCsrField,
@@ -252,15 +248,16 @@ export function getDefaultFormData(appType: string): Record<string, any> {
       defaults.ise_application_subtype = "multi_use";
     if (defaults.ise_cert_import_config === undefined)
       defaults.ise_cert_import_config = ISE_CERT_IMPORT_DEFAULT;
-    if (defaults.ise_csr_source === undefined) defaults.ise_csr_source = "api";
+    if (defaults.ise_csr_source === undefined) defaults.ise_csr_source = "";
     if (defaults.ise_nodes === undefined) defaults.ise_nodes = "";
     if (defaults.hostname === undefined) defaults.hostname = "";
-    if (defaults.ssl_provider === undefined) defaults.ssl_provider = "";
-    if (defaults.dns_provider === undefined) defaults.dns_provider = "";
+    if (defaults.ssl_provider === undefined)
+      defaults.ssl_provider = String(sslProviderField.defaultValue || "");
+    if (defaults.dns_provider === undefined)
+      defaults.dns_provider = String(dnsProviderField.defaultValue || "");
     if (defaults.ise_csr_config === undefined) defaults.ise_csr_config = "";
     if (defaults.ise_certificate === undefined) defaults.ise_certificate = "";
     if (defaults.alt_names === undefined) defaults.alt_names = "";
-    if (defaults.cf_zone_override === undefined) defaults.cf_zone_override = "";
   }
 
   return defaults;

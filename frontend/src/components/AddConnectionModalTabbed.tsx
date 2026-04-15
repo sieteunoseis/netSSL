@@ -76,8 +76,11 @@ const AddConnectionModalTabbed: React.FC<AddConnectionModalTabbedProps> = ({
         // ISE API mode — save config params
         updates = { ise_csr_config: generatedData.csrConfig };
       } else {
-        // Fallback
-        updates = { ise_certificate: generatedData.csr };
+        // ISE local mode — store CSR and private key for import
+        updates = {
+          ise_certificate: generatedData.csr,
+          ise_private_key: generatedData.privateKey,
+        };
       }
     }
 
@@ -393,8 +396,23 @@ const AddConnectionModalTabbed: React.FC<AddConnectionModalTabbedProps> = ({
               )}
             </div>
 
-            <div className="flex justify-end pt-4 border-t flex-shrink-0 bg-background">
-              <Button type="submit" disabled={isSubmitting}>
+            <div className="flex items-center justify-end gap-3 pt-4 border-t flex-shrink-0 bg-background">
+              {appType === "ise" &&
+                formData.ise_csr_source === "local" &&
+                !String(formData.ise_certificate || "").trim() && (
+                  <span className="text-xs text-muted-foreground">
+                    Generate CSR &amp; Key before adding.
+                  </span>
+                )}
+              <Button
+                type="submit"
+                disabled={
+                  isSubmitting ||
+                  (appType === "ise" &&
+                    formData.ise_csr_source === "local" &&
+                    !String(formData.ise_certificate || "").trim())
+                }
+              >
                 {isSubmitting ? "Adding..." : "Add Connection"}
               </Button>
             </div>
@@ -408,7 +426,53 @@ const AddConnectionModalTabbed: React.FC<AddConnectionModalTabbedProps> = ({
         onGenerated={handleCSRGenerated}
         hostname={String(formData.hostname || "")}
         domain={String(formData.domain || "")}
-        mode={formData.application_type === "ise" ? "configure" : "generate"}
+        commonName={(() => {
+          if (
+            formData.application_type === "ise" &&
+            formData.ise_csr_source === "local"
+          ) {
+            try {
+              const cfg = JSON.parse(String(formData.ise_csr_config || "{}"));
+              return cfg.commonName || undefined;
+            } catch {
+              return undefined;
+            }
+          }
+          return undefined;
+        })()}
+        keySize={(() => {
+          if (
+            formData.application_type === "ise" &&
+            formData.ise_csr_source === "local"
+          ) {
+            try {
+              const cfg = JSON.parse(String(formData.ise_csr_config || "{}"));
+              return cfg.keySize || undefined;
+            } catch {
+              return undefined;
+            }
+          }
+          return undefined;
+        })()}
+        sans={(() => {
+          if (
+            formData.application_type === "ise" &&
+            formData.ise_csr_source === "local"
+          ) {
+            return String(formData.alt_names || "")
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean);
+          }
+          return undefined;
+        })()}
+        mode={
+          formData.application_type === "ise"
+            ? formData.ise_csr_source === "local"
+              ? "generate"
+              : "configure"
+            : "generate"
+        }
       />
     </Dialog>
   );

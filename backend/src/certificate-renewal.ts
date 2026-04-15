@@ -355,6 +355,10 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
           updateStatusWithOp(op as RenewalStatus["status"], message, progress),
         saveLog: (msg: string) =>
           accountManager.saveRenewalLog(connectionId, fullFQDN, msg),
+        updateConnectionFields: async (fields) => {
+          await database.updateConnection(connectionId, fields);
+          Object.assign(connection, fields);
+        },
       };
 
       // Check for existing valid certificate
@@ -1165,11 +1169,7 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
           case "cloudflare": {
             const { CloudflareProvider } =
               await import("./dns-providers/cloudflare");
-            provider = await CloudflareProvider.create(
-              database,
-              fullFQDN,
-              connection.cf_zone_override || undefined,
-            );
+            provider = await CloudflareProvider.create(database, fullFQDN);
             break;
           }
           case "route53": {
@@ -1797,7 +1797,6 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
     recordName: string,
     recordValue: string,
     recordType: string = "TXT",
-    cfZoneOverride?: string,
   ): Promise<void> {
     if (!this.database) {
       throw new Error("Database not initialized");
@@ -1810,7 +1809,6 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
         const cloudflare = await CloudflareProvider.create(
           this.database,
           recordName,
-          cfZoneOverride,
         );
         await cloudflare.createDNSRecord(recordName, recordValue, recordType);
       } else if (dnsProvider === "digitalocean") {

@@ -288,8 +288,8 @@ export const validateConnectionData = (
     data.ise_csr_source !== null &&
     data.ise_csr_source !== ""
   ) {
-    if (!validator.isIn(data.ise_csr_source, ["api", "gui"])) {
-      errors.push('ISE CSR source must be one of "api" or "gui"');
+    if (!validator.isIn(data.ise_csr_source, ["api", "gui", "local"])) {
+      errors.push('ISE CSR source must be one of "api", "gui", or "local"');
     }
   }
 
@@ -470,7 +470,7 @@ export const sanitizeConnectionData = (
     ].includes(data.ise_application_subtype)
       ? data.ise_application_subtype
       : undefined,
-    ise_csr_source: ["api", "gui"].includes(data.ise_csr_source)
+    ise_csr_source: ["api", "gui", "local"].includes(data.ise_csr_source)
       ? data.ise_csr_source
       : undefined,
     ise_csr_config: data.ise_csr_config
@@ -498,9 +498,6 @@ export const sanitizeConnectionData = (
       data.cc_list_of_users,
     )
       ? data.cc_list_of_users
-      : undefined,
-    cf_zone_override: data.cf_zone_override
-      ? validator.escape(String(data.cf_zone_override))
       : undefined,
   };
 

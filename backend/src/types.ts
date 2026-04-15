@@ -19,7 +19,7 @@ export interface ConnectionRecord {
     | "pxgrid"
     | "saml"
     | "ims";
-  ise_csr_source?: "api" | "gui";
+  ise_csr_source?: "api" | "gui" | "local";
   ise_csr_config?: string;
   version?: string;
   alt_names?: string;
@@ -39,7 +39,6 @@ export interface ConnectionRecord {
   ssh_chain_path?: string;
   ssh_restart_command?: string;
   cc_list_of_users?: string;
-  cf_zone_override?: string;
   is_enabled?: boolean | number;
   last_cert_issued?: string;
   cert_count_this_week?: number;

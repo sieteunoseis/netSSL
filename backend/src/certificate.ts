@@ -1,12 +1,12 @@
-import https from 'https';
-import tls from 'tls';
-import dns from 'dns';
-import fs from 'fs';
-import path from 'path';
-import crypto from 'crypto';
-import { execSync } from 'child_process';
-import { Logger } from './logger';
-import { DatabaseManager } from './database';
+import https from "https";
+import tls from "tls";
+import dns from "dns";
+import fs from "fs";
+import path from "path";
+import crypto from "crypto";
+import { execSync } from "child_process";
+import { Logger } from "./logger";
+import { DatabaseManager } from "./database";
 
 export interface CertificateInfo {
   subject: {
@@ -55,56 +55,73 @@ function friendlyTlsError(raw: string): string {
   const msg = raw.toLowerCase();
 
   // TLS handshake failures (SSL alert number 40)
-  if (msg.includes('alert number 40') || msg.includes('handshake failure') || msg.includes('sslv3 alert'))
-    return 'TLS handshake rejected by host — the server refused the connection. This is normal for some devices (e.g. ISE) that restrict direct TLS probes.';
+  if (
+    msg.includes("alert number 40") ||
+    msg.includes("handshake failure") ||
+    msg.includes("sslv3 alert")
+  )
+    return "TLS handshake rejected by host — the server refused the connection. This is normal for some devices (e.g. ISE) that restrict direct TLS probes.";
 
   // Self-signed / untrusted cert (alert 48 or SELF_SIGNED)
-  if (msg.includes('self_signed') || msg.includes('self signed') || msg.includes('alert number 48'))
-    return 'Host presented a self-signed or untrusted certificate.';
+  if (
+    msg.includes("self_signed") ||
+    msg.includes("self signed") ||
+    msg.includes("alert number 48")
+  )
+    return "Host presented a self-signed or untrusted certificate.";
 
   // Certificate expired
-  if (msg.includes('cert_has_expired') || msg.includes('certificate has expired'))
-    return 'Host certificate has expired.';
+  if (
+    msg.includes("cert_has_expired") ||
+    msg.includes("certificate has expired")
+  )
+    return "Host certificate has expired.";
 
   // Connection refused
-  if (msg.includes('econnrefused'))
-    return 'Connection refused — the host is not accepting connections on this port.';
+  if (msg.includes("econnrefused"))
+    return "Connection refused — the host is not accepting connections on this port.";
 
   // Connection reset
-  if (msg.includes('econnreset'))
-    return 'Connection reset — the host closed the connection unexpectedly.';
+  if (msg.includes("econnreset"))
+    return "Connection reset — the host closed the connection unexpectedly.";
 
   // DNS resolution failure
-  if (msg.includes('enotfound') || msg.includes('getaddrinfo'))
-    return 'DNS lookup failed — hostname could not be resolved.';
+  if (msg.includes("enotfound") || msg.includes("getaddrinfo"))
+    return "DNS lookup failed — hostname could not be resolved.";
 
   // Timeout
-  if (msg.includes('etimedout') || msg.includes('timeout'))
-    return 'Connection timed out — the host did not respond.';
+  if (msg.includes("etimedout") || msg.includes("timeout"))
+    return "Connection timed out — the host did not respond.";
 
   // Network unreachable
-  if (msg.includes('enetunreach') || msg.includes('ehostunreach'))
-    return 'Host unreachable — check network connectivity.';
+  if (msg.includes("enetunreach") || msg.includes("ehostunreach"))
+    return "Host unreachable — check network connectivity.";
 
   // Protocol mismatch
-  if (msg.includes('wrong version number') || msg.includes('unsupported protocol'))
-    return 'TLS protocol mismatch — the host may not support TLS on this port.';
+  if (
+    msg.includes("wrong version number") ||
+    msg.includes("unsupported protocol")
+  )
+    return "TLS protocol mismatch — the host may not support TLS on this port.";
 
   // Fallback: strip OpenSSL hex prefixes and internal paths for a cleaner message
   const cleaned = raw
-    .replace(/[0-9A-F]{16}:/gi, '')          // hex error IDs like 8030ACF5O1000000:
-    .replace(/error:[0-9A-Fa-f]+:/g, '')      // error:0A000410:
-    .replace(/:\.\.[^\s:]+(:\d+)?/g, '')       // internal file paths like :../deps/openssl/...
-    .replace(/\s{2,}/g, ' ')
+    .replace(/[0-9A-F]{16}:/gi, "") // hex error IDs like 8030ACF5O1000000:
+    .replace(/error:[0-9A-Fa-f]+:/g, "") // error:0A000410:
+    .replace(/:\.\.[^\s:]+(:\d+)?/g, "") // internal file paths like :../deps/openssl/...
+    .replace(/\s{2,}/g, " ")
     .trim();
 
   return cleaned || raw;
 }
 
-export async function getCertificateInfo(hostname: string, port: number = 443): Promise<CertificateInfo | null> {
+export async function getCertificateInfo(
+  hostname: string,
+  port: number = 443,
+): Promise<CertificateInfo | null> {
   return new Promise((resolve) => {
     Logger.info(`Attempting to get certificate for ${hostname}:${port}`);
-    
+
     // Timing variables
     const startTime = Date.now();
     let dnsResolveTime: number | undefined;
@@ -116,30 +133,32 @@ export async function getCertificateInfo(hostname: string, port: number = 443): 
     const dnsStartTime = Date.now();
     dns.lookup(hostname, (dnsErr, address) => {
       dnsResolveTime = Date.now() - dnsStartTime;
-      
+
       if (dnsErr) {
         Logger.error(`DNS resolution failed for ${hostname}:`, dnsErr);
         const totalTime = Date.now() - startTime;
         resolve({
-          subject: { CN: '<DNS Resolution Failed>' },
-          issuer: { CN: '<DNS Resolution Failed>' },
-          validFrom: '',
-          validTo: '',
-          fingerprint: '',
-          fingerprint256: '',
-          serialNumber: '',
+          subject: { CN: "<DNS Resolution Failed>" },
+          issuer: { CN: "<DNS Resolution Failed>" },
+          validFrom: "",
+          validTo: "",
+          fingerprint: "",
+          fingerprint256: "",
+          serialNumber: "",
           isValid: false,
           daysUntilExpiry: 0,
           error: `DNS resolution failed: ${dnsErr.message}`,
           timings: {
             dnsResolve: dnsResolveTime,
-            totalTime: totalTime
-          }
+            totalTime: totalTime,
+          },
         });
         return;
       }
 
-      Logger.info(`DNS resolved ${hostname} to ${address} in ${dnsResolveTime}ms`);
+      Logger.info(
+        `DNS resolved ${hostname} to ${address} in ${dnsResolveTime}ms`,
+      );
 
       // Step 2: TCP Connection
       const tcpStartTime = Date.now();
@@ -155,11 +174,13 @@ export async function getCertificateInfo(hostname: string, port: number = 443): 
           tlsHandshakeTime = Date.now() - tcpStartTime;
           tcpConnectTime = tlsHandshakeTime; // TCP + TLS combined for now
           processingStartTime = Date.now();
-          
-          Logger.info(`TLS handshake completed for ${hostname}:${port} in ${tlsHandshakeTime}ms`);
-          
+
+          Logger.info(
+            `TLS handshake completed for ${hostname}:${port} in ${tlsHandshakeTime}ms`,
+          );
+
           const cert = socket.getPeerCertificate(true);
-          
+
           if (!cert || Object.keys(cert).length === 0) {
             Logger.error(`No certificate found for ${hostname}:${port}`);
             resolve(null);
@@ -169,27 +190,29 @@ export async function getCertificateInfo(hostname: string, port: number = 443): 
           const now = new Date();
           const validFrom = new Date(cert.valid_from);
           const validTo = new Date(cert.valid_to);
-          const daysUntilExpiry = Math.floor((validTo.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+          const daysUntilExpiry = Math.floor(
+            (validTo.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
+          );
 
           // Extract algorithm information from TLS certificate
-          let keyAlgorithm = 'unknown';
+          let keyAlgorithm = "unknown";
           let keySize = 0;
-          let signatureAlgorithm = 'unknown';
-          
+          let signatureAlgorithm = "unknown";
+
           try {
             // In Node.js, getPeerCertificate() returns an object with specific properties
             // Try to get key size from 'bits' property (this should exist)
             if ((cert as any).bits) {
               keySize = (cert as any).bits;
             }
-            
+
             // Try to determine key algorithm from modulus/exponent (RSA) or other properties
             if ((cert as any).modulus && (cert as any).exponent) {
-              keyAlgorithm = 'RSA';
+              keyAlgorithm = "RSA";
             } else if ((cert as any).asn1Curve) {
-              keyAlgorithm = 'EC';
+              keyAlgorithm = "EC";
             }
-            
+
             // For signature algorithm, it might be in different properties
             // Node.js certificate objects sometimes have these properties
             if ((cert as any).sigalg) {
@@ -199,44 +222,53 @@ export async function getCertificateInfo(hostname: string, port: number = 443): 
             } else if ((cert as any).sig_alg) {
               signatureAlgorithm = (cert as any).sig_alg;
             }
-            
+
             // Try to parse the raw certificate if available
-            if ((cert as any).raw && signatureAlgorithm === 'unknown') {
+            if ((cert as any).raw && signatureAlgorithm === "unknown") {
               try {
                 const x509Cert = new crypto.X509Certificate((cert as any).raw);
                 // Try to use OpenSSL to parse the certificate
                 const tempFile = `/tmp/temp_cert_${Date.now()}.pem`;
                 fs.writeFileSync(tempFile, x509Cert.toString());
-                
+
                 try {
-                  const opensslOutput = execSync(`openssl x509 -in "${tempFile}" -text -noout`, { 
-                    encoding: 'utf8',
-                    maxBuffer: 1024 * 1024
-                  });
-                  
-                  const sigAlgMatch = opensslOutput.match(/Signature Algorithm: ([^\n]+)/i);
+                  const opensslOutput = execSync(
+                    `openssl x509 -in "${tempFile}" -text -noout`,
+                    {
+                      encoding: "utf8",
+                      maxBuffer: 1024 * 1024,
+                    },
+                  );
+
+                  const sigAlgMatch = opensslOutput.match(
+                    /Signature Algorithm: ([^\n]+)/i,
+                  );
                   if (sigAlgMatch) {
                     signatureAlgorithm = sigAlgMatch[1].trim();
                   }
-                  
+
                   // Clean up temp file
                   fs.unlinkSync(tempFile);
                 } catch (opensslError) {
-                  Logger.debug('OpenSSL parsing failed for live certificate');
+                  Logger.debug("OpenSSL parsing failed for live certificate");
                   // Clean up temp file on error
-                  try { fs.unlinkSync(tempFile); } catch {}
+                  try {
+                    fs.unlinkSync(tempFile);
+                  } catch {}
                 }
               } catch (x509Error) {
-                Logger.debug('Failed to parse raw certificate for signature algorithm');
+                Logger.debug(
+                  "Failed to parse raw certificate for signature algorithm",
+                );
               }
             }
-            
+
             // Last resort: try common signature algorithms based on key type and size
-            if (signatureAlgorithm === 'unknown' && keyAlgorithm === 'RSA') {
+            if (signatureAlgorithm === "unknown" && keyAlgorithm === "RSA") {
               // Most common signature algorithms for RSA
-              signatureAlgorithm = 'sha256WithRSAEncryption'; // Default assumption
+              signatureAlgorithm = "sha256WithRSAEncryption"; // Default assumption
             }
-            
+
             // Log available properties for debugging
             Logger.info(`Certificate properties for ${hostname}:`, {
               allKeys: Object.keys(cert),
@@ -249,13 +281,15 @@ export async function getCertificateInfo(hostname: string, port: number = 443): 
               sigalgValue: (cert as any).sigalg,
               signatureAlgorithmValue: (cert as any).signatureAlgorithm,
               // Log some common certificate properties
-              modulus: (cert as any).modulus ? 'present' : 'missing',
-              exponent: (cert as any).exponent ? 'present' : 'missing',
-              publicKey: (cert as any).publicKey ? 'present' : 'missing'
+              modulus: (cert as any).modulus ? "present" : "missing",
+              exponent: (cert as any).exponent ? "present" : "missing",
+              publicKey: (cert as any).publicKey ? "present" : "missing",
             });
-            
           } catch (algError) {
-            Logger.error('Error extracting algorithm information from TLS certificate:', algError);
+            Logger.error(
+              "Error extracting algorithm information from TLS certificate:",
+              algError,
+            );
           }
 
           const processingTime = Date.now() - processingStartTime;
@@ -263,39 +297,41 @@ export async function getCertificateInfo(hostname: string, port: number = 443): 
 
           const certInfo: CertificateInfo = {
             subject: {
-              CN: cert.subject?.CN || '<Not Part Of Certificate>',
-              O: cert.subject?.O || '<Not Part Of Certificate>',
-              OU: cert.subject?.OU || '<Not Part Of Certificate>',
+              CN: cert.subject?.CN || "<Not Part Of Certificate>",
+              O: cert.subject?.O || "<Not Part Of Certificate>",
+              OU: cert.subject?.OU || "<Not Part Of Certificate>",
             },
             issuer: {
-              CN: cert.issuer?.CN || '<Not Part Of Certificate>',
-              O: cert.issuer?.O || '<Not Part Of Certificate>',
-              OU: cert.issuer?.OU || '<Not Part Of Certificate>',
+              CN: cert.issuer?.CN || "<Not Part Of Certificate>",
+              O: cert.issuer?.O || "<Not Part Of Certificate>",
+              OU: cert.issuer?.OU || "<Not Part Of Certificate>",
             },
-            validFrom: validFrom.toLocaleString('en-US', {
-              weekday: 'long',
-              year: 'numeric',
-              month: 'long',
-              day: 'numeric',
-              hour: 'numeric',
-              minute: 'numeric',
-              second: 'numeric',
-              timeZoneName: 'short'
+            validFrom: validFrom.toLocaleString("en-US", {
+              weekday: "long",
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+              hour: "numeric",
+              minute: "numeric",
+              second: "numeric",
+              timeZoneName: "short",
             }),
-            validTo: validTo.toLocaleString('en-US', {
-              weekday: 'long',
-              year: 'numeric',
-              month: 'long',
-              day: 'numeric',
-              hour: 'numeric',
-              minute: 'numeric',
-              second: 'numeric',
-              timeZoneName: 'short'
+            validTo: validTo.toLocaleString("en-US", {
+              weekday: "long",
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+              hour: "numeric",
+              minute: "numeric",
+              second: "numeric",
+              timeZoneName: "short",
             }),
-            fingerprint: cert.fingerprint || '',
-            fingerprint256: cert.fingerprint256 || '',
-            serialNumber: cert.serialNumber || '',
-            subjectAltNames: cert.subjectaltname ? cert.subjectaltname.split(', ') : [],
+            fingerprint: cert.fingerprint || "",
+            fingerprint256: cert.fingerprint256 || "",
+            serialNumber: cert.serialNumber || "",
+            subjectAltNames: cert.subjectaltname
+              ? cert.subjectaltname.split(", ")
+              : [],
             isValid: now >= validFrom && now <= validTo,
             daysUntilExpiry: daysUntilExpiry,
             keyAlgorithm: keyAlgorithm,
@@ -306,60 +342,65 @@ export async function getCertificateInfo(hostname: string, port: number = 443): 
               tcpConnect: tcpConnectTime,
               tlsHandshake: tlsHandshakeTime,
               certificateProcessing: processingTime,
-              totalTime: totalTime
-            }
+              totalTime: totalTime,
+            },
           };
 
-          Logger.info(`Retrieved certificate for ${hostname} from live TLS connection on port ${port} - DNS: ${dnsResolveTime}ms, TLS: ${tlsHandshakeTime}ms, Processing: ${processingTime}ms, Total: ${totalTime}ms`);
+          Logger.info(
+            `Retrieved certificate for ${hostname} from live TLS connection on port ${port} - DNS: ${dnsResolveTime}ms, TLS: ${tlsHandshakeTime}ms, Processing: ${processingTime}ms, Total: ${totalTime}ms`,
+          );
           resolve(certInfo);
         } catch (error) {
-          Logger.error(`Error parsing certificate for ${hostname}:${port}:`, error);
+          Logger.error(
+            `Error parsing certificate for ${hostname}:${port}:`,
+            error,
+          );
           resolve(null);
         } finally {
           socket.destroy();
         }
       });
 
-      socket.on('error', (error) => {
+      socket.on("error", (error) => {
         const totalTime = Date.now() - startTime;
         Logger.error(`TLS connection error for ${hostname}:${port}:`, error);
         resolve({
-          subject: { CN: '<Connection Failed>' },
-          issuer: { CN: '<Connection Failed>' },
-          validFrom: '',
-          validTo: '',
-          fingerprint: '',
-          fingerprint256: '',
-          serialNumber: '',
+          subject: { CN: "<Connection Failed>" },
+          issuer: { CN: "<Connection Failed>" },
+          validFrom: "",
+          validTo: "",
+          fingerprint: "",
+          fingerprint256: "",
+          serialNumber: "",
           isValid: false,
           daysUntilExpiry: 0,
           error: friendlyTlsError(error.message),
           timings: {
             dnsResolve: dnsResolveTime,
-            totalTime: totalTime
-          }
+            totalTime: totalTime,
+          },
         });
       });
 
-      socket.on('timeout', () => {
+      socket.on("timeout", () => {
         const totalTime = Date.now() - startTime;
         Logger.error(`TLS connection timeout for ${hostname}:${port}`);
         socket.destroy();
         resolve({
-          subject: { CN: '<Connection Timeout>' },
-          issuer: { CN: '<Connection Timeout>' },
-          validFrom: '',
-          validTo: '',
-          fingerprint: '',
-          fingerprint256: '',
-          serialNumber: '',
+          subject: { CN: "<Connection Timeout>" },
+          issuer: { CN: "<Connection Timeout>" },
+          validFrom: "",
+          validTo: "",
+          fingerprint: "",
+          fingerprint256: "",
+          serialNumber: "",
           isValid: false,
           daysUntilExpiry: 0,
-          error: 'Connection timeout',
+          error: "Connection timeout",
           timings: {
             dnsResolve: dnsResolveTime,
-            totalTime: totalTime
-          }
+            totalTime: totalTime,
+          },
         });
       });
 
@@ -377,13 +418,13 @@ export async function getCertificateInfo(hostname: string, port: number = 443): 
  * @returns CertificateInfo object or null if failed
  */
 export async function getCertificateInfoWithMetrics(
-  hostname: string, 
-  port: number = 443, 
-  connectionId: number, 
-  database: DatabaseManager
+  hostname: string,
+  port: number = 443,
+  connectionId: number,
+  database: DatabaseManager,
 ): Promise<CertificateInfo | null> {
   const certInfo = await getCertificateInfo(hostname, port);
-  
+
   if (certInfo) {
     // Save metrics to database
     try {
@@ -391,17 +432,17 @@ export async function getCertificateInfoWithMetrics(
         connectionId,
         hostname,
         port,
-        'live_tls',
+        "live_tls",
         certInfo.timings,
         certInfo.keyAlgorithm,
         certInfo.keySize,
         certInfo.signatureAlgorithm,
         certInfo.isValid,
         certInfo.daysUntilExpiry,
-        certInfo.error
+        certInfo.error,
       );
     } catch (error) {
-      Logger.error('Failed to save certificate metrics to database:', error);
+      Logger.error("Failed to save certificate metrics to database:", error);
       // Don't fail the whole operation if metrics storage fails
     }
   } else {
@@ -411,20 +452,20 @@ export async function getCertificateInfoWithMetrics(
         connectionId,
         hostname,
         port,
-        'live_tls',
+        "live_tls",
         undefined,
         undefined,
         undefined,
         undefined,
         false,
         undefined,
-        'Certificate check failed'
+        "Certificate check failed",
       );
     } catch (error) {
-      Logger.error('Failed to save error metrics to database:', error);
+      Logger.error("Failed to save error metrics to database:", error);
     }
   }
-  
+
   return certInfo;
 }
 
@@ -437,13 +478,13 @@ export async function getCertificateInfoWithMetrics(
  * @returns CertificateInfo object or null if failed
  */
 export async function getCertificateInfoFromFileWithMetrics(
-  certPath: string, 
-  connectionId: number, 
+  certPath: string,
+  connectionId: number,
   database: DatabaseManager,
-  hostname: string
+  hostname: string,
 ): Promise<CertificateInfo | null> {
   const certInfo = await getCertificateInfoFromFile(certPath);
-  
+
   if (certInfo) {
     // Save metrics to database
     try {
@@ -451,20 +492,23 @@ export async function getCertificateInfoFromFileWithMetrics(
         connectionId,
         hostname,
         443, // Default port for file-based checks
-        'file_based',
+        "file_based",
         undefined, // No timing metrics for file-based checks
         certInfo.keyAlgorithm,
         certInfo.keySize,
         certInfo.signatureAlgorithm,
         certInfo.isValid,
         certInfo.daysUntilExpiry,
-        certInfo.error
+        certInfo.error,
       );
     } catch (error) {
-      Logger.error('Failed to save file-based certificate metrics to database:', error);
+      Logger.error(
+        "Failed to save file-based certificate metrics to database:",
+        error,
+      );
     }
   }
-  
+
   return certInfo;
 }
 
@@ -473,34 +517,40 @@ export async function getCertificateInfoFromFileWithMetrics(
  * @param certPath Path to the certificate.pem file
  * @returns CertificateInfo object or null if parsing fails
  */
-export async function getCertificateInfoFromFile(certPath: string): Promise<CertificateInfo | null> {
+export async function getCertificateInfoFromFile(
+  certPath: string,
+): Promise<CertificateInfo | null> {
   try {
     if (!fs.existsSync(certPath)) {
       Logger.debug(`Certificate file not found: ${certPath}`);
       return null;
     }
 
-    const certContent = fs.readFileSync(certPath, 'utf8');
-    
+    const certContent = fs.readFileSync(certPath, "utf8");
+
     // Use Node.js crypto module to parse the certificate
     const cert = new crypto.X509Certificate(certContent);
-    
+
     const now = new Date();
     const validFrom = new Date(cert.validFrom);
     const validTo = new Date(cert.validTo);
-    const daysUntilExpiry = Math.floor((validTo.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    const daysUntilExpiry = Math.floor(
+      (validTo.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
+    );
 
     // Parse subject and issuer
-    const subject = cert.subject.split('\n').reduce((acc: any, line: string) => {
-      const [key, value] = line.split('=');
-      if (key && value) {
-        acc[key] = value;
-      }
-      return acc;
-    }, {});
+    const subject = cert.subject
+      .split("\n")
+      .reduce((acc: any, line: string) => {
+        const [key, value] = line.split("=");
+        if (key && value) {
+          acc[key] = value;
+        }
+        return acc;
+      }, {});
 
-    const issuer = cert.issuer.split('\n').reduce((acc: any, line: string) => {
-      const [key, value] = line.split('=');
+    const issuer = cert.issuer.split("\n").reduce((acc: any, line: string) => {
+      const [key, value] = line.split("=");
       if (key && value) {
         acc[key] = value;
       }
@@ -509,11 +559,11 @@ export async function getCertificateInfoFromFile(certPath: string): Promise<Cert
 
     // Extract algorithm information from X509Certificate
     const publicKey = cert.publicKey;
-    const keyAlgorithm = (publicKey as any).asymmetricKeyType || 'unknown';
+    const keyAlgorithm = (publicKey as any).asymmetricKeyType || "unknown";
     const keySize = (publicKey as any).asymmetricKeySize || 0;
-    
+
     // Get signature algorithm using OpenSSL
-    let signatureAlgorithm = 'unknown';
+    let signatureAlgorithm = "unknown";
     try {
       // Verify the certificate file exists
       if (!fs.existsSync(certPath)) {
@@ -521,71 +571,80 @@ export async function getCertificateInfoFromFile(certPath: string): Promise<Cert
       } else {
         // Use OpenSSL to extract detailed certificate information
         try {
-          const opensslOutput = execSync(`openssl x509 -in "${certPath}" -text -noout`, { 
-            encoding: 'utf8',
-            maxBuffer: 1024 * 1024 // 1MB buffer
-          });
-          
+          const opensslOutput = execSync(
+            `openssl x509 -in "${certPath}" -text -noout`,
+            {
+              encoding: "utf8",
+              maxBuffer: 1024 * 1024, // 1MB buffer
+            },
+          );
+
           // Extract signature algorithm from OpenSSL output
-          const sigAlgMatch = opensslOutput.match(/Signature Algorithm: ([^\n]+)/i);
+          const sigAlgMatch = opensslOutput.match(
+            /Signature Algorithm: ([^\n]+)/i,
+          );
           if (sigAlgMatch) {
             signatureAlgorithm = sigAlgMatch[1].trim();
           }
         } catch (opensslError: any) {
-          console.error('OpenSSL command failed:', opensslError.message);
-          console.error('Certificate path:', certPath);
+          console.error("OpenSSL command failed:", opensslError.message);
+          console.error("Certificate path:", certPath);
         }
       }
     } catch (e: any) {
-      console.error('Error in signature algorithm extraction:', e.message);
+      console.error("Error in signature algorithm extraction:", e.message);
     }
-    
+
     // Fallback: try to extract from the PEM content if OpenSSL failed
-    if (signatureAlgorithm === 'unknown') {
+    if (signatureAlgorithm === "unknown") {
       try {
         // For PEM certificates, the signature algorithm isn't in the base64 content
         // We'd need to decode it properly, so let's just leave it as unknown for now
-        console.log('Signature algorithm extraction failed, leaving as unknown');
+        console.log(
+          "Signature algorithm extraction failed, leaving as unknown",
+        );
       } catch (fallbackError) {
-        console.error('Fallback failed:', fallbackError);
+        console.error("Fallback failed:", fallbackError);
       }
     }
 
     const certInfo: CertificateInfo = {
       subject: {
-        CN: subject.CN || '<Not Part Of Certificate>',
-        O: subject.O || '<Not Part Of Certificate>',
-        OU: subject.OU || '<Not Part Of Certificate>',
+        CN: subject.CN || "<Not Part Of Certificate>",
+        O: subject.O || "<Not Part Of Certificate>",
+        OU: subject.OU || "<Not Part Of Certificate>",
       },
       issuer: {
-        CN: issuer.CN || '<Not Part Of Certificate>',
-        O: issuer.O || '<Not Part Of Certificate>',
-        OU: issuer.OU || '<Not Part Of Certificate>',
+        CN: issuer.CN || "<Not Part Of Certificate>",
+        O: issuer.O || "<Not Part Of Certificate>",
+        OU: issuer.OU || "<Not Part Of Certificate>",
       },
-      validFrom: validFrom.toLocaleString('en-US', {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: 'numeric',
-        second: 'numeric',
-        timeZoneName: 'short'
+      validFrom: validFrom.toLocaleString("en-US", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "numeric",
+        minute: "numeric",
+        second: "numeric",
+        timeZoneName: "short",
       }),
-      validTo: validTo.toLocaleString('en-US', {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: 'numeric',
-        second: 'numeric',
-        timeZoneName: 'short'
+      validTo: validTo.toLocaleString("en-US", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "numeric",
+        minute: "numeric",
+        second: "numeric",
+        timeZoneName: "short",
       }),
-      fingerprint: cert.fingerprint || '',
-      fingerprint256: cert.fingerprint256 || '',
-      serialNumber: cert.serialNumber || '',
-      subjectAltNames: cert.subjectAltName ? cert.subjectAltName.split(', ') : [],
+      fingerprint: cert.fingerprint || "",
+      fingerprint256: cert.fingerprint256 || "",
+      serialNumber: cert.serialNumber || "",
+      subjectAltNames: cert.subjectAltName
+        ? cert.subjectAltName.split(", ")
+        : [],
       isValid: now >= validFrom && now <= validTo,
       daysUntilExpiry: daysUntilExpiry,
       keyAlgorithm: keyAlgorithm,
@@ -614,21 +673,24 @@ function getPortsForConnection(connection?: any): number[] {
   }
 
   // Check if this is an ISE connection with application subtype
-  if (connection.application_type === 'ise' && connection.ise_application_subtype) {
+  if (
+    connection.application_type === "ise" &&
+    connection.ise_application_subtype
+  ) {
     switch (connection.ise_application_subtype) {
-      case 'guest':
+      case "guest":
         return [8443]; // Guest portal
-      case 'portal':
+      case "portal":
         return [8445]; // Sponsor portal
-      case 'multi_use':
+      case "multi_use":
         return [443, 8443, 8445]; // Admin + Guest Portal + Sponsor Portal
-      case 'admin':
-      case 'eap':
-      case 'dtls':
-      case 'pxgrid':
-      case 'saml':
-      case 'ims':
-        return [443];  // Admin interface (shared by admin, EAP, DTLS, pxGrid, SAML, IMS)
+      case "admin":
+      case "eap":
+      case "dtls":
+      case "pxgrid":
+      case "saml":
+      case "ims":
+        return [443]; // Admin interface (shared by admin, EAP, DTLS, pxGrid, SAML, IMS)
       default:
         return [443]; // Default to admin port for new certificate usage types
     }
@@ -639,10 +701,96 @@ function getPortsForConnection(connection?: any): number[] {
 }
 
 /**
+ * Derive the best monitoring target for an ISE connection based on the selected
+ * purposes. Priority:
+ *   admin/eap/saml/dtls/pxgrid/ims → first ISE node FQDN : 443
+ *   guest                          → guest portal URL    : 8443
+ *   sponsor (portal) only          → sponsor portal URL  : 8445
+ * Non-ISE connections return null — the caller should fall back to the default
+ * hostname/port probing flow.
+ */
+function getIseProbeTarget(
+  connection: any,
+): { host: string; port: number } | null {
+  if (!connection || connection.application_type !== "ise") return null;
+
+  let purposes = new Set<string>();
+  try {
+    const cfg = JSON.parse(connection.ise_cert_import_config || "{}");
+    if (Array.isArray(cfg._selectedPurposes)) {
+      for (const p of cfg._selectedPurposes) purposes.add(String(p));
+    }
+  } catch {
+    /* ignore malformed JSON — fall through to subtype */
+  }
+  if (purposes.size === 0 && connection.ise_application_subtype) {
+    const st = connection.ise_application_subtype;
+    if (st && st !== "multi_use") purposes.add(st);
+  }
+  if (purposes.size === 0) return null;
+
+  const primaryNode =
+    (connection.ise_nodes || "")
+      .split(",")
+      .map((n: string) => n.trim())
+      .filter(Boolean)[0] || "";
+
+  // Admin-interface purposes win over portal purposes — they share the admin
+  // cert on :443, which is the most universal probe target.
+  const adminInterfacePurposes = [
+    "admin",
+    "eap",
+    "saml",
+    "dtls",
+    "pxgrid",
+    "ims",
+  ];
+  if (adminInterfacePurposes.some((p) => purposes.has(p))) {
+    return primaryNode ? { host: primaryNode, port: 443 } : null;
+  }
+
+  const altNames = (connection.alt_names || "")
+    .split(",")
+    .map((n: string) => n.trim())
+    .filter(Boolean);
+
+  // For local-mode certs the CN is the exact FQDN we issued for — prefer it
+  // over alt_names/primaryNode so the probe hostname matches the cert.
+  let localCn = "";
+  if (connection.ise_csr_source === "local") {
+    try {
+      const cfg = JSON.parse(connection.ise_csr_config || "{}");
+      if (typeof cfg.commonName === "string" && cfg.commonName.trim()) {
+        localCn = cfg.commonName.trim();
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // Guest wins over sponsor when both selected — same cert on both ports,
+  // but guest is typically the customer-facing one. alt_names[0] is guest
+  // when guest is selected (the wizard writes guest first).
+  if (purposes.has("guest")) {
+    const host = localCn || altNames[0] || primaryNode;
+    return host ? { host, port: 8443 } : null;
+  }
+  if (purposes.has("portal")) {
+    const host = localCn || altNames[0] || primaryNode;
+    return host ? { host, port: 8445 } : null;
+  }
+
+  return null;
+}
+
+/**
  * Check if the expected hostname matches the certificate's CN or SANs
  * Handles wildcard certificates (e.g., *.automate.builders matches guest1.automate.builders)
  */
-function checkHostnameMatch(expectedHostname: string, certInfo: CertificateInfo): boolean {
+function checkHostnameMatch(
+  expectedHostname: string,
+  certInfo: CertificateInfo,
+): boolean {
   const expected = expectedHostname.toLowerCase();
 
   // Check CN
@@ -654,7 +802,7 @@ function checkHostnameMatch(expectedHostname: string, certInfo: CertificateInfo)
   // Check SANs (format: "DNS:hostname" or just "hostname")
   if (certInfo.subjectAltNames) {
     for (const san of certInfo.subjectAltNames) {
-      const sanValue = san.replace(/^DNS:/i, '').trim().toLowerCase();
+      const sanValue = san.replace(/^DNS:/i, "").trim().toLowerCase();
       if (hostnameMatchesPattern(expected, sanValue)) {
         return true;
       }
@@ -672,50 +820,73 @@ function hostnameMatchesPattern(hostname: string, pattern: string): boolean {
   if (hostname === pattern) return true;
 
   // Wildcard match: *.example.com matches sub.example.com but not sub.sub.example.com
-  if (pattern.startsWith('*.')) {
+  if (pattern.startsWith("*.")) {
     const wildcardBase = pattern.slice(2); // "example.com"
-    const hostParts = hostname.split('.');
-    const baseParts = wildcardBase.split('.');
+    const hostParts = hostname.split(".");
+    const baseParts = wildcardBase.split(".");
     if (hostParts.length === baseParts.length + 1) {
-      return hostname.endsWith('.' + wildcardBase);
+      return hostname.endsWith("." + wildcardBase);
     }
   }
 
   return false;
 }
 
-export async function getCertificateInfoWithFallback(hostname: string, connection?: any, database?: any): Promise<CertificateInfo | null> {
+export async function getCertificateInfoWithFallback(
+  hostname: string,
+  connection?: any,
+  database?: any,
+): Promise<CertificateInfo | null> {
   Logger.info(`Getting certificate info for ${hostname}`);
-  
+
   // First, try to get certificate from local files
-  const accountsDir = process.env.ACCOUNTS_DIR || path.join(__dirname, '..', 'accounts');
+  const accountsDir =
+    process.env.ACCOUNTS_DIR || path.join(__dirname, "..", "accounts");
   const domainDir = path.join(accountsDir, hostname);
-  
+
   // Check for staging environment setting (consistent with account-manager.ts)
-  const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
-  const certSubDir = isStaging ? 'staging' : 'prod';
-  
-  const certPath = path.join(domainDir, certSubDir, 'certificate.pem');
-  
-  // Primary: Try to get certificate from live TLS connection (what's actually deployed)
-  const ports = getPortsForConnection(connection);
-  // Only ISE multi_use should check all ports and report results — other
-  // connection types try multiple ports as fallback (return on first success).
-  const multiPort = connection?.application_type === 'ise' && connection?.ise_application_subtype === 'multi_use';
+  const isStaging = process.env.LETSENCRYPT_STAGING !== "false";
+  const certSubDir = isStaging ? "staging" : "prod";
+
+  const certPath = path.join(domainDir, certSubDir, "certificate.pem");
+
+  // Primary: Try to get certificate from live TLS connection (what's actually deployed).
+  // For ISE, prefer the purpose-derived (host, port) so we probe the portal URL for
+  // portal-only certs instead of the admin interface.
+  const iseTarget = getIseProbeTarget(connection);
+  const probeHost = iseTarget?.host || hostname;
+  const ports = iseTarget
+    ? [iseTarget.port]
+    : getPortsForConnection(connection);
+  // Only ISE multi_use (no specific purpose override) should check all ports and
+  // report results — other connection types try multiple ports as fallback (return
+  // on first success).
+  const multiPort =
+    !iseTarget &&
+    connection?.application_type === "ise" &&
+    connection?.ise_application_subtype === "multi_use";
   const portResults: { port: number; success: boolean }[] = [];
   let firstCertInfo: CertificateInfo | null = null;
 
   for (const port of ports) {
     try {
-      Logger.info(`Attempting to get certificate for ${hostname}:${port}`);
+      Logger.info(`Attempting to get certificate for ${probeHost}:${port}`);
       // Use metrics version if database and connection are available
-      const certInfo = (database && connection?.id)
-        ? await getCertificateInfoWithMetrics(hostname, port, connection.id, database)
-        : await getCertificateInfo(hostname, port);
+      const certInfo =
+        database && connection?.id
+          ? await getCertificateInfoWithMetrics(
+              probeHost,
+              port,
+              connection.id,
+              database,
+            )
+          : await getCertificateInfo(probeHost, port);
       if (certInfo) {
-        Logger.info(`Retrieved certificate for ${hostname} from live TLS connection on port ${port}`);
-        certInfo.expectedHostname = hostname;
-        certInfo.hostnameMatch = checkHostnameMatch(hostname, certInfo);
+        Logger.info(
+          `Retrieved certificate for ${probeHost} from live TLS connection on port ${port}`,
+        );
+        certInfo.expectedHostname = probeHost;
+        certInfo.hostnameMatch = checkHostnameMatch(probeHost, certInfo);
         portResults.push({ port, success: true });
         if (!firstCertInfo) firstCertInfo = certInfo;
         if (!multiPort) return certInfo; // Single-port: return immediately
@@ -723,7 +894,9 @@ export async function getCertificateInfoWithFallback(hostname: string, connectio
         portResults.push({ port, success: false });
       }
     } catch (error) {
-      Logger.debug(`Failed to connect to ${hostname}:${port}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      Logger.debug(
+        `Failed to connect to ${probeHost}:${port}: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
       portResults.push({ port, success: false });
     }
   }
@@ -734,32 +907,49 @@ export async function getCertificateInfoWithFallback(hostname: string, connectio
     return firstCertInfo;
   }
 
-  Logger.info(`No live TLS connection available for ${hostname}, falling back to local certificate files`);
-  
+  Logger.info(
+    `No live TLS connection available for ${hostname}, falling back to local certificate files`,
+  );
+
   // Fallback 1: Try local certificate in primary directory
   Logger.debug(`Checking for local certificate at: ${certPath}`);
   const localCertInfo = await getCertificateInfoFromFile(certPath);
   if (localCertInfo) {
-    Logger.info(`Found local certificate for ${hostname} in ${certSubDir} directory`);
+    Logger.info(
+      `Found local certificate for ${hostname} in ${certSubDir} directory`,
+    );
     localCertInfo.expectedHostname = hostname;
     localCertInfo.hostnameMatch = checkHostnameMatch(hostname, localCertInfo);
     return localCertInfo;
   }
-  
+
   // Fallback 2: Try local certificate in alternate directory (staging/prod)
-  const alternateCertSubDir = isStaging ? 'prod' : 'staging';
-  const alternateCertPath = path.join(domainDir, alternateCertSubDir, 'certificate.pem');
-  
-  Logger.debug(`Checking for alternate local certificate at: ${alternateCertPath}`);
+  const alternateCertSubDir = isStaging ? "prod" : "staging";
+  const alternateCertPath = path.join(
+    domainDir,
+    alternateCertSubDir,
+    "certificate.pem",
+  );
+
+  Logger.debug(
+    `Checking for alternate local certificate at: ${alternateCertPath}`,
+  );
   const alternateCertInfo = await getCertificateInfoFromFile(alternateCertPath);
   if (alternateCertInfo) {
-    Logger.info(`Found local certificate for ${hostname} in ${alternateCertSubDir} directory`);
+    Logger.info(
+      `Found local certificate for ${hostname} in ${alternateCertSubDir} directory`,
+    );
     alternateCertInfo.expectedHostname = hostname;
-    alternateCertInfo.hostnameMatch = checkHostnameMatch(hostname, alternateCertInfo);
+    alternateCertInfo.hostnameMatch = checkHostnameMatch(
+      hostname,
+      alternateCertInfo,
+    );
     return alternateCertInfo;
   }
-  
+
   // No certificate found anywhere
-  Logger.warn(`No certificate found for ${hostname} in live TLS connection or local files`);
+  Logger.warn(
+    `No certificate found for ${hostname} in live TLS connection or local files`,
+  );
   return null;
 }

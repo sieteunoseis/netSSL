@@ -32,25 +32,158 @@ export class CloudflareProvider {
     this.zoneId = zoneId;
   }
 
+  /**
+   * List every zone the API key can read. Paginates through Cloudflare's response
+   * (50/page default, 1000/page max). Used by the settings UI's "Refresh Zones".
+   */
+  static async listZones(
+    apiKey: string,
+  ): Promise<Array<{ id: string; name: string }>> {
+    const zones: Array<{ id: string; name: string }> = [];
+    const perPage = 50;
+    let page = 1;
+
+    while (true) {
+      const response = await CloudflareProvider.callApi(
+        apiKey,
+        "GET",
+        `/zones?per_page=${perPage}&page=${page}`,
+      );
+      if (!response.success) {
+        throw new Error(
+          `Cloudflare API error: ${JSON.stringify(response.errors)}`,
+        );
+      }
+      const result = (response.result as any[]) || [];
+      for (const z of result) {
+        if (z?.id && z?.name) zones.push({ id: z.id, name: z.name });
+      }
+
+      const totalPages = response.result_info?.total_pages ?? page;
+      if (page >= totalPages || result.length === 0) break;
+      page += 1;
+    }
+
+    return zones;
+  }
+
+  /** Static one-shot HTTPS call (no instance state needed). */
+  private static callApi(
+    apiKey: string,
+    method: string,
+    path: string,
+    data?: string,
+  ): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const options = {
+        hostname: "api.cloudflare.com",
+        port: 443,
+        path: `/client/v4${path}`,
+        method,
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "User-Agent": "netSSL/1.0",
+        } as any,
+      };
+
+      if (data) {
+        options.headers["Content-Length"] = Buffer.byteLength(data);
+      }
+
+      const req = https.request(options, (res) => {
+        let body = "";
+        res.on("data", (c) => (body += c));
+        res.on("end", () => {
+          try {
+            resolve(JSON.parse(body));
+          } catch (e) {
+            reject(
+              new Error(
+                `Failed to parse Cloudflare response: ${e instanceof Error ? e.message : "Unknown error"}`,
+              ),
+            );
+          }
+        });
+      });
+      req.on("error", (e) =>
+        reject(new Error(`Cloudflare API request failed: ${e.message}`)),
+      );
+      req.setTimeout(30000, () => {
+        req.destroy();
+        reject(new Error("Cloudflare API request timed out"));
+      });
+      if (data) req.write(data);
+      req.end();
+    });
+  }
+
   static async create(
     database: DatabaseManager,
     domain: string,
-    cfZoneOverride?: string,
   ): Promise<CloudflareProvider> {
     try {
       const settings = await database.getSettingsByProvider("cloudflare");
       const apiKey = settings.find((s) => s.key_name === "CF_KEY")?.key_value;
-      const zoneId =
-        cfZoneOverride ||
-        settings.find((s) => s.key_name === "CF_ZONE")?.key_value;
+      const cfZoneRaw = settings.find(
+        (s) => s.key_name === "CF_ZONE",
+      )?.key_value;
+      const cfZoneMapRaw = settings.find(
+        (s) => s.key_name === "CF_ZONE_MAP",
+      )?.key_value;
 
-      if (!apiKey || !zoneId) {
-        throw new Error(
-          "Cloudflare API key or zone ID not configured in settings",
-        );
+      if (!apiKey) {
+        throw new Error("Cloudflare API key not configured in settings");
       }
 
-      return new CloudflareProvider(apiKey, zoneId);
+      const ids = String(cfZoneRaw || "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      if (ids.length === 0) {
+        throw new Error("Cloudflare zone ID not configured in settings");
+      }
+
+      // Single-zone case: nothing to match — use it as-is.
+      if (ids.length === 1) {
+        return new CloudflareProvider(apiKey, ids[0]);
+      }
+
+      // Multi-zone: pick longest-suffix match against CF_ZONE_MAP.
+      let zoneMap: Record<string, string> = {};
+      try {
+        zoneMap = JSON.parse(cfZoneMapRaw || "{}");
+      } catch {
+        // Malformed map — fall through to fallback below
+      }
+
+      const lowerDomain = String(domain || "").toLowerCase();
+      let bestId: string | undefined;
+      let bestLen = 0;
+      for (const [zid, zname] of Object.entries(zoneMap)) {
+        if (!ids.includes(zid)) continue; // map may include zones the user un-checked
+        const lowerZone = String(zname).toLowerCase();
+        if (
+          lowerDomain === lowerZone ||
+          lowerDomain.endsWith(`.${lowerZone}`)
+        ) {
+          if (lowerZone.length > bestLen) {
+            bestLen = lowerZone.length;
+            bestId = zid;
+          }
+        }
+      }
+
+      if (bestId) {
+        return new CloudflareProvider(apiKey, bestId);
+      }
+
+      // No suffix match — fall back to first zone and warn so it shows up in logs.
+      Logger.warn(
+        `Cloudflare: no zone suffix matched "${domain}" in CF_ZONE_MAP — falling back to first configured zone (${ids[0]}). Run Refresh Zones in API Keys & Settings to update the map.`,
+      );
+      return new CloudflareProvider(apiKey, ids[0]);
     } catch (error) {
       Logger.error("Failed to create Cloudflare provider:", error);
       throw error;

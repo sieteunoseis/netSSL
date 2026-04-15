@@ -129,21 +129,6 @@ export const dnsProviderField: FieldDefinition = {
   visibleWhen: { field: "ssl_provider", isNot: "venafi" },
 };
 
-export const cfZoneOverrideField: FieldDefinition = {
-  name: "cf_zone_override",
-  type: "text",
-  label: "Cloudflare Zone ID Override",
-  placeholder: "e.g., 1234567890abcdef1234567890abcdef",
-  description:
-    "Override the global CF_ZONE setting for this connection. Use when SANs span multiple Cloudflare zones (e.g., different domains). Leave blank to use the default zone.",
-  optional: true,
-  visibleWhen: {
-    field: "dns_provider",
-    is: "cloudflare",
-    and: { field: "ssl_provider", isNot: "venafi" },
-  },
-};
-
 export const altNamesField: FieldDefinition = {
   name: "alt_names",
   type: "text",
@@ -418,32 +403,46 @@ export const applicationTypeInfoIseField: FieldDefinition = {
   type: "info",
   label: "",
   description:
-    "Cisco Identity Services Engine. Certificate generated via ISE API or pasted from ISE GUI. ISE holds the private key internally.",
+    "Cisco Identity Services Engine. Certificate can be generated via the ISE API (key stays on ISE), pasted from the ISE GUI, or generated locally with a custom CN (key stored on netSSL).",
 };
 
 export const iseCsrSourceField: FieldDefinition = {
   name: "ise_csr_source",
   type: "select",
   label: "CSR Source",
+  placeholder: "— Select a CSR source —",
   selectOptions: [
     { value: "api", label: "Generate via ISE API (Recommended)" },
     { value: "gui", label: "Paste from ISE GUI" },
+    { value: "local", label: "Generate locally (custom CN)" },
   ],
-  defaultValue: "api",
-  validation: { name: "isIn", options: ["api", "gui"] },
+  validation: { name: "isIn", options: ["api", "gui", "local"] },
 };
+
+/** Defaults shown in the CSR Subject Configuration textarea when source=api. Match backend defaults in ise-provider.ts. */
+export const ISE_CSR_API_SUBJECT_DEFAULT = JSON.stringify(
+  {
+    country: "US",
+    state: "State",
+    locality: "City",
+    organization: "",
+    organizationalUnit: "",
+    keySize: "2048",
+  },
+  null,
+  2,
+);
 
 export const iseCsrConfigField: FieldDefinition = {
   name: "ise_csr_config",
   type: "textarea",
   label: "CSR Subject Configuration",
-  placeholder:
-    '{"country":"US","state":"Oregon","locality":"Portland","organization":"","organizationalUnit":"","keySize":"2048"}',
+  placeholder: ISE_CSR_API_SUBJECT_DEFAULT,
   description:
-    'Subject details for ISE CSR generation. Use the "Configure CSR Details" button to set these values.',
+    'Subject details for ISE CSR generation. Use the "Configure CSR Details" button to overwrite these values.',
   optional: true,
   validation: { name: "isJSON", options: "" },
-  rows: 3,
+  rows: 8,
   visibleWhen: { field: "ise_csr_source", is: "api" },
 };
 
@@ -493,7 +492,7 @@ export const ISE_CERT_IMPORT_DEFAULT = `{
   "name": "netSSL Imported Certificate",
   "password": "",
   "portal": true,
-  "portalGroupTag": "My Default Portal Certificate Group",
+  "portalGroupTag": "netSSL Portal Certificate Group",
   "pxgrid": false,
   "radius": false,
   "saml": false,

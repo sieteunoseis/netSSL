@@ -12,6 +12,10 @@ import {
 import { Logger } from "../logger";
 import { accountManager } from "../account-manager";
 import { getDomainFromConnection } from "../utils/domain-utils";
+import {
+  generateCSR as generateLocalCSR,
+  parseCSRSubject,
+} from "../csr-generator";
 import * as crypto from "crypto";
 
 export interface ISECertificateImportResult {
@@ -524,7 +528,7 @@ export class ISEProvider extends PlatformProvider {
         name: "netSSL Imported Certificate",
         password: "",
         portal: true,
-        portalGroupTag: "My Default Portal Certificate Group",
+        portalGroupTag: "netSSL Portal Certificate Group",
         pxgrid: false,
         radius: false,
         saml: false,
@@ -1014,6 +1018,76 @@ export class ISEProvider extends PlatformProvider {
       await ctx.saveLog(
         `Using provided CSR for ISE application: ${connection.name}`,
       );
+
+      // Local mode: netSSL generated the CSR+key. ISE has no matching pending CSR and
+      // no copy of the private key, so BIND can't work. Always use IMPORT.
+      //
+      // On renewal we regenerate the CSR + keypair from the stored subject before
+      // handing it to ACME so the re-import gets a fresh public key — otherwise ISE
+      // rejects with HTTP 409 "duplicate public key" (documented in memory).
+      if (connection.ise_csr_source === "local") {
+        if (!connection.ise_private_key || !connection.ise_private_key.trim()) {
+          throw new Error(
+            "Local CSR mode requires ise_private_key to be set on the connection",
+          );
+        }
+
+        const isRenewal = !!connection.last_cert_issued;
+        let freshCsr = csr;
+        let freshPrivateKey = connection.ise_private_key;
+        let freshCsrCN = csrCN;
+
+        if (isRenewal) {
+          try {
+            const parsed = parseCSRSubject(csr);
+            const regenerated = generateLocalCSR({
+              commonName: parsed.commonName,
+              country: parsed.country || "",
+              state: parsed.state || "",
+              locality: parsed.locality || "",
+              organization: parsed.organization,
+              organizationalUnit: parsed.organizationalUnit,
+              keySize: parsed.keySize,
+              sans: parsed.sans,
+            });
+            freshCsr = regenerated.csr;
+            freshPrivateKey = regenerated.privateKey;
+            freshCsrCN = parsed.commonName || csrCN;
+
+            if (ctx.updateConnectionFields) {
+              await ctx.updateConnectionFields({
+                ise_certificate: freshCsr,
+                ise_private_key: freshPrivateKey,
+              });
+            } else {
+              // Fallback: at least update the in-memory record so the import step
+              // sees the new key (won't persist across restarts).
+              connection.ise_certificate = freshCsr;
+              connection.ise_private_key = freshPrivateKey;
+            }
+
+            const rotationMsg = `Regenerated local CSR + keypair for renewal (CN=${freshCsrCN}, ${parsed.keySize}-bit) — avoids ISE 409 duplicate public key`;
+            status.logs.push(rotationMsg);
+            await ctx.saveLog(rotationMsg);
+          } catch (rotErr: any) {
+            Logger.warn(
+              `Failed to regenerate local CSR for renewal: ${rotErr.message}. Falling back to stored CSR — renewal may fail with 409.`,
+            );
+            status.logs.push(
+              `Warning: could not regenerate local CSR (${rotErr.message}) — using stored CSR`,
+            );
+          }
+        }
+
+        status.logs.push(
+          "CSR source is 'local' — will use ISE import API with stored private key",
+        );
+        await ctx.saveLog(
+          "CSR source is 'local' — will use ISE import API with stored private key",
+        );
+        (ctx as any)._csrDomain = freshCsrCN;
+        return freshCsr;
+      }
 
       // Look up the pending CSR ID on ISE so we can bind later instead of importing
       if (connection.ise_nodes) {
@@ -1576,12 +1650,26 @@ export class ISEProvider extends PlatformProvider {
         }
       }
 
+      // ISE enforces friendly-name uniqueness independent of allowReplacementOfCertificates.
+      // Append timestamp so each renewal gets a distinct name. Strip any prior timestamp
+      // suffix first so names don't accumulate.
+      const cfg = customConfig as { name?: string; [k: string]: any };
+      const baseName = String(cfg.name || "netSSL Imported Certificate")
+        .replace(/\s+\d{8}-\d{6}$/, "")
+        .trim();
+      const ts = new Date()
+        .toISOString()
+        .replace(/[-:T]/g, "")
+        .replace(/\..+$/, "")
+        .replace(/(\d{8})(\d{6})/, "$1-$2");
+      cfg.name = `${baseName} ${ts}`;
+
       // Import identity certificate to all nodes
       status.logs.push(
-        `Importing identity certificate to ${nodes.length} ISE node(s)`,
+        `Importing identity certificate to ${nodes.length} ISE node(s) as "${cfg.name}"`,
       );
       await ctx.saveLog(
-        `Importing identity certificate to ${nodes.length} ISE node(s)`,
+        `Importing identity certificate to ${nodes.length} ISE node(s) as "${cfg.name}"`,
       );
 
       const result = await this.importCertificateToNodes(
@@ -1695,7 +1783,7 @@ export class ISEProvider extends PlatformProvider {
       name: "netSSL Imported Certificate",
       password: "",
       portal: true,
-      portalGroupTag: "My Default Portal Certificate Group",
+      portalGroupTag: "netSSL Portal Certificate Group",
       pxgrid: false,
       radius: false,
       saml: false,

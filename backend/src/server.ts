@@ -29,7 +29,12 @@ import {
   downloadAllRootCertificates,
   checkRootCertificates,
 } from "./utils/download-root-certs";
-import { generateCSR, validateCSRRequest, CSRRequest } from "./csr-generator";
+import {
+  generateCSR,
+  validateCSRRequest,
+  CSRRequest,
+  decodeCSR,
+} from "./csr-generator";
 
 dotenv.config({ path: "../.env" });
 
@@ -85,7 +90,6 @@ const TABLE_COLUMNS = [
   "ssh_chain_path",
   "ssh_restart_command",
   "cc_list_of_users",
-  "cf_zone_override",
 ];
 
 console.log("Using hardcoded TABLE_COLUMNS:", TABLE_COLUMNS);
@@ -894,6 +898,28 @@ app.post(
   }),
 );
 
+// Decode a pasted PEM CSR — used by the ISE wizard to display CN / SANs / key info
+app.post(
+  "/api/csr/decode",
+  asyncHandler(async (req: Request, res: Response) => {
+    const { pem } = req.body || {};
+
+    if (!pem || typeof pem !== "string") {
+      return res.status(400).json({ error: "PEM CSR is required" });
+    }
+
+    try {
+      const decoded = decodeCSR(pem);
+      return res.json(decoded);
+    } catch (error: any) {
+      return res.status(400).json({
+        error: "Failed to decode CSR",
+        details: error.message,
+      });
+    }
+  }),
+);
+
 // Get renewal status
 app.get(
   "/api/data/:id/renewal-status/:renewalId",
@@ -1354,6 +1380,37 @@ app.post(
   }),
 );
 
+// List zones reachable by a Cloudflare API key/token. Used by the settings UI.
+// Body: { apiKey?: string }  — if omitted, the saved CF_KEY is used.
+app.post(
+  "/api/cloudflare/zones",
+  asyncHandler(async (req: Request, res: Response) => {
+    const { CloudflareProvider } = await import("./dns-providers/cloudflare");
+
+    let apiKey: string | undefined = req.body?.apiKey;
+    if (!apiKey) {
+      const settings = await database.getSettingsByProvider("cloudflare");
+      apiKey = settings.find((s) => s.key_name === "CF_KEY")?.key_value;
+    }
+
+    if (!apiKey) {
+      return res
+        .status(400)
+        .json({ error: "CF_KEY not provided and not configured in settings" });
+    }
+
+    try {
+      const zones = await CloudflareProvider.listZones(apiKey);
+      return res.json({ zones });
+    } catch (error: any) {
+      Logger.error("Failed to list Cloudflare zones:", error);
+      return res
+        .status(502)
+        .json({ error: "Failed to list zones", details: error.message });
+    }
+  }),
+);
+
 app.delete(
   "/api/settings/:keyName",
   asyncHandler(async (req: Request, res: Response) => {
@@ -1430,35 +1487,43 @@ app.post(
       switch (provider) {
         case "cloudflare": {
           const apiKey = getKey("CF_KEY");
-          const zoneId = getKey("CF_ZONE");
-          if (!apiKey || !zoneId) {
+          const zoneIdsRaw = getKey("CF_ZONE");
+          if (!apiKey || !zoneIdsRaw) {
             return res.json({
               success: false,
-              message: `Missing ${!apiKey ? "CF_KEY" : ""}${!apiKey && !zoneId ? " and " : ""}${!zoneId ? "CF_ZONE" : ""}`,
+              message: `Missing ${!apiKey ? "CF_KEY" : ""}${!apiKey && !zoneIdsRaw ? " and " : ""}${!zoneIdsRaw ? "CF_ZONE" : ""}`,
             });
           }
-          // Verify zone access to confirm credentials
-          const cfResponse = await fetch(
-            `https://api.cloudflare.com/client/v4/zones/${zoneId}`,
-            {
-              headers: {
-                Authorization: `Bearer ${apiKey}`,
-                "Content-Type": "application/json",
+          // CF_ZONE is comma-separated; verify each ID is reachable with the saved key.
+          const zoneIds = zoneIdsRaw
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean);
+          const names: string[] = [];
+          for (const zoneId of zoneIds) {
+            const cfResponse = await fetch(
+              `https://api.cloudflare.com/client/v4/zones/${zoneId}`,
+              {
+                headers: {
+                  Authorization: `Bearer ${apiKey}`,
+                  "Content-Type": "application/json",
+                },
               },
-            },
-          );
-          const cfData = (await cfResponse.json()) as any;
-          if (cfData.success && cfData.result?.name) {
-            return res.json({
-              success: true,
-              message: `Connected to zone: ${cfData.result.name}`,
-            });
+            );
+            const cfData = (await cfResponse.json()) as any;
+            if (!cfData.success || !cfData.result?.name) {
+              return res.json({
+                success: false,
+                message:
+                  cfData.errors?.[0]?.message ||
+                  `HTTP ${cfResponse.status}: Authentication failed for zone ${zoneId}`,
+              });
+            }
+            names.push(cfData.result.name);
           }
           return res.json({
-            success: false,
-            message:
-              cfData.errors?.[0]?.message ||
-              `HTTP ${cfResponse.status}: Authentication failed`,
+            success: true,
+            message: `Connected to ${names.length} zone${names.length === 1 ? "" : "s"}: ${names.join(", ")}`,
           });
         }
         case "digitalocean": {
@@ -2389,6 +2454,11 @@ app.post(
         organization: req.body.organization,
         organizationalUnit: req.body.organizationalUnit,
         keySize: req.body.keySize || 2048,
+        sans: Array.isArray(req.body.sans)
+          ? req.body.sans.filter(
+              (s: unknown) => typeof s === "string" && s.trim() !== "",
+            )
+          : undefined,
       };
 
       Logger.info(`Generating CSR for CN=${csrRequest.commonName}`);

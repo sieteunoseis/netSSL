@@ -4,6 +4,9 @@ declare const CSRGeneratorWizard: React.FC<{
   onGenerated: (generatedData: any) => void;
   hostname: string;
   domain: string;
-  mode?: 'generate' | 'configure';
+  commonName?: string;
+  keySize?: string;
+  sans?: string[];
+  mode?: "generate" | "configure";
 }>;
 export default CSRGeneratorWizard;

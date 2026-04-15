@@ -31,6 +31,12 @@ export interface RenewalContext {
     progress: number,
   ) => Promise<void>;
   saveLog: (message: string) => Promise<void>;
+  /**
+   * Persist select connection fields mid-flow (e.g. ISE local-mode regenerates
+   * the CSR + private key on renewal; those need to be saved so the subsequent
+   * import step reads the new key).
+   */
+  updateConnectionFields?: (fields: Partial<ConnectionRecord>) => Promise<void>;
 }
 
 export interface RestartResult {
