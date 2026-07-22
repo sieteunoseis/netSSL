@@ -7,6 +7,7 @@ import CertificateRenewalButton from "@/components/CertificateRenewalButton";
 import CertificateDownloadButton from "@/components/CertificateDownloadButton";
 // @ts-ignore
 import ServiceRestartButton from "@/components/ServiceRestartButton";
+import ISETrustCheckButton from "@/components/ISETrustCheckButton";
 import CertificateInfo from "@/components/CertificateInfo";
 import PerformanceMetricsChart from "@/components/PerformanceMetricsChart";
 import { formatDate } from "@/lib/date-utils";
@@ -260,6 +261,8 @@ const ConnectionDetailsTabs = ({
               connection={connection}
               refreshTrigger={downloadRefreshTrigger}
             />
+
+            <ISETrustCheckButton connection={connection} />
 
             {showSSH && (
               <ServiceRestartButton

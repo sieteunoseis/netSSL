@@ -10,7 +10,9 @@
     "kill": "lsof -ti :5173 | xargs kill -9; lsof -ti :3000 | xargs kill -9",
     "sync-version": "node scripts/sync-version.js",
     "version": "node scripts/sync-version.js && git add frontend/src/version.json",
-    "bump": "node scripts/bump-version.js"
+    "bump": "node scripts/bump-version.js",
+    "check-cert": "node scripts/check-cert.js",
+    "update-le-intermediates": "node scripts/update-le-intermediates.js"
   },
   "devDependencies": {
     "@dotenvx/dotenvx": "^1.45.2",

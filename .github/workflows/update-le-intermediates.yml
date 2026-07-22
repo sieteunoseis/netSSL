@@ -1,0 +1,39 @@
+name: Update Let's Encrypt Intermediates List
+
+on:
+  schedule:
+    # 06:00 UTC on Jan 1 and Jul 1 — every 6 months
+    - cron: '0 6 1 1,7 *'
+  workflow_dispatch: {}
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Refresh LE intermediates list from crt.sh
+        run: node scripts/update-le-intermediates.js
+
+      - name: Open PR if the list changed
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: 'chore: refresh Let''s Encrypt intermediates list'
+          title: "chore: refresh Let's Encrypt intermediates list"
+          body: |
+            Automated refresh of `backend/src/data/le-intermediates.json` from crt.sh, run every 6 months.
+
+            crt.sh is a community-run service that's occasionally unavailable — if this PR is missing expected
+            entries, re-run this workflow manually (Actions → Update Let's Encrypt Intermediates List → Run workflow).
+          branch: chore/update-le-intermediates
+          add-paths: backend/src/data/le-intermediates.json

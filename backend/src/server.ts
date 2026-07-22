@@ -3,6 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
 import { createServer } from "http";
 import { DatabaseManager } from "./database";
 import { validateConnectionData, sanitizeConnectionData } from "./validation";
@@ -20,11 +21,13 @@ import { SSHClient } from "./ssh-client";
 import { autoRenewalCron } from "./auto-renewal-cron";
 import { LetsEncryptAccountChecker } from "./letsencrypt-account-check";
 import { getDomainFromConnection } from "./utils/domain-utils";
+import { parseSqliteUtcTimestamp } from "./utils/date-utils";
 import { migrateAccountFiles } from "./migrate-accounts";
 import { initializeWebSocket, getWebSocketServer } from "./websocket-server";
 import { OperationStatusManager } from "./services/operation-status-manager";
 import { PlatformFactory } from "./platform-providers/platform-factory";
 import { ISEProvider } from "./platform-providers/ise-provider";
+import leIntermediates from "./data/le-intermediates.json";
 import {
   downloadAllRootCertificates,
   checkRootCertificates,
@@ -850,6 +853,171 @@ app.post(
       );
       return res.status(500).json({
         error: "Failed to import certificate to ISE",
+        details: error.message,
+      });
+    }
+  }),
+);
+
+// Check which Let's Encrypt CA certs are trusted on an ISE node — this is the
+// exact check that would have caught today's WAF-blocked intermediate uploads
+// (ISE's Open API silently rejects new LE intermediates due to the apostrophe
+// in "Let's Encrypt" tripping its WAF) before a renewal ever fails on it.
+app.get(
+  "/api/data/:id/ise-trust-check",
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) {
+      return res.status(400).json({ error: "Invalid ID parameter" });
+    }
+
+    const connection = await database.getConnectionById(id);
+    if (!connection) {
+      return res.status(404).json({ error: "Connection not found" });
+    }
+
+    if (connection.application_type !== "ise") {
+      return res
+        .status(400)
+        .json({ error: "Connection must be of type ISE" });
+    }
+    if (
+      connection.ssl_provider !== "letsencrypt" &&
+      connection.ssl_provider !== "lets_encrypt"
+    ) {
+      return res
+        .status(400)
+        .json({ error: "Connection must use Let's Encrypt" });
+    }
+    if (!connection.username || !connection.password || !connection.ise_nodes) {
+      return res.status(400).json({
+        error: "ISE credentials and nodes must be configured",
+      });
+    }
+
+    try {
+      const primaryNode = connection.ise_nodes
+        .split(",")
+        .map((n) => n.trim())
+        .filter(Boolean)[0];
+
+      const iseProvider = PlatformFactory.createProvider("ise") as ISEProvider;
+      const iseTrusted = await iseProvider.getTrustedCertificateSummaries(
+        primaryNode,
+        connection.username,
+        connection.password,
+      );
+      const findByCn = (cn: string) =>
+        iseTrusted.find((c) => c.commonName === cn);
+
+      // This connection's own downloaded CA chain (what it actually needs)
+      const isStaging = process.env.LETSENCRYPT_STAGING !== "false";
+      const envDir = isStaging ? "staging" : "prod";
+      const certDir = path.join(
+        process.env.ACCOUNTS_DIR || "./accounts",
+        `connection-${id}`,
+        envDir,
+      );
+
+      const localChain: Array<{
+        commonName: string;
+        issuerCommonName: string;
+        serialNumber: string;
+        source: string;
+        trustedOnIse: boolean;
+      }> = [];
+
+      for (const file of ["intermediate.crt", "root.crt"]) {
+        try {
+          const pem = await fs.promises.readFile(
+            path.join(certDir, file),
+            "utf8",
+          );
+          if (!pem.trim()) continue;
+          const cert = new crypto.X509Certificate(pem);
+          const cn = cert.subject.match(/CN=([^\n,]+)/)?.[1] || cert.subject;
+          const issuerCn =
+            cert.issuer.match(/CN=([^\n,]+)/)?.[1] || cert.issuer;
+          const fingerprint = cert.fingerprint256
+            .replace(/:/g, "")
+            .toLowerCase();
+          const matched =
+            iseTrusted.find((c) => c.fingerprint === fingerprint) ||
+            findByCn(cn);
+          localChain.push({
+            commonName: cn,
+            issuerCommonName: issuerCn,
+            serialNumber: cert.serialNumber,
+            source: file,
+            trustedOnIse: !!matched,
+          });
+        } catch {
+          // File doesn't exist for this connection — fine, not every
+          // connection has both an intermediate and a separate root file.
+        }
+      }
+
+      // Walk from the top of the local chain up to a self-signed root, using
+      // ISE's trust store to bridge the gap — Let's Encrypt never sends the
+      // self-signed root itself, so it's never in localChain, but ISE needs
+      // it trusted for path verification to succeed.
+      let chainComplete = false;
+      let missingLink: string | null = null;
+      if (localChain.length > 0) {
+        let currentCn = localChain[localChain.length - 1].commonName;
+        let currentIssuer = localChain[localChain.length - 1].issuerCommonName;
+        let hops = 0;
+        while (hops < 5) {
+          if (currentIssuer === currentCn) {
+            chainComplete = localChain[localChain.length - 1].trustedOnIse;
+            if (!chainComplete) missingLink = currentCn;
+            break;
+          }
+          const bridge = findByCn(currentIssuer);
+          if (!bridge) {
+            missingLink = currentIssuer;
+            break;
+          }
+          if (bridge.selfSigned) {
+            chainComplete = true;
+            break;
+          }
+          currentCn = bridge.commonName;
+          currentIssuer = bridge.issuerCommonName;
+          hops++;
+        }
+      }
+
+      // Cross-reference every known LE root/intermediate (not just this
+      // connection's current chain) so rotations can be pre-trusted before
+      // they ever cause a renewal failure.
+      const knownIntermediates = leIntermediates.certificates.map((known) => {
+        const match = findByCn(known.commonName);
+        return {
+          commonName: known.commonName,
+          issuerCommonName: known.issuerCommonName,
+          selfSigned: known.selfSigned,
+          trustedOnIse: !!match,
+        };
+      });
+
+      return res.json({
+        connectionId: id,
+        checkedNode: primaryNode,
+        iseTrustedCount: iseTrusted.length,
+        localChain,
+        chainComplete,
+        missingLink,
+        knownIntermediates,
+        knownListUpdated: leIntermediates.updated,
+      });
+    } catch (error: any) {
+      Logger.error(
+        `Error checking ISE trust chain for connection ${id}:`,
+        error,
+      );
+      return res.status(500).json({
+        error: "Failed to check ISE trust chain",
         details: error.message,
       });
     }
@@ -2507,7 +2675,7 @@ app.get(
             progress: op.progress || 0,
             message: op.message || "",
             startedAt: op.startedAt
-              ? new Date(op.startedAt).toISOString()
+              ? parseSqliteUtcTimestamp(op.startedAt).toISOString()
               : new Date().toISOString(),
             createdBy: op.createdBy || "system",
             metadata: op.metadata,

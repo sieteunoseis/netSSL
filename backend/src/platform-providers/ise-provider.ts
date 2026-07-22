@@ -18,6 +18,26 @@ import {
 } from "../csr-generator";
 import * as crypto from "crypto";
 
+/**
+ * Describe a PEM certificate as "CN=X (issued by CN=Y, serial Z)" for error messages.
+ * Falls back to a generic label if the cert can't be parsed.
+ */
+function describeCertForError(certPem: string): string {
+  try {
+    const cert = new crypto.X509Certificate(certPem);
+    const subjectCN = cert.subject.match(/CN=([^\n,]+)/)?.[1] || cert.subject;
+    const issuerCN = cert.issuer.match(/CN=([^\n,]+)/)?.[1] || cert.issuer;
+    return `CN=${subjectCN} (issued by CN=${issuerCN}, serial ${cert.serialNumber})`;
+  } catch {
+    return "certificate";
+  }
+}
+
+const ISE_WAF_APOSTROPHE_GUIDANCE =
+  "This is a known ISE Open API bug: its WAF flags the apostrophe in \"Let's Encrypt\" as malicious input and blocks the upload, even though the certificate itself is valid. " +
+  "It must be imported manually via the GUI: Administration > System > Certificates > Trusted Certificates > Import. " +
+  "The exact certificate netSSL downloaded is saved alongside this connection's other cert files (intermediate.crt / root.crt); official copies are also available at https://letsencrypt.org/certificates/.";
+
 export interface ISECertificateImportResult {
   node: string;
   status: "success" | "error";
@@ -634,6 +654,11 @@ export class ISEProvider extends PlatformProvider {
             error.message.includes("Connection failed")
           ) {
             userMessage = `Connection failed to ${hostname} - Please verify hostname and network connectivity`;
+          } else if (
+            error.message &&
+            error.message.includes("Security Check Failed")
+          ) {
+            userMessage = `ISE rejected the CA certificate ${describeCertForError(cert)} on ${hostname} ("Security Check Failed"). ${ISE_WAF_APOSTROPHE_GUIDANCE}`;
           }
 
           throw new Error(userMessage);
@@ -726,6 +751,56 @@ export class ISEProvider extends PlatformProvider {
       );
       return new Set<string>();
     }
+  }
+
+  /**
+   * Get trust store certificates from ISE with the fields needed to check
+   * chain-of-trust (subject/issuer CN, fingerprint) without a per-cert fetch —
+   * ISE's list endpoint already returns issuedTo/issuedBy/sha256Fingerprint.
+   */
+  async getTrustedCertificateSummaries(
+    hostname: string,
+    username: string,
+    password: string,
+  ): Promise<
+    Array<{
+      commonName: string;
+      issuerCommonName: string;
+      selfSigned: boolean;
+      fingerprint: string;
+      friendlyName: string;
+    }>
+  > {
+    const response = await this.makeApiRequest(
+      hostname,
+      username,
+      password,
+      this.config.apiEndpoints.getTrustCerts,
+      "GET",
+    );
+
+    const summaries: Array<{
+      commonName: string;
+      issuerCommonName: string;
+      selfSigned: boolean;
+      fingerprint: string;
+      friendlyName: string;
+    }> = [];
+
+    if (response && response.response && Array.isArray(response.response)) {
+      for (const cert of response.response) {
+        if (!cert.issuedTo) continue;
+        summaries.push({
+          commonName: cert.issuedTo,
+          issuerCommonName: cert.issuedBy || cert.issuedTo,
+          selfSigned: cert.issuedTo === cert.issuedBy,
+          fingerprint: (cert.sha256Fingerprint || "").toLowerCase(),
+          friendlyName: cert.friendlyName || cert.issuedTo,
+        });
+      }
+    }
+
+    return summaries;
   }
 
   async getTrustCertificates(
@@ -1727,6 +1802,16 @@ export class ISEProvider extends PlatformProvider {
         } else if (firstError.includes("Connection failed")) {
           throw new Error(
             `Failed to import certificate to any ISE nodes. Connection issues detected. Please verify ISE hostnames, network connectivity, and that ISE services are running.`,
+          );
+        } else if (firstError.includes("Failed to verify certificate path")) {
+          const caList =
+            caCertificates.length > 0
+              ? caCertificates.map((c) => `  - ${describeCertForError(c)}`).join("\n")
+              : "  - (none loaded — check intermediate.crt/root.crt for this connection)";
+          throw new Error(
+            `ISE couldn't verify the certificate chain ("Failed to verify certificate path"). ` +
+              `One or more of the following CA certificates are missing from ISE's trusted certificate store:\n${caList}\n` +
+              `${ISE_WAF_APOSTROPHE_GUIDANCE}`,
           );
         } else {
           throw new Error(

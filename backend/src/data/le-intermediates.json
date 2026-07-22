@@ -1,0 +1,85 @@
+{
+  "$comment": "Known Let's Encrypt root and intermediate CAs, used to check which ones are trusted in a platform's certificate store (e.g. Cisco ISE). Regenerated periodically by .github/workflows/update-le-intermediates.yml from crt.sh — see that script for how entries are verified. Entries without a serial are known to exist (referenced as an issuer of a verified cert) but haven't had their own record confirmed yet.",
+  "updated": "2026-07-22",
+  "source": "https://crt.sh",
+  "certificates": [
+    {
+      "commonName": "ISRG Root X1",
+      "issuerCommonName": "ISRG Root X1",
+      "selfSigned": true,
+      "serialNumber": "8210CFB0D240E3594463E0BB63828B00",
+      "crtShCaId": 7394
+    },
+    {
+      "commonName": "ISRG Root X2",
+      "issuerCommonName": "ISRG Root X2",
+      "selfSigned": true,
+      "serialNumber": "41D29DD172EAEEA780C12C6CE92F8752",
+      "crtShCaId": 183269
+    },
+    {
+      "commonName": "Root YR",
+      "issuerCommonName": "ISRG Root X1",
+      "selfSigned": false,
+      "serialNumber": "F24B6D17F9D9AD7CB1C9FEA78782699F",
+      "notBefore": "2026-05-13",
+      "notAfter": "2032-09-02",
+      "crtShCaId": 430543
+    },
+    {
+      "commonName": "Root YE",
+      "issuerCommonName": "ISRG Root X1",
+      "selfSigned": false,
+      "serialNumber": null,
+      "crtShCaId": 430535
+    },
+    {
+      "commonName": "YR1",
+      "issuerCommonName": "Root YR",
+      "selfSigned": false,
+      "serialNumber": "A20253F15F2691C05DC1CE13B9BCCA4E",
+      "notBefore": "2025-09-03",
+      "notAfter": "2028-09-02"
+    },
+    {
+      "commonName": "YR2",
+      "issuerCommonName": "Root YR",
+      "selfSigned": false,
+      "serialNumber": "4EBD24947E24D394802D84A52FD5B319",
+      "notBefore": "2025-09-03",
+      "notAfter": "2028-09-02"
+    },
+    {
+      "commonName": "YR3",
+      "issuerCommonName": "Root YR",
+      "selfSigned": false,
+      "serialNumber": "76FDBE9C9C39A662353EC41A0EC393FE",
+      "notBefore": "2025-09-03",
+      "notAfter": "2028-09-02"
+    },
+    {
+      "commonName": "YE1",
+      "issuerCommonName": "Root YE",
+      "selfSigned": false,
+      "serialNumber": "5DDD70DD31F801C85C186A7A04B80AFE",
+      "notBefore": "2025-09-03",
+      "notAfter": "2028-09-02"
+    },
+    {
+      "commonName": "YE2",
+      "issuerCommonName": "Root YE",
+      "selfSigned": false,
+      "serialNumber": "4DF3B15DD6C0784C507CD37B58E6F115",
+      "notBefore": null,
+      "notAfter": null
+    },
+    {
+      "commonName": "YE3",
+      "issuerCommonName": "Root YE",
+      "selfSigned": false,
+      "serialNumber": "2D333B7370C426AFB793A85754103067",
+      "notBefore": null,
+      "notAfter": null
+    }
+  ]
+}
