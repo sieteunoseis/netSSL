@@ -2,6 +2,7 @@ import { EventEmitter } from 'events';
 import { DatabaseManager } from '../database';
 import { Logger } from '../logger';
 import { Server as SocketIOServer } from 'socket.io';
+import { parseSqliteUtcTimestamp } from '../utils/date-utils';
 
 export interface Operation {
   id: string;
@@ -48,8 +49,8 @@ export class OperationStatusManager extends EventEmitter {
             progress: op.progress || 0,
             message: op.message || '',
             error: op.error,
-            startedAt: new Date(op.startedAt),
-            completedAt: op.completedAt ? new Date(op.completedAt) : undefined,
+            startedAt: parseSqliteUtcTimestamp(op.startedAt),
+            completedAt: op.completedAt ? parseSqliteUtcTimestamp(op.completedAt) : undefined,
             metadata: op.metadata,
             createdBy: op.createdBy as Operation['createdBy']
           };
@@ -87,8 +88,8 @@ export class OperationStatusManager extends EventEmitter {
           progress: dbOp.progress || 0,
           message: dbOp.message || '',
           error: dbOp.error,
-          startedAt: new Date(dbOp.startedAt),
-          completedAt: dbOp.completedAt ? new Date(dbOp.completedAt) : undefined,
+          startedAt: parseSqliteUtcTimestamp(dbOp.startedAt),
+          completedAt: dbOp.completedAt ? parseSqliteUtcTimestamp(dbOp.completedAt) : undefined,
           metadata: dbOp.metadata,
           createdBy: dbOp.createdBy as Operation['createdBy']
         };
@@ -237,8 +238,8 @@ export class OperationStatusManager extends EventEmitter {
           progress: dbOp.progress || 0,
           message: dbOp.message || '',
           error: dbOp.error,
-          startedAt: new Date(dbOp.started_at),
-          completedAt: dbOp.completed_at ? new Date(dbOp.completed_at) : undefined,
+          startedAt: parseSqliteUtcTimestamp(dbOp.started_at),
+          completedAt: dbOp.completed_at ? parseSqliteUtcTimestamp(dbOp.completed_at) : undefined,
           metadata: dbOp.metadata,
           createdBy: dbOp.created_by as Operation['createdBy']
         };

@@ -7,6 +7,7 @@ import { ConnectionRecord } from "./types";
 import { accountManager } from "./account-manager";
 import { OperationStatusManager } from "./services/operation-status-manager";
 import { getDomainFromConnection } from "./utils/domain-utils";
+import { parseSqliteUtcTimestamp } from "./utils/date-utils";
 import { PlatformFactory } from "./platform-providers/platform-factory";
 import { RenewalContext } from "./platform-providers/platform-provider";
 
@@ -214,10 +215,12 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
           status: dbStatus.status,
           message: dbStatus.message || "",
           progress: this.getProgressForStatus(dbStatus.status),
-          startTime: new Date(dbStatus.created_at),
-          endTime: dbStatus.updated_at
-            ? new Date(dbStatus.updated_at)
-            : undefined,
+          startTime: parseSqliteUtcTimestamp(dbStatus.created_at),
+          endTime:
+            dbStatus.updated_at &&
+            ["completed", "failed"].includes(dbStatus.status)
+              ? parseSqliteUtcTimestamp(dbStatus.updated_at)
+              : undefined,
           error: dbStatus.error,
           logs: dbStatus.logs || [],
         };
@@ -403,6 +406,13 @@ class CertificateRenewalServiceImpl implements CertificateRenewalService {
 
         await updateStatusWithOp("completed", completionMessage, 100);
         status.endTime = new Date();
+
+        // Same bookkeeping as the full renewal path below — providers (e.g. ISE
+        // local-CSR mode) use last_cert_issued to detect "this is a renewal" and
+        // rotate the keypair accordingly. Skipping this on the reuse shortcut left
+        // that detection permanently false for connections that only ever renewed
+        // via cache reuse.
+        await this.updateDatabaseWithRenewal(connectionId, database);
         return;
       }
 
