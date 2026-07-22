@@ -19,7 +19,7 @@ export interface ConnectionRecord {
     | "pxgrid"
     | "saml"
     | "ims";
-  ise_csr_source?: "api" | "gui" | "local";
+  ise_csr_source?: "api" | "local";
   ise_csr_config?: string;
   version?: string;
   alt_names?: string;

@@ -292,9 +292,9 @@ const ISECertificateWizard: React.FC<ISECertificateWizardProps> = ({
   const [decodingCsr, setDecodingCsr] = useState(false);
   const [decodeError, setDecodeError] = useState("");
 
-  // Debounced decode whenever the pasted or generated CSR changes (gui or local)
+  // Debounced decode whenever the generated CSR changes (local mode)
   useEffect(() => {
-    if (csrSource !== "gui" && csrSource !== "local") {
+    if (csrSource !== "local") {
       setDecodedCsr(null);
       setDecodeError("");
       return;
@@ -361,16 +361,24 @@ const ISECertificateWizard: React.FC<ISECertificateWizardProps> = ({
     syncLocalCsrConfig(localCn, value);
   };
 
-  const getSourceHint = (): string => {
+  const getSourceHint = (): { description: string; bestFor: string } | null => {
     switch (csrSource) {
       case "api":
-        return "ISE generates the CSR using the first node FQDN as the CN. Private key stays on ISE. Supports auto-renewal.";
-      case "gui":
-        return "Paste a CSR you generated in the ISE GUI. SANs come from the CSR itself. One-time issuance only — cannot auto-renew.";
+        return {
+          description:
+            "ISE forces the certificate's Primary Hostname (CN) to the first ISE node FQDN below — a Cisco API requirement, not configurable. Your portal URLs are added as additional SANs alongside it. Private key stays on ISE. Supports auto-renewal.",
+          bestFor:
+            "one combined certificate covering the ISE admin interface and the guest/sponsor portals on the same node.",
+        };
       case "local":
-        return "netSSL generates the CSR with a custom CN (and any portal URLs / SANs above embedded as Subject Alternative Names) and stores the private key locally. Uses ISE's import API.";
+        return {
+          description:
+            "You choose the certificate's Primary Hostname (CN) — typically your portal FQDN. The ISE node FQDN is NOT included unless you add it yourself. Private key is generated and stored by netSSL, and rotated on every renewal. Uses ISE's certificate import API.",
+          bestFor:
+            "a dedicated guest/sponsor portal certificate with its own hostname, kept separate from the ISE admin interface.",
+        };
       default:
-        return "";
+        return null;
     }
   };
 
@@ -594,12 +602,91 @@ const ISECertificateWizard: React.FC<ISECertificateWizardProps> = ({
   const sourceHint = getSourceHint();
   const nodesDescription =
     csrSource === "api"
-      ? "The first node becomes the certificate CN and is also added as a SAN (modern TLS clients only validate SAN, not CN). All other nodes — plus the Guest/Sponsor portal URLs below — are appended to the SAN list. All listed nodes receive the signed certificate."
-      : csrSource === "gui"
-        ? "Nodes that receive the signed certificate via bind. The CN comes from the pasted CSR, not this list."
-        : csrSource === "local"
-          ? "Nodes that receive the signed certificate via import. The CN comes from the field above."
-          : "";
+      ? "The first node's FQDN becomes this certificate's Primary Hostname (CN) and is also added as a SAN. All other nodes — plus the Guest/Sponsor portal hostnames below — are appended to the SAN list. All listed nodes receive the signed certificate."
+      : csrSource === "local"
+        ? "The nodes that receive the signed certificate via import. Not part of the certificate's identity — the Primary Hostname (CN) comes from the field above."
+        : "";
+
+  // Live "what will this cert look like" preview built from current form state —
+  // no CSR needs to exist yet. Subject fields (O/OU/L/ST/C) come from
+  // ise_csr_config for O/OU/L/ST/C — only populated for api mode ("Configure
+  // CSR Details" writes there). Local mode collects those in the separate
+  // CSR-generation modal, which bakes them straight into the CSR and never
+  // writes them back to ise_csr_config — so once a CSR exists, pull them from
+  // decodedCsr.subject (the actual generated CSR) instead, which is accurate.
+  const parseSubjectString = (subject: string): Record<string, string> => {
+    const map: Record<string, string> = {};
+    for (const part of subject.split(",")) {
+      const [key, ...rest] = part.trim().split("=");
+      if (key && rest.length) map[key.trim()] = rest.join("=").trim();
+    }
+    return map;
+  };
+
+  const getCertificatePreview = (): {
+    commonName: string;
+    sans: string[];
+    organization: string;
+    organizationalUnit: string;
+    locality: string;
+    state: string;
+    country: string;
+  } | null => {
+    if (csrSource !== "api" && csrSource !== "local") return null;
+
+    if (csrSource === "local" && decodedCsr) {
+      const s = parseSubjectString(decodedCsr.subject);
+      return {
+        commonName: decodedCsr.commonName,
+        sans: decodedCsr.sans,
+        organization: s.O || "",
+        organizationalUnit: s.OU || "",
+        locality: s.L || "",
+        state: s.ST || "",
+        country: s.C || "",
+      };
+    }
+
+    let subjectCfg: Record<string, unknown> = {};
+    try {
+      subjectCfg = JSON.parse(String(formData.ise_csr_config || "{}"));
+    } catch {
+      subjectCfg = {};
+    }
+    const subjectFields = {
+      organization: String(subjectCfg.organization || ""),
+      organizationalUnit: String(subjectCfg.organizationalUnit || ""),
+      locality: String(subjectCfg.locality || ""),
+      state: String(subjectCfg.state || ""),
+      country: String(subjectCfg.country || ""),
+    };
+
+    if (csrSource === "api") {
+      const nodes = String(formData.ise_nodes || "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const sans = Array.from(
+        new Set(
+          [...nodes, guestUrl.trim(), sponsorUrl.trim()].filter(Boolean),
+        ),
+      );
+      return { commonName: nodes[0] || "", sans, ...subjectFields };
+    }
+
+    // local, no CSR generated yet — best effort from live form state.
+    // O/OU/L/ST/C aren't known until the CSR is actually generated.
+    const extraSans = String(formData.alt_names || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const sans = Array.from(
+      new Set([localCn.trim(), ...extraSans].filter(Boolean)),
+    );
+    return { commonName: localCn.trim(), sans, ...subjectFields };
+  };
+
+  const certPreview = getCertificatePreview();
 
   return (
     <div className="space-y-6">
@@ -607,9 +694,13 @@ const ISECertificateWizard: React.FC<ISECertificateWizardProps> = ({
       <div className="space-y-1.5">
         {renderField(iseCsrSourceField)}
         {sourceHint && (
-          <p className="text-xs text-muted-foreground bg-muted/50 rounded-md px-3 py-2">
-            {sourceHint}
-          </p>
+          <div className="text-xs text-muted-foreground bg-muted/50 rounded-md px-3 py-2 space-y-1">
+            <p>{sourceHint.description}</p>
+            <p>
+              <span className="font-medium text-foreground">Best for:</span>{" "}
+              {sourceHint.bestFor}
+            </p>
+          </div>
         )}
       </div>
 
@@ -678,7 +769,7 @@ const ISECertificateWizard: React.FC<ISECertificateWizardProps> = ({
             <div className="space-y-3 rounded-md border border-dashed p-3">
               <div className="space-y-1.5">
                 <Label htmlFor="ise-local-cn" className="text-sm font-medium">
-                  Certificate CN
+                  Primary Hostname (CN)
                 </Label>
                 <Input
                   id="ise-local-cn"
@@ -738,7 +829,7 @@ const ISECertificateWizard: React.FC<ISECertificateWizardProps> = ({
               </Button>
               {!localCn.trim() && (
                 <p className="text-xs text-muted-foreground">
-                  Enter a Certificate CN first.
+                  Enter a Primary Hostname (CN) first.
                 </p>
               )}
             </div>
@@ -775,14 +866,14 @@ const ISECertificateWizard: React.FC<ISECertificateWizardProps> = ({
                 </div>
               </div>
 
-              {/* Portal URL inputs — only for api source (ISE generates CSR with node CN + these SANs). For gui/local, SANs come from the CSR. */}
+              {/* Portal hostname inputs — only for api source (ISE generates CSR with node CN + these SANs). For local, SANs come from the CSR. */}
               {csrSource === "api" && selectedPurposes.has("guest") && (
                 <div className="space-y-1.5">
                   <Label
                     htmlFor="ise-guest-url"
                     className="text-sm font-medium"
                   >
-                    Guest Portal URL
+                    Guest Portal Hostname (SAN)
                   </Label>
                   <Input
                     id="ise-guest-url"
@@ -792,8 +883,9 @@ const ISECertificateWizard: React.FC<ISECertificateWizardProps> = ({
                     onChange={(e) => handleGuestUrlChange(e.target.value)}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Guest portal FQDN — added to the certificate SAN and
-                    monitored on port 8443.
+                    Added as an additional SAN — alongside the ISE node FQDN,
+                    which ISE always sets as this certificate's Primary
+                    Hostname (CN). Monitored on port 8443.
                   </p>
                 </div>
               )}
@@ -804,7 +896,7 @@ const ISECertificateWizard: React.FC<ISECertificateWizardProps> = ({
                     htmlFor="ise-sponsor-url"
                     className="text-sm font-medium"
                   >
-                    Sponsor Portal URL
+                    Sponsor Portal Hostname (SAN)
                   </Label>
                   <Input
                     id="ise-sponsor-url"
@@ -814,15 +906,16 @@ const ISECertificateWizard: React.FC<ISECertificateWizardProps> = ({
                     onChange={(e) => handleSponsorUrlChange(e.target.value)}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Sponsor portal FQDN — added to the certificate SAN and
-                    monitored on port 8445.
+                    Added as an additional SAN — alongside the ISE node FQDN,
+                    which ISE always sets as this certificate's Primary
+                    Hostname (CN). Monitored on port 8445.
                   </p>
                 </div>
               )}
 
-              {/* Section 4: Source-specific inputs (CSR paste / CSR subject JSON) */}
+              {/* Section 4: Source-specific inputs (generated CSR / CSR subject JSON) */}
               {csrSource === "api" && renderField(iseCsrConfigField)}
-              {(csrSource === "gui" || csrSource === "local") && (
+              {csrSource === "local" && (
                 <div className="space-y-2">
                   {renderField(iseCertificateField)}
                   {csrSource === "local" && renderField(isePrivateKeyField)}
@@ -873,7 +966,7 @@ const ISECertificateWizard: React.FC<ISECertificateWizardProps> = ({
                 </div>
               )}
 
-              {/* Section 5: Additional SANs — only for api. For local, SANs are entered inside the local section. For gui, SANs come from the pasted CSR. */}
+              {/* Section 5: Additional SANs — only for api. For local, SANs are entered inside the local section. */}
               {csrSource === "api" && renderField(altNamesField)}
 
               {/* Section 6: Certificate Provider */}
@@ -912,6 +1005,74 @@ const ISECertificateWizard: React.FC<ISECertificateWizardProps> = ({
                   )}
                 </CollapsibleContent>
               </Collapsible>
+
+              {/* Section 8: Certificate Preview — best-effort summary of what will be requested, built from current form state */}
+              {certPreview && certPreview.commonName && (
+                <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs space-y-1">
+                  <div className="font-medium text-sm mb-1">
+                    Certificate Preview
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">
+                      Common Name:
+                    </span>{" "}
+                    <span className="font-mono">
+                      {certPreview.commonName}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">
+                      Subject Alternative Names:
+                    </span>{" "}
+                    <span className="font-mono">
+                      {certPreview.sans.length > 0
+                        ? certPreview.sans.join(", ")
+                        : "—"}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">
+                      Organization:
+                    </span>{" "}
+                    <span className="font-mono">
+                      {certPreview.organization || "—"}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">
+                      Organizational Unit:
+                    </span>{" "}
+                    <span className="font-mono">
+                      {certPreview.organizationalUnit || "—"}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Locality:</span>{" "}
+                    <span className="font-mono">
+                      {certPreview.locality || "—"}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">State:</span>{" "}
+                    <span className="font-mono">
+                      {certPreview.state || "—"}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Country:</span>{" "}
+                    <span className="font-mono">
+                      {certPreview.country || "—"}
+                    </span>
+                  </div>
+                  <p className="text-muted-foreground pt-1 border-t border-border/50 mt-1">
+                    Note: since Chrome 58 (2017), browsers validate hostnames
+                    only against the SAN list — the Common Name is ignored.
+                    That's why the CN is always duplicated into the SAN list
+                    above; a cert without it there would fail hostname
+                    validation despite the CN "matching."
+                  </p>
+                </div>
+              )}
             </>
           )}
         </>

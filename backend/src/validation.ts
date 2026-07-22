@@ -288,8 +288,8 @@ export const validateConnectionData = (
     data.ise_csr_source !== null &&
     data.ise_csr_source !== ""
   ) {
-    if (!validator.isIn(data.ise_csr_source, ["api", "gui", "local"])) {
-      errors.push('ISE CSR source must be one of "api", "gui", or "local"');
+    if (!validator.isIn(data.ise_csr_source, ["api", "local"])) {
+      errors.push('ISE CSR source must be one of "api" or "local"');
     }
   }
 
@@ -470,7 +470,7 @@ export const sanitizeConnectionData = (
     ].includes(data.ise_application_subtype)
       ? data.ise_application_subtype
       : undefined,
-    ise_csr_source: ["api", "gui", "local"].includes(data.ise_csr_source)
+    ise_csr_source: ["api", "local"].includes(data.ise_csr_source)
       ? data.ise_csr_source
       : undefined,
     ise_csr_config: data.ise_csr_config

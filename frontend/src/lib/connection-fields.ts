@@ -403,7 +403,7 @@ export const applicationTypeInfoIseField: FieldDefinition = {
   type: "info",
   label: "",
   description:
-    "Cisco Identity Services Engine. Certificate can be generated via the ISE API (key stays on ISE), pasted from the ISE GUI, or generated locally with a custom CN (key stored on netSSL).",
+    "Cisco Identity Services Engine. Certificate can be generated via the ISE API (key stays on ISE) or generated locally with a custom CN (key stored on netSSL).",
 };
 
 export const iseCsrSourceField: FieldDefinition = {
@@ -412,11 +412,10 @@ export const iseCsrSourceField: FieldDefinition = {
   label: "CSR Source",
   placeholder: "— Select a CSR source —",
   selectOptions: [
-    { value: "api", label: "Generate via ISE API (Recommended)" },
-    { value: "gui", label: "Paste from ISE GUI" },
+    { value: "api", label: "Generate via ISE API" },
     { value: "local", label: "Generate locally (custom CN)" },
   ],
-  validation: { name: "isIn", options: ["api", "gui", "local"] },
+  validation: { name: "isIn", options: ["api", "local"] },
 };
 
 /** Defaults shown in the CSR Subject Configuration textarea when source=api. Match backend defaults in ise-provider.ts. */
@@ -452,7 +451,7 @@ export const iseNodesField: FieldDefinition = {
   label: "ISE Node FQDNs",
   placeholder: "e.g., ise01.example.com, ise02.example.com (comma-separated)",
   description:
-    "The first node becomes the certificate CN and generates the CSR. All listed nodes receive the signed certificate.",
+    "The ISE nodes the signed certificate is installed onto — deployment targets, not part of the certificate's identity. Exception: in 'Generate via ISE API' mode, the first node's FQDN is required as the Primary Hostname (CN).",
   validation: { name: "isAscii", options: "" },
 };
 
@@ -464,7 +463,7 @@ export const iseCertificateField: FieldDefinition = {
     "-----BEGIN CERTIFICATE REQUEST-----\nPaste your Certificate Signing Request here\n-----END CERTIFICATE REQUEST-----",
   validation: { name: "isAscii", options: "" },
   rows: 6,
-  visibleWhen: { field: "ise_csr_source", is: "gui" },
+  visibleWhen: { field: "ise_csr_source", is: "local" },
 };
 
 export const isePrivateKeyField: FieldDefinition = {
