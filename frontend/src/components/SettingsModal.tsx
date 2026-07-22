@@ -14,6 +14,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Settings,
   Key,
   Check,
@@ -75,6 +82,95 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
   const [cfZonesError, setCfZonesError] = useState("");
   const [cfPendingSelection, setCfPendingSelection] = useState<Set<string>>(
     new Set(),
+  );
+
+  // Venafi settings state — bespoke (not a flat key list like the other
+  // providers) because fields are conditional on platform (cloud vs tpp)
+  const [venafiPlatform, setVenafiPlatform] = useState("cloud");
+  const [venafiApiUrl, setVenafiApiUrl] = useState("");
+  const [venafiApiKey, setVenafiApiKey] = useState("");
+  const [venafiZone, setVenafiZone] = useState("");
+  const [venafiUsername, setVenafiUsername] = useState("");
+  const [venafiPassword, setVenafiPassword] = useState("");
+  const [venafiSaving, setVenafiSaving] = useState(false);
+
+  const fetchVenafiSettings = async () => {
+    try {
+      const response = await apiCall("/settings/venafi");
+      const data = await response.json();
+      const settingsMap: Record<string, string> = {};
+      data.forEach((item: { key_name: string; key_value: string }) => {
+        settingsMap[item.key_name] = item.key_value;
+      });
+      if (settingsMap["VENAFI_PLATFORM"])
+        setVenafiPlatform(settingsMap["VENAFI_PLATFORM"]);
+      if (settingsMap["VENAFI_API_URL"])
+        setVenafiApiUrl(settingsMap["VENAFI_API_URL"]);
+      if (settingsMap["VENAFI_API_KEY"])
+        setVenafiApiKey(settingsMap["VENAFI_API_KEY"]);
+      if (settingsMap["VENAFI_ZONE"]) setVenafiZone(settingsMap["VENAFI_ZONE"]);
+      if (settingsMap["VENAFI_USERNAME"])
+        setVenafiUsername(settingsMap["VENAFI_USERNAME"]);
+      if (settingsMap["VENAFI_PASSWORD"])
+        setVenafiPassword(settingsMap["VENAFI_PASSWORD"]);
+    } catch (error) {
+      console.error("Error fetching Venafi settings:", error);
+    }
+  };
+
+  const handleSaveVenafiSetting = async (keyName: string, value: string) => {
+    try {
+      await apiCall("/settings", {
+        method: "POST",
+        body: JSON.stringify({
+          key_name: keyName,
+          key_value: value,
+          provider: "venafi",
+          description: "Venafi configuration",
+        }),
+      });
+      toast({
+        title: "Success",
+        description: `${keyName} saved successfully`,
+      });
+    } catch (error) {
+      console.error("Error saving Venafi setting:", error);
+      toast({
+        title: "Error",
+        description: `Failed to save ${keyName}`,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleSaveAllVenafi = async () => {
+    setVenafiSaving(true);
+    try {
+      const settings: Array<{ key: string; value: string }> = [
+        { key: "VENAFI_PLATFORM", value: venafiPlatform },
+        { key: "VENAFI_API_URL", value: venafiApiUrl },
+        { key: "VENAFI_ZONE", value: venafiZone },
+      ];
+      if (venafiPlatform === "cloud") {
+        settings.push({ key: "VENAFI_API_KEY", value: venafiApiKey });
+      } else {
+        settings.push({ key: "VENAFI_USERNAME", value: venafiUsername });
+        settings.push({ key: "VENAFI_PASSWORD", value: venafiPassword });
+      }
+      await Promise.all(
+        settings.map(({ key, value }) => handleSaveVenafiSetting(key, value)),
+      );
+    } finally {
+      setVenafiSaving(false);
+    }
+  };
+
+  const venafiConfigured = Boolean(
+    venafiApiUrl &&
+      venafiZone &&
+      (venafiPlatform === "cloud"
+        ? venafiApiKey
+        : venafiUsername && venafiPassword),
   );
 
   const handleRefreshCloudflareZones = async () => {
@@ -429,6 +525,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
   useEffect(() => {
     if (isOpen) {
       fetchSettings();
+      fetchVenafiSettings();
       setTimeout(checkScroll, 100);
     }
   }, [isOpen]);
@@ -493,6 +590,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
                         </TabsTrigger>
                       );
                     })}
+                    <TabsTrigger value="venafi" className="gap-1.5">
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${venafiConfigured ? "bg-status-valid" : "bg-muted-foreground/40"}`}
+                      />
+                      Venafi
+                    </TabsTrigger>
                   </TabsList>
                 </div>
 
@@ -777,6 +880,167 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ trigger }) => {
                     </TabsContent>
                   );
                 })}
+
+                <TabsContent value="venafi" className="space-y-4 mt-0">
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <Key className="w-4 h-4" />
+                          <span>Venafi</span>
+                        </div>
+                        <Badge
+                          variant={venafiConfigured ? "success" : "secondary"}
+                          className="text-xs"
+                        >
+                          {venafiConfigured ? (
+                            <>
+                              <Check className="w-3 h-3 mr-1" /> Configured
+                            </>
+                          ) : (
+                            <>
+                              <X className="w-3 h-3 mr-1" /> Not Set
+                            </>
+                          )}
+                        </Badge>
+                      </CardTitle>
+                      <p className="text-xs text-muted-foreground">
+                        Control Plane (cloud) or Trust Protection Platform
+                        (TPP) for certificate issuance
+                      </p>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="space-y-2">
+                        <Label
+                          htmlFor="venafi-platform"
+                          className="font-mono text-xs"
+                        >
+                          VENAFI_PLATFORM
+                        </Label>
+                        <Select
+                          value={venafiPlatform}
+                          onValueChange={setVenafiPlatform}
+                        >
+                          <SelectTrigger id="venafi-platform">
+                            <SelectValue placeholder="Select platform" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="cloud">cloud</SelectItem>
+                            <SelectItem value="tpp">tpp</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label
+                          htmlFor="venafi-api-url"
+                          className="font-mono text-xs"
+                        >
+                          VENAFI_API_URL
+                        </Label>
+                        <Input
+                          id="venafi-api-url"
+                          type="text"
+                          placeholder={
+                            venafiPlatform === "cloud"
+                              ? "https://api.venafi.cloud"
+                              : "https://tpp.example.com/vedsdk"
+                          }
+                          value={venafiApiUrl}
+                          onChange={(e) => setVenafiApiUrl(e.target.value)}
+                        />
+                      </div>
+
+                      {venafiPlatform === "cloud" && (
+                        <div className="space-y-2">
+                          <Label
+                            htmlFor="venafi-api-key"
+                            className="font-mono text-xs"
+                          >
+                            VENAFI_API_KEY
+                          </Label>
+                          <Input
+                            id="venafi-api-key"
+                            type="password"
+                            placeholder="Enter Venafi Cloud API key"
+                            value={venafiApiKey}
+                            onChange={(e) => setVenafiApiKey(e.target.value)}
+                          />
+                        </div>
+                      )}
+
+                      <div className="space-y-2">
+                        <Label
+                          htmlFor="venafi-zone"
+                          className="font-mono text-xs"
+                        >
+                          VENAFI_ZONE
+                        </Label>
+                        <Input
+                          id="venafi-zone"
+                          type="text"
+                          placeholder={
+                            venafiPlatform === "cloud"
+                              ? "MyApp\\Default"
+                              : "\\VED\\Policy\\MyApp"
+                          }
+                          value={venafiZone}
+                          onChange={(e) => setVenafiZone(e.target.value)}
+                        />
+                      </div>
+
+                      {venafiPlatform === "tpp" && (
+                        <div className="space-y-2">
+                          <Label
+                            htmlFor="venafi-username"
+                            className="font-mono text-xs"
+                          >
+                            VENAFI_USERNAME
+                          </Label>
+                          <Input
+                            id="venafi-username"
+                            type="text"
+                            placeholder="Enter TPP username"
+                            value={venafiUsername}
+                            onChange={(e) =>
+                              setVenafiUsername(e.target.value)
+                            }
+                          />
+                        </div>
+                      )}
+
+                      {venafiPlatform === "tpp" && (
+                        <div className="space-y-2">
+                          <Label
+                            htmlFor="venafi-password"
+                            className="font-mono text-xs"
+                          >
+                            VENAFI_PASSWORD
+                          </Label>
+                          <Input
+                            id="venafi-password"
+                            type="password"
+                            placeholder="Enter TPP password"
+                            value={venafiPassword}
+                            onChange={(e) =>
+                              setVenafiPassword(e.target.value)
+                            }
+                          />
+                        </div>
+                      )}
+
+                      <Button
+                        onClick={handleSaveAllVenafi}
+                        disabled={venafiSaving}
+                      >
+                        {venafiSaving ? (
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        ) : null}
+                        Save Venafi Settings
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
               </div>
             </Tabs>
           </div>
