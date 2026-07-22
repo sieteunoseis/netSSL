@@ -1,6 +1,6 @@
-import https from 'https';
-import fs from 'fs';
-import path from 'path';
+import https from "https";
+import fs from "fs";
+import path from "path";
 import {
   PlatformProvider,
   PlatformConfig,
@@ -10,38 +10,58 @@ import {
   CertificateUploadResponse,
   RenewalContext,
   RestartResult,
-} from './platform-provider';
-import { Logger } from '../logger';
-import { accountManager } from '../account-manager';
-import { SSHClient } from '../ssh-client';
+} from "./platform-provider";
+import { Logger } from "../logger";
+import { accountManager } from "../account-manager";
+import { SSHClient } from "../ssh-client";
 
 export class VOSProvider extends PlatformProvider {
   constructor() {
     const config: PlatformConfig = {
-      platformType: 'vos',
+      platformType: "vos",
       apiEndpoints: {
-        generateCSR: '/platformcom/api/v1/certmgr/config/csr',
-        uploadIdentityCert: '/platformcom/api/v1/certmgr/config/identity/certificates',
-        getTrustCerts: '/platformcom/api/v1/certmgr/config/trust/certificate?service=tomcat',
-        uploadTrustCerts: '/platformcom/api/v1/certmgr/config/trust/certificates'
+        generateCSR: "/platformcom/api/v1/certmgr/config/csr",
+        uploadIdentityCert:
+          "/platformcom/api/v1/certmgr/config/identity/certificates",
+        getTrustCerts:
+          "/platformcom/api/v1/certmgr/config/trust/certificate?service=tomcat",
+        uploadTrustCerts:
+          "/platformcom/api/v1/certmgr/config/trust/certificates",
       },
       sshConfig: {
-        promptPattern: 'admin:',
-        serviceRestartCommand: 'utils service restart Cisco Tomcat',
+        promptPattern: "admin:",
+        serviceRestartCommand: "utils service restart Cisco Tomcat",
         connectionAlgorithms: {
-          kex: ['diffie-hellman-group14-sha256', 'diffie-hellman-group14-sha1', 'diffie-hellman-group-exchange-sha256', 'diffie-hellman-group-exchange-sha1'],
-          cipher: ['aes256-ctr', 'aes192-ctr', 'aes128-ctr', 'aes256-cbc', 'aes192-cbc', 'aes128-cbc'],
-          hmac: ['hmac-sha2-256', 'hmac-sha2-512', 'hmac-sha1'],
-          serverHostKey: ['ssh-rsa', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521']
-        }
+          kex: [
+            "diffie-hellman-group14-sha256",
+            "diffie-hellman-group14-sha1",
+            "diffie-hellman-group-exchange-sha256",
+            "diffie-hellman-group-exchange-sha1",
+          ],
+          cipher: [
+            "aes256-ctr",
+            "aes192-ctr",
+            "aes128-ctr",
+            "aes256-cbc",
+            "aes192-cbc",
+            "aes128-cbc",
+          ],
+          hmac: ["hmac-sha2-256", "hmac-sha2-512", "hmac-sha1"],
+          serverHostKey: [
+            "ssh-rsa",
+            "ecdsa-sha2-nistp256",
+            "ecdsa-sha2-nistp384",
+            "ecdsa-sha2-nistp521",
+          ],
+        },
       },
       certificateConfig: {
-        serviceName: 'tomcat',
-        supportedKeyTypes: ['RSA'],
-        maxKeySize: 4096
-      }
+        serviceName: "tomcat",
+        supportedKeyTypes: ["RSA"],
+        maxKeySize: 4096,
+      },
     };
-    
+
     super(config);
   }
 
@@ -49,7 +69,7 @@ export class VOSProvider extends PlatformProvider {
     hostname: string,
     username: string,
     password: string,
-    params: CSRGenerationParams
+    params: CSRGenerationParams,
   ): Promise<CSRResponse> {
     try {
       Logger.info(`Generating CSR for VOS platform: ${hostname}`);
@@ -58,16 +78,16 @@ export class VOSProvider extends PlatformProvider {
         certificateRequestData: {
           subject: {
             commonName: params.commonName,
-            organizationName: params.organizationName || 'Cisco',
-            organizationalUnit: params.organizationalUnit || 'IT',
-            locality: params.locality || 'San Jose',
-            state: params.state || 'CA',
-            country: params.country || 'US'
+            organizationName: params.organizationName || "Cisco",
+            organizationalUnit: params.organizationalUnit || "IT",
+            locality: params.locality || "San Jose",
+            state: params.state || "CA",
+            country: params.country || "US",
           },
           keySize: params.keySize || 2048,
-          keyType: params.keyType || 'RSA',
-          subjectAltNames: params.subjectAltNames || []
-        }
+          keyType: params.keyType || "RSA",
+          subjectAltNames: params.subjectAltNames || [],
+        },
       };
 
       const response = await this.makeApiRequest(
@@ -75,8 +95,8 @@ export class VOSProvider extends PlatformProvider {
         username,
         password,
         this.config.apiEndpoints.generateCSR,
-        'POST',
-        csrData
+        "POST",
+        csrData,
       );
 
       if (response && response.certificateSigningRequest) {
@@ -84,17 +104,18 @@ export class VOSProvider extends PlatformProvider {
         return {
           csr: response.certificateSigningRequest,
           success: true,
-          message: 'CSR generated successfully'
+          message: "CSR generated successfully",
         };
       } else {
-        throw new Error('Invalid response format from VOS API');
+        throw new Error("Invalid response format from VOS API");
       }
     } catch (error) {
       Logger.error(`Failed to generate CSR for ${hostname}:`, error);
       return {
-        csr: '',
+        csr: "",
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred'
+        message:
+          error instanceof Error ? error.message : "Unknown error occurred",
       };
     }
   }
@@ -103,10 +124,12 @@ export class VOSProvider extends PlatformProvider {
     hostname: string,
     username: string,
     password: string,
-    certificateData: CertificateData
+    certificateData: CertificateData,
   ): Promise<CertificateUploadResponse> {
     try {
-      Logger.info(`Uploading identity certificate to VOS platform: ${hostname}`);
+      Logger.info(
+        `Uploading identity certificate to VOS platform: ${hostname}`,
+      );
 
       // First upload the leaf certificate
       const leafUploadResult = await this.uploadLeafCertificate(
@@ -114,7 +137,7 @@ export class VOSProvider extends PlatformProvider {
         username,
         password,
         certificateData.certificate,
-        certificateData.privateKey
+        certificateData.privateKey,
       );
 
       if (!leafUploadResult.success) {
@@ -122,29 +145,35 @@ export class VOSProvider extends PlatformProvider {
       }
 
       // Then upload CA certificates if provided
-      if (certificateData.caCertificates && certificateData.caCertificates.length > 0) {
+      if (
+        certificateData.caCertificates &&
+        certificateData.caCertificates.length > 0
+      ) {
         const caUploadResult = await this.uploadTrustCertificates(
           hostname,
           username,
           password,
-          certificateData.caCertificates
+          certificateData.caCertificates,
         );
 
         if (!caUploadResult.success) {
-          Logger.warn(`CA certificate upload failed, but leaf certificate was uploaded successfully`);
+          Logger.warn(
+            `CA certificate upload failed, but leaf certificate was uploaded successfully`,
+          );
         }
       }
 
       return {
         success: true,
-        message: 'Certificate uploaded successfully',
-        certificateId: leafUploadResult.certificateId
+        message: "Certificate uploaded successfully",
+        certificateId: leafUploadResult.certificateId,
       };
     } catch (error) {
       Logger.error(`Failed to upload certificate to ${hostname}:`, error);
       return {
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred'
+        message:
+          error instanceof Error ? error.message : "Unknown error occurred",
       };
     }
   }
@@ -154,14 +183,14 @@ export class VOSProvider extends PlatformProvider {
     username: string,
     password: string,
     certificate: string,
-    privateKey?: string
+    privateKey?: string,
   ): Promise<CertificateUploadResponse> {
     const uploadData = {
       certificateData: {
         certificate: certificate,
         privateKey: privateKey || undefined,
-        certificateType: 'identity'
-      }
+        certificateType: "identity",
+      },
     };
 
     const response = await this.makeApiRequest(
@@ -169,14 +198,14 @@ export class VOSProvider extends PlatformProvider {
       username,
       password,
       this.config.apiEndpoints.uploadIdentityCert,
-      'POST',
-      uploadData
+      "POST",
+      uploadData,
     );
 
     return {
       success: true,
-      message: 'Leaf certificate uploaded successfully',
-      certificateId: response?.certificateId
+      message: "Leaf certificate uploaded successfully",
+      certificateId: response?.certificateId,
     };
   }
 
@@ -184,22 +213,30 @@ export class VOSProvider extends PlatformProvider {
     hostname: string,
     username: string,
     password: string,
-    caCertificates: string[]
+    caCertificates: string[],
   ): Promise<CertificateUploadResponse> {
     try {
-      Logger.info(`Uploading ${caCertificates.length} CA certificates to VOS platform: ${hostname}`);
+      Logger.info(
+        `Uploading ${caCertificates.length} CA certificates to VOS platform: ${hostname}`,
+      );
 
       // Get existing trust certificates to avoid duplicates
-      const existingCerts = await this.getTrustCertificates(hostname, username, password);
-      
-      const certsToUpload = caCertificates.filter(cert => {
-        return !existingCerts.some(existing => existing.includes(cert.trim()));
+      const existingCerts = await this.getTrustCertificates(
+        hostname,
+        username,
+        password,
+      );
+
+      const certsToUpload = caCertificates.filter((cert) => {
+        return !existingCerts.some((existing) =>
+          existing.includes(cert.trim()),
+        );
       });
 
       if (certsToUpload.length === 0) {
         return {
           success: true,
-          message: 'All CA certificates already exist in trust store'
+          message: "All CA certificates already exist in trust store",
         };
       }
 
@@ -207,8 +244,8 @@ export class VOSProvider extends PlatformProvider {
         const uploadData = {
           certificateData: {
             certificate: cert,
-            certificateType: 'trust'
-          }
+            certificateType: "trust",
+          },
         };
 
         await this.makeApiRequest(
@@ -216,21 +253,24 @@ export class VOSProvider extends PlatformProvider {
           username,
           password,
           this.config.apiEndpoints.uploadTrustCerts,
-          'POST',
-          uploadData
+          "POST",
+          uploadData,
         );
       }
 
-      Logger.info(`Successfully uploaded ${certsToUpload.length} CA certificates to ${hostname}`);
+      Logger.info(
+        `Successfully uploaded ${certsToUpload.length} CA certificates to ${hostname}`,
+      );
       return {
         success: true,
-        message: `Uploaded ${certsToUpload.length} CA certificates`
+        message: `Uploaded ${certsToUpload.length} CA certificates`,
       };
     } catch (error) {
       Logger.error(`Failed to upload CA certificates to ${hostname}:`, error);
       return {
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred'
+        message:
+          error instanceof Error ? error.message : "Unknown error occurred",
       };
     }
   }
@@ -238,7 +278,7 @@ export class VOSProvider extends PlatformProvider {
   async getTrustCertificates(
     hostname: string,
     username: string,
-    password: string
+    password: string,
   ): Promise<string[]> {
     try {
       const response = await this.makeApiRequest(
@@ -246,11 +286,13 @@ export class VOSProvider extends PlatformProvider {
         username,
         password,
         this.config.apiEndpoints.getTrustCerts,
-        'GET'
+        "GET",
       );
 
       if (response && response.certificates) {
-        return response.certificates.map((cert: any) => cert.certificateData || cert.certificate || '');
+        return response.certificates.map(
+          (cert: any) => cert.certificateData || cert.certificate || "",
+        );
       }
 
       return [];
@@ -263,26 +305,35 @@ export class VOSProvider extends PlatformProvider {
   async restartServices(
     hostname: string,
     username: string,
-    password: string
+    password: string,
   ): Promise<boolean> {
     try {
-      Logger.info(`Restarting Cisco Tomcat service on VOS platform: ${hostname}`);
+      Logger.info(
+        `Restarting Cisco Tomcat service on VOS platform: ${hostname}`,
+      );
 
       await this.connectSSH(hostname, username, password);
-      
+
       // Execute the service restart command
-      const output = await this.executeSSHCommand(this.config.sshConfig.serviceRestartCommand);
-      
+      const output = await this.executeSSHCommand(
+        this.config.sshConfig.serviceRestartCommand,
+      );
+
       await this.disconnectSSH();
 
       // Check if restart was successful (VOS typically returns service status)
-      const success = !output.toLowerCase().includes('error') && 
-                     !output.toLowerCase().includes('failed');
+      const success =
+        !output.toLowerCase().includes("error") &&
+        !output.toLowerCase().includes("failed");
 
       if (success) {
-        Logger.info(`Successfully restarted Cisco Tomcat service on ${hostname}`);
+        Logger.info(
+          `Successfully restarted Cisco Tomcat service on ${hostname}`,
+        );
       } else {
-        Logger.warn(`Service restart may have failed on ${hostname}: ${output}`);
+        Logger.warn(
+          `Service restart may have failed on ${hostname}: ${output}`,
+        );
       }
 
       return success;
@@ -300,32 +351,40 @@ export class VOSProvider extends PlatformProvider {
   async validateConnection(
     hostname: string,
     username: string,
-    password: string
+    password: string,
   ): Promise<boolean> {
     try {
       Logger.info(`Validating VOS platform connection: ${hostname}`);
 
       // Test SSH connection
       await this.connectSSH(hostname, username, password);
-      
+
       // Execute a simple command to verify connectivity
-      const output = await this.executeSSHCommand('show version');
-      
+      const output = await this.executeSSHCommand("show version");
+
       await this.disconnectSSH();
 
       // Check if we got expected VOS output
-      const isVOS = output.toLowerCase().includes('cisco') || 
-                   output.toLowerCase().includes('unified');
+      const isVOS =
+        output.toLowerCase().includes("cisco") ||
+        output.toLowerCase().includes("unified");
 
       if (isVOS) {
-        Logger.info(`Successfully validated VOS platform connection: ${hostname}`);
+        Logger.info(
+          `Successfully validated VOS platform connection: ${hostname}`,
+        );
       } else {
-        Logger.warn(`Connection validated but may not be a VOS platform: ${hostname}`);
+        Logger.warn(
+          `Connection validated but may not be a VOS platform: ${hostname}`,
+        );
       }
 
       return true;
     } catch (error) {
-      Logger.error(`Failed to validate VOS platform connection ${hostname}:`, error);
+      Logger.error(
+        `Failed to validate VOS platform connection ${hostname}:`,
+        error,
+      );
       try {
         await this.disconnectSSH();
       } catch (disconnectError) {
@@ -348,25 +407,30 @@ export class VOSProvider extends PlatformProvider {
     await accountManager.clearCSR(connectionId, fullFQDN);
 
     if (!connection.username || !connection.password) {
-      throw new Error('Username and password are required for VOS applications');
+      throw new Error(
+        "Username and password are required for VOS applications",
+      );
     }
 
-    const authHeader = `Basic ${Buffer.from(`${connection.username}:${connection.password}`).toString('base64')}`;
+    const authHeader = `Basic ${Buffer.from(`${connection.username}:${connection.password}`).toString("base64")}`;
     Logger.info(`Using Authorization header: ${authHeader}`);
 
     // Parse altNames from comma-separated string
     const altNames = connection.alt_names
-      ? connection.alt_names.split(',').map(name => name.trim()).filter(name => name.length > 0)
+      ? connection.alt_names
+          .split(",")
+          .map((name) => name.trim())
+          .filter((name) => name.length > 0)
       : [];
 
     const csrPayload = {
-      'service': 'tomcat',
-      'distribution': 'this-server',
-      'commonName': fullFQDN,
-      'keyType': 'rsa',
-      'keyLength': 2048,
-      'hashAlgorithm': 'sha256',
-      ...(altNames.length > 0 && { 'altNames': altNames }),
+      service: "tomcat",
+      distribution: "this-server",
+      commonName: fullFQDN,
+      keyType: "rsa",
+      keyLength: 2048,
+      hashAlgorithm: "sha256",
+      ...(altNames.length > 0 && { altNames: altNames }),
     };
 
     const postData = JSON.stringify(csrPayload);
@@ -374,19 +438,21 @@ export class VOSProvider extends PlatformProvider {
     const options = {
       hostname: fullFQDN,
       port: 443,
-      path: '/platformcom/api/v1/certmgr/config/csr',
-      method: 'POST',
+      path: "/platformcom/api/v1/certmgr/config/csr",
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': authHeader,
-        'Accept': 'application/json',
-        'Content-Length': Buffer.byteLength(postData),
+        "Content-Type": "application/json",
+        Authorization: authHeader,
+        Accept: "application/json",
+        "Content-Length": Buffer.byteLength(postData),
       },
       rejectUnauthorized: false,
       timeout: 30000,
     };
 
-    Logger.info(`Sending CSR request to ${fullFQDN}:${options.port}${options.path}`);
+    Logger.info(
+      `Sending CSR request to ${fullFQDN}:${options.port}${options.path}`,
+    );
     Logger.info(`CSR Request Body: ${postData}`);
     Logger.info(`Using credentials for user: ${connection.username}`);
 
@@ -394,10 +460,12 @@ export class VOSProvider extends PlatformProvider {
     await ctx.saveLog(`Target: ${fullFQDN}:${options.port}${options.path}`);
     await ctx.saveLog(`Service: ${csrPayload.service}`);
     await ctx.saveLog(`Common Name: ${csrPayload.commonName}`);
-    await ctx.saveLog(`Key Type: ${csrPayload.keyType}, Length: ${csrPayload.keyLength}`);
+    await ctx.saveLog(
+      `Key Type: ${csrPayload.keyType}, Length: ${csrPayload.keyLength}`,
+    );
     await ctx.saveLog(`Hash Algorithm: ${csrPayload.hashAlgorithm}`);
     if (altNames.length > 0) {
-      await ctx.saveLog(`Alt Names: ${altNames.join(', ')}`);
+      await ctx.saveLog(`Alt Names: ${altNames.join(", ")}`);
     }
     await ctx.saveLog(`Request Body: ${postData}`);
     await ctx.saveLog(`Using credentials for user: ${connection.username}`);
@@ -407,9 +475,9 @@ export class VOSProvider extends PlatformProvider {
 
     return new Promise<string>((resolve, reject) => {
       const req = https.request(options, (res) => {
-        let data = '';
-        res.on('data', (chunk) => data += chunk);
-        res.on('end', async () => {
+        let data = "";
+        res.on("data", (chunk) => (data += chunk));
+        res.on("end", async () => {
           try {
             Logger.info(`CSR API Response Status: ${res.statusCode}`);
             Logger.info(`CSR API Response Body: ${data}`);
@@ -426,11 +494,21 @@ export class VOSProvider extends PlatformProvider {
 
             const response = JSON.parse(data);
             if (response.csr) {
-              await accountManager.saveCSR(connectionId, fullFQDN, response.csr);
-              await ctx.saveLog(`Generated new CSR from ${fullFQDN} for service: tomcat`);
-              await ctx.saveLog(`CSR length: ${response.csr.length} characters`);
+              await accountManager.saveCSR(
+                connectionId,
+                fullFQDN,
+                response.csr,
+              );
+              await ctx.saveLog(
+                `Generated new CSR from ${fullFQDN} for service: tomcat`,
+              );
+              await ctx.saveLog(
+                `CSR length: ${response.csr.length} characters`,
+              );
 
-              status.logs.push(`CSR generated successfully from ${fullFQDN} for service: tomcat`);
+              status.logs.push(
+                `CSR generated successfully from ${fullFQDN} for service: tomcat`,
+              );
               resolve(response.csr);
             } else {
               const errorMsg = `CSR not found in response. Response: ${JSON.stringify(response)}`;
@@ -445,7 +523,7 @@ export class VOSProvider extends PlatformProvider {
         });
       });
 
-      req.on('error', async (error) => {
+      req.on("error", async (error) => {
         const errorMsg = `CSR generation failed: ${error.message}`;
         await ctx.saveLog(`ERROR: ${errorMsg}`);
         reject(new Error(errorMsg));
@@ -456,17 +534,20 @@ export class VOSProvider extends PlatformProvider {
     });
   }
 
-  async installCertificate(ctx: RenewalContext, certificate: string): Promise<void> {
+  async installCertificate(
+    ctx: RenewalContext,
+    certificate: string,
+  ): Promise<void> {
     const { connectionId, connection, status } = ctx;
 
     // Parse the certificate chain into individual certificates
-    const certParts = certificate.split('-----END CERTIFICATE-----');
+    const certParts = certificate.split("-----END CERTIFICATE-----");
     const certificates = certParts
-      .filter(part => part.includes('-----BEGIN CERTIFICATE-----'))
-      .map(part => (part.trim() + '\n-----END CERTIFICATE-----'));
+      .filter((part) => part.includes("-----BEGIN CERTIFICATE-----"))
+      .map((part) => part.trim() + "\n-----END CERTIFICATE-----");
 
     if (certificates.length === 0) {
-      throw new Error('No certificates found to upload.');
+      throw new Error("No certificates found to upload.");
     }
 
     // Upload CA certificates (intermediate + root) to trust store FIRST
@@ -477,7 +558,9 @@ export class VOSProvider extends PlatformProvider {
       } catch (caError: any) {
         const fullFQDN = `${connection.hostname}.${connection.domain}`;
         await ctx.saveLog(`CA certificate upload warning: ${caError.message}`);
-        status.logs.push(`CA certificates may already exist on server (this is normal)`);
+        status.logs.push(
+          `CA certificates may already exist on server (this is normal)`,
+        );
       }
     }
 
@@ -492,11 +575,15 @@ export class VOSProvider extends PlatformProvider {
   async handleServiceRestart(ctx: RenewalContext): Promise<RestartResult> {
     const { connection, status } = ctx;
 
-    Logger.info(`handleServiceRestart called for ${connection.hostname}.${connection.domain} - application_type=${connection.application_type}, enable_ssh=${connection.enable_ssh} (${typeof connection.enable_ssh}), auto_restart_service=${connection.auto_restart_service} (${typeof connection.auto_restart_service})`);
+    Logger.info(
+      `handleServiceRestart called for ${connection.hostname}.${connection.domain} - application_type=${connection.application_type}, enable_ssh=${connection.enable_ssh} (${typeof connection.enable_ssh}), auto_restart_service=${connection.auto_restart_service} (${typeof connection.auto_restart_service})`,
+    );
 
     // Only proceed if SSH is enabled and auto_restart_service is enabled
     if (!connection.enable_ssh || !connection.auto_restart_service) {
-      Logger.info(`Skipping service restart for ${connection.hostname}.${connection.domain} - SSH or auto restart not enabled (enable_ssh=${connection.enable_ssh}, auto_restart_service=${connection.auto_restart_service})`);
+      Logger.info(
+        `Skipping service restart for ${connection.hostname}.${connection.domain} - SSH or auto restart not enabled (enable_ssh=${connection.enable_ssh}, auto_restart_service=${connection.auto_restart_service})`,
+      );
       return { success: true, requiresManualRestart: false };
     }
 
@@ -505,7 +592,11 @@ export class VOSProvider extends PlatformProvider {
       Logger.info(`Starting Cisco Tomcat service restart for ${fqdn}`);
 
       status.logs.push(`Restarting Cisco Tomcat service on ${fqdn}`);
-      await ctx.updateStatus('restarting_service', 'Testing SSH connection...', 92);
+      await ctx.updateStatus(
+        "restarting_service",
+        "Testing SSH connection...",
+        92,
+      );
 
       // Test SSH connection first
       const sshTest = await SSHClient.testConnection({
@@ -518,7 +609,9 @@ export class VOSProvider extends PlatformProvider {
         const errorMsg = `SSH connection failed for ${fqdn}: ${sshTest.error}`;
         Logger.error(errorMsg);
         status.logs.push(`\u26a0\ufe0f ${errorMsg}`);
-        status.logs.push(`\ud83d\udccb Manual action required: Run 'utils service restart Cisco Tomcat' on ${fqdn}`);
+        status.logs.push(
+          `\ud83d\udccb Manual action required: Run 'utils service restart Cisco Tomcat' on ${fqdn}`,
+        );
         return {
           success: false,
           requiresManualRestart: true,
@@ -526,43 +619,80 @@ export class VOSProvider extends PlatformProvider {
         };
       }
 
-      await ctx.updateStatus('restarting_service', 'Restarting Tomcat...', 94);
+      await ctx.updateStatus("restarting_service", "Restarting Tomcat...", 94);
 
       if (connection.id) {
-        await accountManager.saveRenewalLog(connection.id, fqdn, `\ud83d\udd04 Initiating Cisco Tomcat service restart on ${fqdn}`);
+        await accountManager.saveRenewalLog(
+          connection.id,
+          fqdn,
+          `\ud83d\udd04 Initiating Cisco Tomcat service restart on ${fqdn}`,
+        );
       }
-      status.logs.push(`\ud83d\udd04 Initiating Cisco Tomcat service restart on ${fqdn}`);
+      status.logs.push(
+        `\ud83d\udd04 Initiating Cisco Tomcat service restart on ${fqdn}`,
+      );
 
       const restartResult = await SSHClient.executeCommandWithStream({
         hostname: fqdn,
         username: connection.username!,
         password: connection.password!,
-        command: 'utils service restart Cisco Tomcat',
+        command: "utils service restart Cisco Tomcat",
         timeout: 600000,
         onData: async (chunk: string, totalOutput: string) => {
-          if (chunk.includes('[STARTING]') || totalOutput.includes('Cisco Tomcat[STARTING]')) {
-            Logger.info(`Detected Cisco Tomcat [STARTING] for ${fqdn} during certificate renewal`);
-            await ctx.updateStatus('restarting_service', 'Tomcat starting...', 97);
+          if (
+            chunk.includes("[STARTING]") ||
+            totalOutput.includes("Cisco Tomcat[STARTING]")
+          ) {
+            Logger.info(
+              `Detected Cisco Tomcat [STARTING] for ${fqdn} during certificate renewal`,
+            );
+            await ctx.updateStatus(
+              "restarting_service",
+              "Tomcat starting...",
+              97,
+            );
             const logMessage = `\ud83d\udd04 Cisco Tomcat service is starting on ${fqdn}`;
             status.logs.push(logMessage);
             if (connection.id) {
-              await accountManager.saveRenewalLog(connection.id, fqdn, logMessage);
+              await accountManager.saveRenewalLog(
+                connection.id,
+                fqdn,
+                logMessage,
+              );
             }
           }
-          if (chunk.includes('[STOPPING]') || totalOutput.includes('Cisco Tomcat[STOPPING]')) {
-            await ctx.updateStatus('restarting_service', 'Tomcat stopping...', 95);
+          if (
+            chunk.includes("[STOPPING]") ||
+            totalOutput.includes("Cisco Tomcat[STOPPING]")
+          ) {
+            await ctx.updateStatus(
+              "restarting_service",
+              "Tomcat stopping...",
+              95,
+            );
             const logMessage = `\u23f8\ufe0f Cisco Tomcat service is stopping on ${fqdn}`;
             status.logs.push(logMessage);
             if (connection.id) {
-              await accountManager.saveRenewalLog(connection.id, fqdn, logMessage);
+              await accountManager.saveRenewalLog(
+                connection.id,
+                fqdn,
+                logMessage,
+              );
             }
           }
-          if (chunk.includes('[RUNNING]') || totalOutput.includes('Cisco Tomcat[RUNNING]')) {
-            await ctx.updateStatus('restarting_service', 'Tomcat running', 99);
+          if (
+            chunk.includes("[RUNNING]") ||
+            totalOutput.includes("Cisco Tomcat[RUNNING]")
+          ) {
+            await ctx.updateStatus("restarting_service", "Tomcat running", 99);
             const logMessage = `\u2705 Cisco Tomcat service is now running on ${fqdn}`;
             status.logs.push(logMessage);
             if (connection.id) {
-              await accountManager.saveRenewalLog(connection.id, fqdn, logMessage);
+              await accountManager.saveRenewalLog(
+                connection.id,
+                fqdn,
+                logMessage,
+              );
             }
           }
         },
@@ -576,7 +706,7 @@ export class VOSProvider extends PlatformProvider {
           await accountManager.saveRenewalLog(connection.id, fqdn, successMsg);
         }
 
-        const outputMsg = `Service restart output: ${restartResult.output || 'Command completed'}`;
+        const outputMsg = `Service restart output: ${restartResult.output || "Command completed"}`;
         status.logs.push(outputMsg);
         if (connection.id) {
           await accountManager.saveRenewalLog(connection.id, fqdn, outputMsg);
@@ -584,14 +714,18 @@ export class VOSProvider extends PlatformProvider {
 
         return { success: true, requiresManualRestart: false };
       } else {
-        const isTimeout = restartResult.error?.includes('timeout');
+        const isTimeout = restartResult.error?.includes("timeout");
 
         if (isTimeout) {
           const timeoutMsg = `Service restart initiated on ${fqdn} but confirmation timed out. The service is likely still restarting.`;
           Logger.warn(timeoutMsg);
           status.logs.push(`\u23f1\ufe0f ${timeoutMsg}`);
           if (connection.id) {
-            await accountManager.saveRenewalLog(connection.id, fqdn, `\u23f1\ufe0f ${timeoutMsg}`);
+            await accountManager.saveRenewalLog(
+              connection.id,
+              fqdn,
+              `\u23f1\ufe0f ${timeoutMsg}`,
+            );
           }
 
           const verifyMsg = `\ud83d\udccb Manual verification recommended: Check that Cisco Tomcat is running on ${fqdn}`;
@@ -610,7 +744,11 @@ export class VOSProvider extends PlatformProvider {
           Logger.error(errorMsg);
           status.logs.push(`\u26a0\ufe0f ${errorMsg}`);
           if (connection.id) {
-            await accountManager.saveRenewalLog(connection.id, fqdn, `\u26a0\ufe0f ${errorMsg}`);
+            await accountManager.saveRenewalLog(
+              connection.id,
+              fqdn,
+              `\u26a0\ufe0f ${errorMsg}`,
+            );
           }
 
           const manualMsg = `\ud83d\udccb Manual action required: Run 'utils service restart Cisco Tomcat' on ${fqdn}`;
@@ -630,7 +768,9 @@ export class VOSProvider extends PlatformProvider {
       const errorMsg = `Error during service restart for ${connection.hostname}: ${error.message}`;
       Logger.error(errorMsg);
       status.logs.push(`\u26a0\ufe0f ${errorMsg}`);
-      status.logs.push(`\ud83d\udccb Manual action required: Run 'utils service restart Cisco Tomcat' on ${connection.hostname}.${connection.domain}`);
+      status.logs.push(
+        `\ud83d\udccb Manual action required: Run 'utils service restart Cisco Tomcat' on ${connection.hostname}.${connection.domain}`,
+      );
       return {
         success: false,
         requiresManualRestart: true,
@@ -643,80 +783,84 @@ export class VOSProvider extends PlatformProvider {
   // Renewal helper methods (moved from certificate-renewal.ts)
   // ---------------------------------------------------------------------------
 
-  private async renewalUploadLeafCertificate(ctx: RenewalContext, certificate: string): Promise<void> {
+  private async renewalUploadLeafCertificate(
+    ctx: RenewalContext,
+    certificate: string,
+  ): Promise<void> {
     const { connectionId, connection, status } = ctx;
     const fullFQDN = `${connection.hostname}.${connection.domain}`;
 
     if (!connection.username || !connection.password) {
-      throw new Error('Username and password are required for VOS application certificate upload');
+      throw new Error(
+        "Username and password are required for VOS application certificate upload",
+      );
     }
 
     let certificates: string[] = [];
-    const accountsDir = process.env.ACCOUNTS_DIR || './accounts';
-    const isStaging = process.env.LETSENCRYPT_STAGING !== 'false';
-    const envDir = isStaging ? 'staging' : 'prod';
-    const certDir = path.join(accountsDir, `connection-${connectionId}`, envDir);
 
-    const certParts = certificate.split('-----END CERTIFICATE-----');
+    const certParts = certificate.split("-----END CERTIFICATE-----");
     const parsedCerts = certParts
-      .filter(part => part.includes('-----BEGIN CERTIFICATE-----'))
-      .map(part => (part.trim() + '\n-----END CERTIFICATE-----'));
+      .filter((part) => part.includes("-----BEGIN CERTIFICATE-----"))
+      .map((part) => part.trim() + "\n-----END CERTIFICATE-----");
 
     if (parsedCerts.length === 0) {
-      throw new Error('No certificates found in certificate chain');
+      throw new Error("No certificates found in certificate chain");
     }
 
-    certificates = [...parsedCerts];
-
-    // Try to load and add root certificate if not already present
-    try {
-      const rootPath = path.join(certDir, 'root.crt');
-      const rootCert = await fs.promises.readFile(rootPath, 'utf8');
-      if (rootCert.trim()) {
-        const hasRoot = certificates.some(cert => cert.includes('ISRG Root'));
-        if (!hasRoot) {
-          certificates.push(rootCert.trim());
-          await ctx.saveLog(`Added root certificate to chain for VOS upload`);
-        }
-      }
-    } catch (error) {
-      await ctx.saveLog(`WARNING: Could not load root certificate: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
+    // VOS identity-cert upload expects only the leaf certificate — the CA chain
+    // (intermediate/root) is uploaded separately to the trust store beforehand
+    // via renewalUploadCaCertificates(). Sending the chain here causes CUCM to
+    // reject with a misleading "CSR public key and Certificate public key do
+    // not match" error, since it validates every entry in the array against
+    // the pending CSR's keypair.
+    certificates = [parsedCerts[0]];
 
     const postData = JSON.stringify({
-      service: 'tomcat',
+      service: "tomcat",
       certificates: certificates,
     });
 
     const options = {
       hostname: fullFQDN,
       port: 443,
-      path: '/platformcom/api/v1/certmgr/config/identity/certificates',
-      method: 'POST',
+      path: "/platformcom/api/v1/certmgr/config/identity/certificates",
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Basic ${Buffer.from(`${connection.username}:${connection.password}`).toString('base64')}`,
-        'Content-Length': Buffer.byteLength(postData),
+        "Content-Type": "application/json",
+        Authorization: `Basic ${Buffer.from(`${connection.username}:${connection.password}`).toString("base64")}`,
+        "Content-Length": Buffer.byteLength(postData),
       },
       rejectUnauthorized: false,
     };
 
     Logger.info(`VOS certificate chain upload request body: ${postData}`);
-    await ctx.saveLog(`VOS certificate chain upload request to ${fullFQDN}:${options.port}${options.path}`);
-    await ctx.saveLog(`Uploading full certificate chain (${certificates.length} certificates) to tomcat service`);
-    await ctx.saveLog(`Certificate chain includes: leaf${certificates.length > 1 ? ', intermediate' : ''}${certificates.length > 2 ? ', root' : ''}`);
+    await ctx.saveLog(
+      `VOS certificate chain upload request to ${fullFQDN}:${options.port}${options.path}`,
+    );
+    await ctx.saveLog(
+      `Uploading full certificate chain (${certificates.length} certificates) to tomcat service`,
+    );
+    await ctx.saveLog(
+      `Certificate chain includes: leaf${certificates.length > 1 ? ", intermediate" : ""}${certificates.length > 2 ? ", root" : ""}`,
+    );
 
     return new Promise<void>((resolve, reject) => {
       const req = https.request(options, (res) => {
-        let data = '';
-        res.on('data', (chunk) => data += chunk);
-        res.on('end', async () => {
+        let data = "";
+        res.on("data", (chunk) => (data += chunk));
+        res.on("end", async () => {
           try {
             Logger.info(`VOS certificate chain upload response: ${data}`);
-            await ctx.saveLog(`VOS certificate chain upload response (${res.statusCode}): ${data}`);
+            await ctx.saveLog(
+              `VOS certificate chain upload response (${res.statusCode}): ${data}`,
+            );
             if (res.statusCode === 200 || res.statusCode === 201) {
-              status.logs.push(`Certificate chain uploaded successfully to ${fullFQDN}`);
-              await ctx.saveLog(`Certificate chain uploaded successfully to ${fullFQDN}`);
+              status.logs.push(
+                `Certificate chain uploaded successfully to ${fullFQDN}`,
+              );
+              await ctx.saveLog(
+                `Certificate chain uploaded successfully to ${fullFQDN}`,
+              );
               resolve();
             } else {
               let errorMsg = `Certificate chain upload failed with status ${res.statusCode}`;
@@ -730,7 +874,7 @@ export class VOSProvider extends PlatformProvider {
                   errorMsg += `: ${data}`;
                 }
               } catch {
-                errorMsg += `: ${data || 'No response body'}`;
+                errorMsg += `: ${data || "No response body"}`;
               }
               await ctx.saveLog(`ERROR: ${errorMsg}`);
               reject(new Error(errorMsg));
@@ -743,7 +887,7 @@ export class VOSProvider extends PlatformProvider {
         });
       });
 
-      req.on('error', async (error) => {
+      req.on("error", async (error) => {
         const errorMsg = `Leaf certificate upload failed: ${error.message}`;
         await ctx.saveLog(`ERROR: ${errorMsg}`);
         reject(new Error(errorMsg));
@@ -754,49 +898,66 @@ export class VOSProvider extends PlatformProvider {
     });
   }
 
-  private async renewalGetExistingTrustCertificates(connection: { hostname: string; domain: string; username?: string; password?: string }): Promise<string[]> {
+  private async renewalGetExistingTrustCertificates(connection: {
+    hostname: string;
+    domain: string;
+    username?: string;
+    password?: string;
+  }): Promise<string[]> {
     const fullFQDN = `${connection.hostname}.${connection.domain}`;
 
     if (!connection.username || !connection.password) {
-      throw new Error('Username and password are required for VOS application certificate operations');
+      throw new Error(
+        "Username and password are required for VOS application certificate operations",
+      );
     }
 
     return new Promise((resolve) => {
       const options = {
         hostname: fullFQDN,
         port: 443,
-        path: '/platformcom/api/v1/certmgr/config/trust/certificate?service=tomcat',
-        method: 'GET',
+        path: "/platformcom/api/v1/certmgr/config/trust/certificate?service=tomcat",
+        method: "GET",
         headers: {
-          'Accept': 'application/json',
-          'Authorization': `Basic ${Buffer.from(`${connection.username}:${connection.password}`).toString('base64')}`,
+          Accept: "application/json",
+          Authorization: `Basic ${Buffer.from(`${connection.username}:${connection.password}`).toString("base64")}`,
         },
         rejectUnauthorized: false,
       };
 
       const req = https.request(options, (res) => {
-        let data = '';
-        res.on('data', (chunk) => data += chunk);
-        res.on('end', () => {
+        let data = "";
+        res.on("data", (chunk) => (data += chunk));
+        res.on("end", () => {
           try {
             if (res.statusCode === 200) {
               const response = JSON.parse(data);
-              const certificates = Array.isArray(response) ? response : response.certificates || [];
-              const existingCerts = certificates.map((c: any) => c.certificate.trim());
+              const certificates = Array.isArray(response)
+                ? response
+                : response.certificates || [];
+              const existingCerts = certificates.map((c: any) =>
+                c.certificate.trim(),
+              );
               resolve(existingCerts);
             } else {
-              Logger.warn(`Could not get existing trust certificates. Status: ${res.statusCode}, Body: ${data}`);
+              Logger.warn(
+                `Could not get existing trust certificates. Status: ${res.statusCode}, Body: ${data}`,
+              );
               resolve([]);
             }
           } catch (error) {
-            Logger.error(`Failed to parse existing trust certificates response: ${error}. Raw response: ${data}`);
+            Logger.error(
+              `Failed to parse existing trust certificates response: ${error}. Raw response: ${data}`,
+            );
             resolve([]);
           }
         });
       });
 
-      req.on('error', (error) => {
-        Logger.error(`Failed to get existing trust certificates: ${error.message}`);
+      req.on("error", (error) => {
+        Logger.error(
+          `Failed to get existing trust certificates: ${error.message}`,
+        );
         resolve([]);
       });
 
@@ -804,65 +965,91 @@ export class VOSProvider extends PlatformProvider {
     });
   }
 
-  private async renewalUploadCaCertificates(ctx: RenewalContext, certificates: string[]): Promise<void> {
+  private async renewalUploadCaCertificates(
+    ctx: RenewalContext,
+    certificates: string[],
+  ): Promise<void> {
     const { connectionId, connection, status } = ctx;
     const fullFQDN = `${connection.hostname}.${connection.domain}`;
 
     if (!connection.username || !connection.password) {
-      throw new Error('Username and password are required for VOS application certificate upload');
+      throw new Error(
+        "Username and password are required for VOS application certificate upload",
+      );
     }
 
-    const existingCerts = await this.renewalGetExistingTrustCertificates(connection);
-    const certsToUpload = certificates.filter(c => !existingCerts.includes(c.trim()));
+    const existingCerts =
+      await this.renewalGetExistingTrustCertificates(connection);
+    const certsToUpload = certificates.filter(
+      (c) => !existingCerts.includes(c.trim()),
+    );
 
     if (certsToUpload.length === 0) {
-      Logger.info('All CA certificates already exist on the server. Skipping upload.');
-      status.logs.push('All CA certificates already exist on the server. Skipping upload.');
-      await ctx.saveLog(`All CA certificates already exist on ${fullFQDN}. Skipping upload.`);
-      await ctx.saveLog(`Found ${existingCerts.length} existing trust certificates on server`);
+      Logger.info(
+        "All CA certificates already exist on the server. Skipping upload.",
+      );
+      status.logs.push(
+        "All CA certificates already exist on the server. Skipping upload.",
+      );
+      await ctx.saveLog(
+        `All CA certificates already exist on ${fullFQDN}. Skipping upload.`,
+      );
+      await ctx.saveLog(
+        `Found ${existingCerts.length} existing trust certificates on server`,
+      );
       return;
     }
 
     const postData = JSON.stringify({
-      service: ['tomcat'],
+      service: ["tomcat"],
       certificates: certsToUpload,
-      description: 'Trust Certificate',
+      description: "Trust Certificate",
     });
 
     const options = {
       hostname: fullFQDN,
       port: 443,
-      path: '/platformcom/api/v1/certmgr/config/trust/certificates',
-      method: 'POST',
+      path: "/platformcom/api/v1/certmgr/config/trust/certificates",
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Basic ${Buffer.from(`${connection.username}:${connection.password}`).toString('base64')}`,
-        'Content-Length': Buffer.byteLength(postData),
+        "Content-Type": "application/json",
+        Authorization: `Basic ${Buffer.from(`${connection.username}:${connection.password}`).toString("base64")}`,
+        "Content-Length": Buffer.byteLength(postData),
       },
       rejectUnauthorized: false,
     };
 
     Logger.info(`VOS CA cert upload request body: ${postData}`);
-    await ctx.saveLog(`Uploading ${certsToUpload.length} CA certificate(s) to ${fullFQDN}:${options.port}${options.path}`);
+    await ctx.saveLog(
+      `Uploading ${certsToUpload.length} CA certificate(s) to ${fullFQDN}:${options.port}${options.path}`,
+    );
     await ctx.saveLog(`CA cert request body: ${postData}`);
 
     return new Promise<void>((resolve, reject) => {
       const req = https.request(options, (res) => {
-        let data = '';
-        res.on('data', (chunk) => data += chunk);
-        res.on('end', async () => {
+        let data = "";
+        res.on("data", (chunk) => (data += chunk));
+        res.on("end", async () => {
           try {
             Logger.info(`VOS CA cert upload response: ${data}`);
-            await ctx.saveLog(`VOS CA cert upload response (${res.statusCode}): ${data}`);
+            await ctx.saveLog(
+              `VOS CA cert upload response (${res.statusCode}): ${data}`,
+            );
             if (res.statusCode === 200 || res.statusCode === 201) {
-              status.logs.push(`CA certificates uploaded successfully to ${fullFQDN}`);
-              await ctx.saveLog(`CA certificates uploaded successfully to ${fullFQDN}`);
+              status.logs.push(
+                `CA certificates uploaded successfully to ${fullFQDN}`,
+              );
+              await ctx.saveLog(
+                `CA certificates uploaded successfully to ${fullFQDN}`,
+              );
               resolve();
             } else {
               const response = JSON.parse(data);
-              const errorMsg = `CA certificate upload failed: ${response.message || response.messages?.[0] || 'Unknown error'}`;
+              const errorMsg = `CA certificate upload failed: ${response.message || response.messages?.[0] || "Unknown error"}`;
               await ctx.saveLog(`ERROR: ${errorMsg}`);
-              await ctx.saveLog(`Full response: ${JSON.stringify(response, null, 2)}`);
+              await ctx.saveLog(
+                `Full response: ${JSON.stringify(response, null, 2)}`,
+              );
               reject(new Error(errorMsg));
             }
           } catch (error) {
@@ -873,7 +1060,7 @@ export class VOSProvider extends PlatformProvider {
         });
       });
 
-      req.on('error', async (error) => {
+      req.on("error", async (error) => {
         const errorMsg = `CA certificate upload failed: ${error.message}`;
         await ctx.saveLog(`ERROR: ${errorMsg}`);
         reject(new Error(errorMsg));
@@ -888,18 +1075,18 @@ export class VOSProvider extends PlatformProvider {
   async getSystemInfo(
     hostname: string,
     username: string,
-    password: string
+    password: string,
   ): Promise<any> {
     try {
       await this.connectSSH(hostname, username, password);
-      const version = await this.executeSSHCommand('show version');
-      const status = await this.executeSSHCommand('show status');
+      const version = await this.executeSSHCommand("show version");
+      const status = await this.executeSSHCommand("show status");
       await this.disconnectSSH();
 
       return {
         version: version.trim(),
         status: status.trim(),
-        platform: 'vos'
+        platform: "vos",
       };
     } catch (error) {
       Logger.error(`Failed to get system info from ${hostname}:`, error);
