@@ -17,11 +17,14 @@ interface Operation {
 }
 
 interface AutoRenewalNotification {
+  id: string;
   connectionId: number;
   status: 'in_progress' | 'success' | 'failed';
   message: string;
   timestamp: string;
 }
+
+const AUTO_RENEWAL_NOTIFICATION_TTL_MS = 8000;
 
 interface WebSocketContextType {
   socket: Socket | null;
@@ -34,6 +37,7 @@ interface WebSocketContextType {
   getActiveOperation: (connectionId: number, type: string) => Operation | null;
   hasActiveOperation: (connectionId: number, type: string) => boolean;
   clearAutoRenewalNotifications: () => void;
+  removeAutoRenewalNotification: (id: string) => void;
 }
 
 const WebSocketContext = createContext<WebSocketContextType | null>(null);
@@ -44,6 +48,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [operations, setOperations] = useState<Map<string, Operation>>(new Map());
   const [autoRenewalNotifications, setAutoRenewalNotifications] = useState<AutoRenewalNotification[]>([]);
   const subscribedConnections = useRef<Set<number>>(new Set());
+  const notificationIdCounter = useRef(0);
 
   useEffect(() => {
     // Determine the backend URL
@@ -123,19 +128,26 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       debugWebSocket('Auto-renewal status update:', { connectionId, status, message, timestamp });
       
       // Add to notifications list
+      const notificationId = `${connectionId}-${timestamp}-${notificationIdCounter.current++}`;
       const notification: AutoRenewalNotification = {
+        id: notificationId,
         connectionId,
         status: status as 'in_progress' | 'success' | 'failed',
         message,
         timestamp
       };
-      
+
       setAutoRenewalNotifications(prev => {
         // Keep only the last 10 notifications
         const updated = [notification, ...prev].slice(0, 10);
         return updated;
       });
-      
+
+      // Auto-dismiss like a toast, rather than lingering until manually cleared
+      setTimeout(() => {
+        setAutoRenewalNotifications(prev => prev.filter(n => n.id !== notificationId));
+      }, AUTO_RENEWAL_NOTIFICATION_TTL_MS);
+
       // Show notification to user
       if (status === 'in_progress') {
         console.log(`🔄 Auto-renewal started: ${message}`);
@@ -229,6 +241,10 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setAutoRenewalNotifications([]);
   }, []);
 
+  const removeAutoRenewalNotification = useCallback((id: string) => {
+    setAutoRenewalNotifications(prev => prev.filter(n => n.id !== id));
+  }, []);
+
   return (
     <WebSocketContext.Provider value={{
       socket,
@@ -240,7 +256,8 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       getConnectionOperations,
       getActiveOperation,
       hasActiveOperation,
-      clearAutoRenewalNotifications
+      clearAutoRenewalNotifications,
+      removeAutoRenewalNotification
     }}>
       {children}
     </WebSocketContext.Provider>

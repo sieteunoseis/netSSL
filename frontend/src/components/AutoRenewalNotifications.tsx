@@ -16,14 +16,14 @@ const formatTimeAgo = (timestamp: string): string => {
 };
 
 export const AutoRenewalNotifications: React.FC = () => {
-  const { autoRenewalNotifications, clearAutoRenewalNotifications } = useWebSocket();
+  const { autoRenewalNotifications, clearAutoRenewalNotifications, removeAutoRenewalNotification } = useWebSocket();
 
   if (autoRenewalNotifications.length === 0) {
     return null;
   }
 
   return (
-    <div className="fixed top-4 right-4 z-50 max-w-md">
+    <div className="fixed bottom-4 left-4 z-50 max-w-md">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
         <div className="flex items-center justify-between p-3 border-b border-gray-200 dark:border-gray-700">
           <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">
@@ -37,10 +37,10 @@ export const AutoRenewalNotifications: React.FC = () => {
           </button>
         </div>
         <div className="max-h-80 overflow-y-auto">
-          {autoRenewalNotifications.map((notification, index) => (
+          {autoRenewalNotifications.map((notification) => (
             <div
-              key={`${notification.connectionId}-${notification.timestamp}-${index}`}
-              className="p-3 border-b border-gray-100 dark:border-gray-700 last:border-b-0"
+              key={notification.id}
+              className="group p-3 border-b border-gray-100 dark:border-gray-700 last:border-b-0"
             >
               <div className="flex items-start space-x-3">
                 <div className="flex-shrink-0 mt-0.5">
@@ -62,6 +62,13 @@ export const AutoRenewalNotifications: React.FC = () => {
                     {formatTimeAgo(notification.timestamp)}
                   </p>
                 </div>
+                <button
+                  onClick={() => removeAutoRenewalNotification(notification.id)}
+                  className="flex-shrink-0 text-gray-400 opacity-0 group-hover:opacity-100 hover:text-gray-600 dark:hover:text-gray-200 transition-opacity"
+                  aria-label="Dismiss notification"
+                >
+                  ×
+                </button>
               </div>
             </div>
           ))}
