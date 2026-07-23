@@ -57,6 +57,7 @@ import {
   Trash2,
   ToggleLeft,
   ToggleRight,
+  Send,
 } from "lucide-react";
 import {
   Tooltip,
@@ -176,6 +177,38 @@ const Home = ({ onStatusUpdate }) => {
 
   const handleConnectionAdded = () => {
     fetchConnections();
+  };
+
+  const handleRequestCertificate = async (connection) => {
+    // Expand the connection so the user can watch renewal progress land
+    setExpandedCards((prev) => new Set([...prev, connection.id]));
+    setExpandedRows((prev) => new Set([...prev, connection.id]));
+
+    try {
+      const response = await apiCall(`/data/${connection.id}/issue-cert`, {
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(
+          errorData.error || errorData.details || "Failed to start certificate request",
+        );
+      }
+
+      toast({
+        title: "Certificate Request Started",
+        description: `Requesting the first certificate for ${connection.name}. Watch progress below.`,
+        duration: 5000,
+      });
+    } catch (error) {
+      toast({
+        title: "Certificate Request Failed",
+        description: error.message || "Failed to start certificate request",
+        variant: "destructive",
+        duration: 5000,
+      });
+    }
   };
 
   const handleConnectionUpdated = async () => {
@@ -649,6 +682,30 @@ const Home = ({ onStatusUpdate }) => {
                         <status.icon className="h-4 w-4" />
                         <span>{status.text}</span>
                       </Badge>
+
+                      {isEnabled && !connection.last_cert_issued && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-2 text-status-warning border-status-warning/40 hover:bg-status-warning/10"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                handleRequestCertificate(connection);
+                              }}
+                            >
+                              <Send className="h-3.5 w-3.5 mr-1" />
+                              Request Certificate
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            No certificate has been issued yet — click instead
+                            of waiting for auto-renewal
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
 
                       <div
                         className="flex items-center gap-1 ml-1"
@@ -1282,6 +1339,26 @@ const Home = ({ onStatusUpdate }) => {
                             </td>
                             <td className="p-4">
                               <div className="flex items-center gap-1">
+                                {isEnabled && !connection.last_cert_issued && (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 w-7 p-0"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleRequestCertificate(connection);
+                                        }}
+                                      >
+                                        <Send className="h-3.5 w-3.5 text-status-warning" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      Request Certificate — none issued yet
+                                    </TooltipContent>
+                                  </Tooltip>
+                                )}
                                 <Tooltip>
                                   <TooltipTrigger asChild>
                                     <Button

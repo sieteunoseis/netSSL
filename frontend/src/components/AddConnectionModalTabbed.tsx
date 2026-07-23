@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ToastAction } from "@/components/ui/toast";
 import { Plus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import validator from "validator";
@@ -218,6 +219,37 @@ const AddConnectionModalTabbed: React.FC<AddConnectionModalTabbedProps> = ({
     });
   };
 
+  const handleRequestFirstCertificate = async (connectionId: number) => {
+    try {
+      const response = await apiCall(`/data/${connectionId}/issue-cert`, {
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(
+          errorData.error || errorData.details || "Failed to start certificate request",
+        );
+      }
+
+      toast({
+        title: "Certificate Request Started",
+        description:
+          "Requesting the first certificate now. Open the connection card to watch progress.",
+        duration: 5000,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to start certificate request";
+      toast({
+        title: "Certificate Request Failed",
+        description: message,
+        variant: "destructive",
+        duration: 5000,
+      });
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -230,18 +262,30 @@ const AddConnectionModalTabbed: React.FC<AddConnectionModalTabbedProps> = ({
 
       const result = await response.json();
 
+      const requestCertAction = (
+        <ToastAction
+          altText="Request certificate now"
+          onClick={() => handleRequestFirstCertificate(result.id)}
+        >
+          Request Now
+        </ToastAction>
+      );
+
       if (result.warnings && result.warnings.length > 0) {
         toast({
           title: "Saved with warnings",
           description: result.warnings[0],
           variant: "destructive",
           duration: 10000,
+          action: requestCertAction,
         });
       } else {
         toast({
-          title: "Success!",
-          description: "Connection added successfully.",
-          duration: 3000,
+          title: "Connection Added",
+          description:
+            "netSSL won't request a certificate until its next scheduled check — click below to request one now instead of waiting.",
+          duration: 15000,
+          action: requestCertAction,
         });
       }
 

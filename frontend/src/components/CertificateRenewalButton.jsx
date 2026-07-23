@@ -8,6 +8,7 @@ import { debugLog } from "@/lib/debug";
 
 const CertificateRenewalButton = ({ connection, onConfirmRenew }) => {
   const { toast } = useToast();
+  const isFirstIssuance = !connection.last_cert_issued;
   const { 
     activeOperation, 
     isRenewing, 
@@ -149,16 +150,18 @@ const CertificateRenewalButton = ({ connection, onConfirmRenew }) => {
       debugLog('Certificate renewal started:', data);
 
       toast({
-        title: "Certificate Renewal Started",
-        description: "Certificate renewal has been initiated. You can monitor progress in real-time.",
+        title: isFirstIssuance ? "Certificate Request Started" : "Certificate Renewal Started",
+        description: isFirstIssuance
+          ? "Requesting the first certificate. You can monitor progress in real-time."
+          : "Certificate renewal has been initiated. You can monitor progress in real-time.",
         duration: 5000,
       });
 
     } catch (error) {
       console.error('Error starting certificate renewal:', error);
       toast({
-        title: "Certificate Renewal Failed",
-        description: error.message || "Failed to start certificate renewal",
+        title: isFirstIssuance ? "Certificate Request Failed" : "Certificate Renewal Failed",
+        description: error.message || `Failed to start certificate ${isFirstIssuance ? "request" : "renewal"}`,
         variant: "destructive",
         duration: 5000,
       });
@@ -211,7 +214,7 @@ const CertificateRenewalButton = ({ connection, onConfirmRenew }) => {
     return (
       <>
         <Shield className="mr-2 h-4 w-4" />
-        Renew Certificate
+        {isFirstIssuance ? "Request Certificate" : "Renew Certificate"}
       </>
     );
   };
