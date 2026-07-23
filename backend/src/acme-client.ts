@@ -16,9 +16,70 @@ export interface CertificateOrder {
   challenges: any[];
 }
 
+interface RetryOptions {
+  timeoutMs?: number;
+  maxAttempts?: number;
+  baseDelayMs?: number;
+}
+
 export class ACMEClient {
   private client: acme.Client;
   private isStaging: boolean;
+
+  /**
+   * Runs an ACME API call with a per-attempt timeout and exponential backoff.
+   * Retries transient failures (timeouts, network errors, 5xx) but never
+   * rate-limit errors, since retrying those counts against Let's Encrypt limits.
+   */
+  private async withRetry<T>(
+    operation: string,
+    fn: () => Promise<T>,
+    { timeoutMs = 30000, maxAttempts = 3, baseDelayMs = 2000 }: RetryOptions = {}
+  ): Promise<T> {
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      let timer: NodeJS.Timeout | undefined;
+      try {
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error(`${operation} timeout after ${timeoutMs / 1000} seconds - Let's Encrypt API may be slow`)),
+            timeoutMs
+          );
+        });
+        const result = await Promise.race([fn(), timeoutPromise]);
+        clearTimeout(timer);
+        return result;
+      } catch (error) {
+        clearTimeout(timer);
+        lastError = error;
+
+        if (!this.isRetryableError(error) || attempt === maxAttempts) {
+          throw error;
+        }
+
+        const delay = baseDelayMs * Math.pow(2, attempt - 1);
+        Logger.warn(
+          `${operation} failed (attempt ${attempt}/${maxAttempts}): ${error instanceof Error ? error.message : 'Unknown error'}. Retrying in ${delay / 1000}s...`
+        );
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+
+    throw lastError;
+  }
+
+  private isRetryableError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+
+    // Never retry rate-limit errors - retries count toward Let's Encrypt limits
+    if (/rateLimited|too many/i.test(message)) {
+      return false;
+    }
+
+    // Timeouts, network errors, and server-side errors are transient
+    return /timeout|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up|network|5\d\d/i.test(message);
+  }
 
   constructor(isStaging: boolean = false) {
     this.isStaging = isStaging;
@@ -48,16 +109,12 @@ export class ACMEClient {
 
       // Create account with Let's Encrypt (with timeout)
       Logger.info(`Creating Let's Encrypt account for ${email}`);
-      const accountPromise = this.client.createAccount({
-        termsOfServiceAgreed: true,
-        contact: [`mailto:${email}`]
-      });
-      
-      const accountTimeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Account creation timeout after 30 seconds')), 30000)
+      const account = await this.withRetry('Account creation', () =>
+        this.client.createAccount({
+          termsOfServiceAgreed: true,
+          contact: [`mailto:${email}`]
+        })
       );
-      
-      const account = await Promise.race([accountPromise, accountTimeoutPromise]);
 
       Logger.info(`Account creation response:`, account);
       
@@ -147,32 +204,22 @@ export class ACMEClient {
       Logger.info(`Creating certificate order for domains: ${domains.join(', ')}`);
       Logger.info(`Using ACME directory: ${this.isStaging ? 'STAGING' : 'PRODUCTION'}`);
       
-      const orderPromise = this.client.createOrder({
-        identifiers: domains.map(domain => ({
-          type: 'dns',
-          value: domain
-        }))
-      });
-      
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => {
-          Logger.error('Order creation timeout after 15 seconds');
-          reject(new Error('Order creation timeout after 15 seconds - Let\'s Encrypt API may be slow'));
-        }, 15000)
-      );
-      
       Logger.info('Waiting for order creation response...');
-      const order = await Promise.race([orderPromise, timeoutPromise]) as any;
+      const order = await this.withRetry('Order creation', () =>
+        this.client.createOrder({
+          identifiers: domains.map(domain => ({
+            type: 'dns',
+            value: domain
+          }))
+        })
+      ) as any;
       Logger.info(`Created certificate order: ${order.url}`);
 
       // Get authorizations and challenges with timeout
       Logger.info(`Getting authorizations for order: ${order.url}`);
-      const authPromise = this.client.getAuthorizations(order);
-      const authTimeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Authorization retrieval timeout after 30 seconds')), 30000)
-      );
-      
-      const authorizations = await Promise.race([authPromise, authTimeoutPromise]) as any;
+      const authorizations = await this.withRetry('Authorization retrieval', () =>
+        this.client.getAuthorizations(order)
+      ) as any;
       const challenges: any[] = [];
 
       for (const authorization of authorizations) {
